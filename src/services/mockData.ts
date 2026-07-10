@@ -1,0 +1,295 @@
+import type { AnalysisResult, HistoryRecord, GrowthData, ArtType } from '../types';
+
+const artTypes: ArtType[] = ['painting', 'design', 'product', 'sculpture'];
+
+function randomInRange(min: number, max: number): number {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function randomFloatInRange(min: number, max: number): number {
+  return Math.round((Math.random() * (max - min) + min) * 100) / 100;
+}
+
+function generateHeatmapData(): number[][] {
+  const rows = 20, cols = 20;
+  const data: number[][] = [];
+  const centerX = Math.random() * 0.6 + 0.2;
+  const centerY = Math.random() * 0.6 + 0.2;
+  for (let i = 0; i < rows; i++) {
+    const row: number[] = [];
+    for (let j = 0; j < cols; j++) {
+      const x = j / cols, y = i / rows;
+      const dist = Math.sqrt(Math.pow(x - centerX, 2) + Math.pow(y - centerY, 2));
+      row.push(Math.round(Math.max(0, 1 - dist * 3) * 100) / 100);
+    }
+    data.push(row);
+  }
+  return data;
+}
+
+function generateFocusPoint() {
+  return { x: randomFloatInRange(0.3, 0.7), y: randomFloatInRange(0.3, 0.7) };
+}
+
+/* ============================================================
+   按类型生成模拟分析结果
+   ============================================================ */
+
+export function generateAnalysisResult(imageUrl: string, artType: ArtType = 'painting'): AnalysisResult {
+  const d1 = randomInRange(62, 94);
+  const d2 = randomInRange(65, 92);
+  const d3 = randomInRange(68, 96);
+  const orig = randomInRange(70, 98);
+  const focusPoint = generateFocusPoint();
+  const heatmapData = generateHeatmapData();
+
+  let dimensions: AnalysisResult['dimensions'];
+
+  if (artType === 'painting') {
+    dimensions = {
+      type: 'painting',
+      composition: {
+        score: d1, focusPoint,
+        balance: ['balanced', 'left-heavy', 'right-heavy', 'top-heavy', 'bottom-heavy'][Math.floor(Math.random() * 5)] as any,
+        guideline: ['good', 'average', 'poor'][Math.floor(Math.random() * 3)] as any,
+        whitespaceRatio: randomFloatInRange(0.2, 0.7),
+        symmetry: randomFloatInRange(0.3, 0.9),
+        suggestion: '画面构图均衡，视觉重心位置合理，黄金分割运用得当。',
+        heatmapData,
+      },
+      color: {
+        score: d2, warmRatio: randomFloatInRange(0.3, 0.7), coolRatio: randomFloatInRange(0.3, 0.7),
+        contrast: ['high', 'medium', 'low'][Math.floor(Math.random() * 3)] as any,
+        saturation: ['high', 'medium', 'low'][Math.floor(Math.random() * 3)] as any,
+        richness: ['rich', 'moderate', 'limited'][Math.floor(Math.random() * 3)] as any,
+        harmony: '和谐', dominantColor: '中性色',
+        suggestion: '色彩搭配和谐，冷暖对比适中，建议保持当前用色风格。',
+      },
+      brushwork: {
+        score: d3, textureLevel: ['rich', 'moderate', 'simple'][Math.floor(Math.random() * 3)] as any,
+        strokeVariety: randomInRange(20, 70), wetDryBalance: '适中',
+        suggestion: '笔触技法表现良好，肌理层次丰富，干湿变化自然。',
+      },
+    };
+  } else if (artType === 'design') {
+    dimensions = {
+      type: 'design',
+      visualHierarchy: {
+        score: d1, focusPoint,
+        primarySecondaryClarity: ['clear', 'moderate', 'unclear'][Math.floor(Math.random() * 3)] as any,
+        informationFlow: ['good', 'average', 'poor'][Math.floor(Math.random() * 3)] as any,
+        heatmapData,
+        suggestion: '视觉层次清晰，主次关系明确，信息流动顺畅。',
+      },
+      typography: {
+        score: d2,
+        alignmentQuality: ['good', 'average', 'poor'][Math.floor(Math.random() * 3)] as any,
+        rhythmConsistency: ['good', 'average', 'poor'][Math.floor(Math.random() * 3)] as any,
+        negativeSpaceUsage: ['good', 'average', 'poor'][Math.floor(Math.random() * 3)] as any,
+        gridAdherence: randomInRange(40, 95),
+        suggestion: '排版规范，对齐统一，节奏感一致，负空间运用得当。',
+      },
+      colorApplication: {
+        score: d3,
+        contrast: ['high', 'medium', 'low'][Math.floor(Math.random() * 3)] as any,
+        brandConsistency: ['strong', 'moderate', 'weak'][Math.floor(Math.random() * 3)] as any,
+        colorPsychology: '暖色调传递活力与热情',
+        paletteHarmony: '色彩和谐',
+        suggestion: '色彩应用得当，品牌色一致，对比度适中，视觉张力良好。',
+      },
+    };
+  } else if (artType === 'product') {
+    dimensions = {
+      type: 'product',
+      form: {
+        score: d1,
+        focusPoint: { x: 0.5, y: 0.5 },
+        proportionBalance: ['good', 'average', 'poor'][Math.floor(Math.random() * 3)] as any,
+        lineFluidity: ['smooth', 'moderate', 'stiff'][Math.floor(Math.random() * 3)] as any,
+        surfaceQuality: ['excellent', 'good', 'average'][Math.floor(Math.random() * 3)] as any,
+        ergonomicsHint: ['strong', 'moderate', 'weak'][Math.floor(Math.random() * 3)] as any,
+        heatmapData,
+        suggestion: '形态比例协调，线条流畅，曲面过渡自然，人机工学暗示良好。',
+      },
+      materialExpression: {
+        score: d2,
+        textureRealism: ['high', 'medium', 'low'][Math.floor(Math.random() * 3)] as any,
+        lightShadowPerformance: ['excellent', 'good', 'average'][Math.floor(Math.random() * 3)] as any,
+        surfaceTreatment: ['refined', 'moderate', 'rough'][Math.floor(Math.random() * 3)] as any,
+        suggestion: '材质表现优秀，光影还原真实，表面处理细腻。',
+      },
+      functionExpression: {
+        score: d3,
+        structureClarity: ['clear', 'moderate', 'unclear'][Math.floor(Math.random() * 3)] as any,
+        functionImplication: ['strong', 'moderate', 'weak'][Math.floor(Math.random() * 3)] as any,
+        detailRefinement: ['excellent', 'good', 'average'][Math.floor(Math.random() * 3)] as any,
+        suggestion: '功能表达清晰，结构分区明确，细节处理精致。',
+      },
+    };
+  } else {
+    dimensions = {
+      type: 'sculpture',
+      spatialComposition: {
+        score: d1,
+        focusPoint: { x: 0.5, y: 0.5 },
+        volumeSense: ['strong', 'moderate', 'weak'][Math.floor(Math.random() * 3)] as any,
+        spaceOccupation: ['full', 'moderate', 'sparse'][Math.floor(Math.random() * 3)] as any,
+        voidSolidRelation: ['harmonious', 'moderate', 'imbalanced'][Math.floor(Math.random() * 3)] as any,
+        heatmapData,
+        suggestion: '空间构成饱满，体积感强烈，虚实关系和谐。',
+      },
+      bodyLanguage: {
+        score: d2,
+        dynamicSense: ['strong', 'moderate', 'static'][Math.floor(Math.random() * 3)] as any,
+        tensionExpression: ['high', 'medium', 'low'][Math.floor(Math.random() * 3)] as any,
+        rhythmFlow: ['fluent', 'moderate', 'stiff'][Math.floor(Math.random() * 3)] as any,
+        suggestion: '形体语言生动，动态感强烈，张力十足，韵律流畅。',
+      },
+      materialLanguage: {
+        score: d3,
+        materialCharacter: ['distinct', 'moderate', 'obscure'][Math.floor(Math.random() * 3)] as any,
+        textureExpression: ['rich', 'moderate', 'simple'][Math.floor(Math.random() * 3)] as any,
+        qualityLayering: ['rich', 'moderate', 'simple'][Math.floor(Math.random() * 3)] as any,
+        suggestion: '材料语言鲜明，肌理表现丰富，质感层次清晰。',
+      },
+    };
+  }
+
+  return {
+    id: `analysis-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    imageUrl, createdAt: new Date().toISOString(), artType,
+    dimensions,
+    originality: {
+      score: orig, similarity: randomFloatInRange(0.05, 0.35),
+      creativityLevel: orig > 88 ? 'excellent' : orig > 78 ? 'good' : orig > 68 ? 'average' : 'needsWork',
+      suggestion: orig > 85 ? '作品具有独特的个人风格，原创性优秀。' : '建议增加更多个人风格元素，提升原创性。',
+    },
+    overallScore: Math.round((d1 + d2 + d3 + orig) / 4),
+  };
+}
+
+/* ============================================================
+   历史记录
+   ============================================================ */
+
+export function saveToHistory(result: AnalysisResult): void {
+  const history = getHistory();
+  let d1 = 0, d2 = 0, d3 = 0;
+  const dims = result.dimensions;
+  if (dims.type === 'painting') { d1 = dims.composition.score; d2 = dims.color.score; d3 = dims.brushwork.score; }
+  else if (dims.type === 'design') { d1 = dims.visualHierarchy.score; d2 = dims.typography.score; d3 = dims.colorApplication.score; }
+  else if (dims.type === 'product') { d1 = dims.form.score; d2 = dims.materialExpression.score; d3 = dims.functionExpression.score; }
+  else { d1 = dims.spatialComposition.score; d2 = dims.bodyLanguage.score; d3 = dims.materialLanguage.score; }
+
+  const record: HistoryRecord = {
+    id: result.id, imageUrl: result.imageUrl,
+    createdAt: result.createdAt, artType: result.artType,
+    overallScore: result.overallScore,
+    dimension1Score: d1, dimension2Score: d2, dimension3Score: d3,
+  };
+  history.unshift(record);
+  localStorage.setItem('danqing-ai-history', JSON.stringify(history));
+}
+
+export function getHistory(): HistoryRecord[] {
+  const stored = localStorage.getItem('danqing-ai-history');
+  if (stored) return JSON.parse(stored);
+  const mock = generateMockHistory();
+  localStorage.setItem('danqing-ai-history', JSON.stringify(mock));
+  return mock;
+}
+
+export function generateMockHistory(): HistoryRecord[] {
+  const records: HistoryRecord[] = [];
+  const today = new Date();
+  for (let i = 0; i < 5; i++) {
+    const date = new Date(today); date.setDate(date.getDate() - i);
+    const d1 = randomInRange(65, 95), d2 = randomInRange(68, 92), d3 = randomInRange(72, 98);
+    records.push({
+      id: `history-${i + 1}`,
+      imageUrl: `https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=beautiful%20artwork%20${i + 1}&image_size=square`,
+      createdAt: date.toISOString(),
+      artType: artTypes[i % artTypes.length],
+      overallScore: Math.round((d1 + d2 + d3) / 3),
+      dimension1Score: d1, dimension2Score: d2, dimension3Score: d3,
+    });
+  }
+  return records;
+}
+
+export function getAnalysisResult(id: string): AnalysisResult | null {
+  const history = getHistory();
+  const record = history.find(r => r.id === id);
+  if (!record) return null;
+  return generateAnalysisResult(record.imageUrl, record.artType);
+}
+
+/* ============================================================
+   成长数据
+   ============================================================ */
+
+export function generateGrowthDataFromHistory(): GrowthData[] {
+  const history = getHistory();
+  if (history.length === 0) return generateMockGrowthData();
+
+  const sorted = [...history].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+  const grouped = new Map<string, HistoryRecord[]>();
+  for (const r of sorted) {
+    const d = new Date(r.createdAt);
+    const key = `${d.getMonth() + 1}/${d.getDate()}`;
+    if (!grouped.has(key)) grouped.set(key, []);
+    grouped.get(key)!.push(r);
+  }
+
+  const data: GrowthData[] = [];
+  for (const [dateStr, records] of grouped) {
+    data.push({
+      date: dateStr,
+      dimension1: Math.round(records.reduce((s, r) => s + r.dimension1Score, 0) / records.length),
+      dimension2: Math.round(records.reduce((s, r) => s + r.dimension2Score, 0) / records.length),
+      dimension3: Math.round(records.reduce((s, r) => s + r.dimension3Score, 0) / records.length),
+      overall: Math.round(records.reduce((s, r) => s + r.overallScore, 0) / records.length),
+    });
+  }
+
+  if (data.length < 7) {
+    const mock = generateMockGrowthData();
+    return [...data, ...mock.slice(data.length)].slice(0, 14);
+  }
+  return data.slice(-14);
+}
+
+export function generateMockGrowthData(): GrowthData[] {
+  const data: GrowthData[] = [];
+  const today = new Date();
+  let d1 = 62, d2 = 65, d3 = 68;
+  for (let i = 13; i >= 0; i--) {
+    const date = new Date(today); date.setDate(date.getDate() - i);
+    d1 = Math.min(95, Math.max(60, d1 + randomInRange(-3, 5)));
+    d2 = Math.min(95, Math.max(60, d2 + randomInRange(-2, 4)));
+    d3 = Math.min(98, Math.max(65, d3 + randomInRange(-2, 6)));
+    data.push({ date: `${date.getMonth() + 1}/${date.getDate()}`, dimension1: d1, dimension2: d2, dimension3: d3, overall: Math.round((d1 + d2 + d3) / 3) });
+  }
+  return data;
+}
+
+export function calculateGrowthInsights(data: GrowthData[]) {
+  if (data.length < 2) return null;
+  const first = data[0], last = data[data.length - 1];
+  const d1Change = last.dimension1 - first.dimension1;
+  const d2Change = last.dimension2 - first.dimension2;
+  const d3Change = last.dimension3 - first.dimension3;
+  const overallChange = last.overall - first.overall;
+  const strongest = d1Change >= d2Change && d1Change >= d3Change ? '维度一' : d2Change >= d3Change ? '维度二' : '维度三';
+  const weakest = d1Change <= d2Change && d1Change <= d3Change ? '维度一' : d2Change <= d3Change ? '维度二' : '维度三';
+  const avgOverall = Math.round(data.reduce((s, d) => s + d.overall, 0) / data.length);
+  const volatility = Math.round(data.reduce((s, d, i) => i === 0 ? 0 : s + Math.abs(d.overall - data[i - 1].overall), 0) / (data.length - 1));
+
+  let suggestion: string;
+  if (overallChange > 10) suggestion = `进步显著！整体提升了${overallChange}分，${strongest}能力提升最快。建议继续保持，同时在${weakest}方面多加练习。`;
+  else if (overallChange > 0) suggestion = `稳步进步中，整体提升了${overallChange}分。${strongest}是优势方向，建议针对${weakest}进行专项训练。`;
+  else if (overallChange > -10) suggestion = `近期略有波动，整体变化${overallChange}分。创作能力的发展是螺旋式上升，建议多参考素材库经典作品。`;
+  else suggestion = `近期遇到瓶颈，整体下降${Math.abs(overallChange)}分。建议回顾优秀作品，分析创作状态，尝试新技法。`;
+
+  return { d1Change, d2Change, d3Change, overallChange, strongest, weakest, avgOverall, volatility, trend: overallChange > 5 ? 'up' : overallChange < -5 ? 'down' : 'stable', suggestion };
+}
