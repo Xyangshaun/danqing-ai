@@ -7,25 +7,25 @@ const styleConfigs = {
     name: '绘画',
     icon: Brush,
     description: '中国画与西方绘画的经典流派',
-    coverImage: 'https://upload.wikimedia.org/wikipedia/commons/thumb/7/7b/A_Thousand_Li_of_Rivers_and_Mountains.jpg/800px-A_Thousand_Li_of_Rivers_and_Mountains.jpg',
+    coverImage: 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=A%20Thousand%20Li%20of%20Rivers%20and%20Mountains%20chinese%20ink%20landscape%20painting&image_size=landscape_4_3',
   },
   design: {
     name: '设计',
     icon: PenTool,
     description: '视觉传达与平面设计流派',
-    coverImage: 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/a4/Piet_Mondriaan%2C_1930_-_Composition_with_Red%2C_Blue_and_Yellow.jpg/800px-Piet_Mondriaan%2C_1930_-_Composition_with_Red%2C_Blue_and_Yellow.jpg',
+    coverImage: 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=Mondrian%20Composition%20with%20Red%20Blue%20and%20Yellow%20abstract%20painting&image_size=landscape_4_3',
   },
   product: {
     name: '产品设计',
     icon: Box,
     description: '工业设计与家具设计经典',
-    coverImage: 'https://upload.wikimedia.org/wikipedia/commons/thumb/5/5a/Rietveld_red_blue_chair.jpg/800px-Rietveld_red_blue_chair.jpg',
+    coverImage: 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=Rietveld%20Red%20Blue%20Chair%20modern%20furniture%20design&image_size=landscape_4_3',
   },
   sculpture: {
     name: '雕塑',
     icon: Layers,
     description: '古今中外的雕塑艺术杰作',
-    coverImage: 'https://upload.wikimedia.org/wikipedia/commons/thumb/7/70/Michelangelo%27s_David-_left_view.jpg/800px-Michelangelo%27s_David-_left_view.jpg',
+    coverImage: 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=Michelangelo%20David%20sculpture%20renaissance%20marble%20statue&image_size=landscape_4_3',
   },
 };
 
