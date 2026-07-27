@@ -188,14 +188,29 @@ export function saveToHistory(result: AnalysisResult): void {
     dimension1Score: d1, dimension2Score: d2, dimension3Score: d3,
   };
   history.unshift(record);
-  localStorage.setItem('danqing-ai-history', JSON.stringify(history));
+  try {
+    localStorage.setItem('danqing-ai-history', JSON.stringify(history));
+  } catch {
+    /* localStorage 写入失败（隐私模式/配额满），忽略 */
+  }
 }
 
 export function getHistory(): HistoryRecord[] {
   const stored = localStorage.getItem('danqing-ai-history');
-  if (stored) return JSON.parse(stored);
+  if (stored) {
+    try {
+      const parsed = JSON.parse(stored);
+      if (Array.isArray(parsed)) return parsed;
+    } catch {
+      /* 数据损坏，回退到 mock 数据并修复 */
+    }
+  }
   const mock = generateMockHistory();
-  localStorage.setItem('danqing-ai-history', JSON.stringify(mock));
+  try {
+    localStorage.setItem('danqing-ai-history', JSON.stringify(mock));
+  } catch {
+    /* localStorage 写入失败（隐私模式/配额满），忽略 */
+  }
   return mock;
 }
 

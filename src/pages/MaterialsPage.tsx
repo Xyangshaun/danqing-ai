@@ -1,6 +1,8 @@
 import { useState, useMemo, useEffect } from 'react';
-import { Search, Filter, Image as ImageIcon, X, ExternalLink, Heart, Download, Grid3X3, List, Globe, RefreshCw, Tag, ChevronDown, Check, Loader2, ImageOff, ChevronUp } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Search, Filter, Image as ImageIcon, X, ExternalLink, Heart, Download, Grid3X3, List, Globe, RefreshCw, Tag, ChevronDown, Check, Loader2, ImageOff, ChevronUp, Sparkles } from 'lucide-react';
 import { artworksDatabase, getFilterOptions, type ArtworkItem } from '../services/artworksDatabase';
+import { useToast } from '../components/ToastProvider';
 
 const categoryNames: Record<string, string> = {
   painting: '绘画',
@@ -20,6 +22,8 @@ const regionNames: Record<string, string> = {
 };
 
 export default function MaterialsPage() {
+  const navigate = useNavigate();
+  const toast = useToast();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategories, setSelectedCategories] = useState<Set<string>>(new Set());
   const [selectedStyles, setSelectedStyles] = useState<Set<string>>(new Set());
@@ -33,6 +37,14 @@ export default function MaterialsPage() {
   const [showAllTags, setShowAllTags] = useState(false);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [groupBy, setGroupBy] = useState<'none' | 'style' | 'era' | 'region'>('none');
+
+  // 跳转到灵感嫁接页面，携带素材信息
+  const handleSendToFuse = (artwork: ArtworkItem) => {
+    toast.info('已选择素材，前往嫁接页面');
+    navigate(
+      `/fuse?src=material&imageUrl=${encodeURIComponent(artwork.imageUrl)}&title=${encodeURIComponent(artwork.title)}`
+    );
+  };
 
   const filterOptions = useMemo(() => getFilterOptions(), []);
 
@@ -214,30 +226,30 @@ export default function MaterialsPage() {
 
         {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
-          <div className="bg-white rounded-xl p-4 card-shadow text-center">
+          <div className="bg-rice-50 rounded-xl p-4 shadow-card text-center">
             <p className="text-2xl font-bold text-ink-900">{artworksDatabase.length}</p>
             <p className="text-sm text-ink-500">总作品数</p>
           </div>
-          <div className="bg-white rounded-xl p-4 card-shadow text-center">
+          <div className="bg-rice-50 rounded-xl p-4 shadow-card text-center">
             <p className="text-2xl font-bold text-ink-900">{filterOptions.styles.length}</p>
             <p className="text-sm text-ink-500">风格类型</p>
           </div>
-          <div className="bg-white rounded-xl p-4 card-shadow text-center">
+          <div className="bg-rice-50 rounded-xl p-4 shadow-card text-center">
             <p className="text-2xl font-bold text-ink-900">{filterOptions.eras.length}</p>
             <p className="text-sm text-ink-500">时代跨度</p>
           </div>
-          <div className="bg-white rounded-xl p-4 card-shadow text-center">
+          <div className="bg-rice-50 rounded-xl p-4 shadow-card text-center">
             <p className="text-2xl font-bold text-ink-900">{filterOptions.regions.length}</p>
             <p className="text-sm text-ink-500">地区来源</p>
           </div>
-          <div className="bg-white rounded-xl p-4 card-shadow text-center">
+          <div className="bg-rice-50 rounded-xl p-4 shadow-card text-center">
             <p className="text-2xl font-bold text-ink-900">{sortedTags.length}</p>
             <p className="text-sm text-ink-500">标签数量</p>
           </div>
         </div>
 
         {/* Search */}
-        <div className="bg-white rounded-2xl p-4 card-shadow mb-4">
+        <div className="bg-rice-50 rounded-2xl p-4 shadow-card mb-4">
           <div className="relative">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-ink-400" />
             <input
@@ -256,7 +268,7 @@ export default function MaterialsPage() {
         </div>
 
         {/* 标签筛选面板 */}
-        <div className="bg-white rounded-2xl p-4 card-shadow mb-4">
+        <div className="bg-rice-50 rounded-2xl p-4 shadow-card mb-4">
           {/* 类型标签 */}
           <div className="mb-4">
             <div className="flex items-center gap-2 mb-2">
@@ -442,7 +454,7 @@ export default function MaterialsPage() {
 
         {/* Artworks */}
         {filteredArtworks.length === 0 ? (
-          <div className="bg-white rounded-2xl p-12 text-center card-shadow">
+          <div className="bg-rice-50 rounded-2xl p-12 text-center shadow-card">
             <ImageIcon className="w-16 h-16 text-ink-300 mx-auto mb-4" />
             <h3 className="font-serif text-xl font-semibold text-ink-700 mb-2">未找到匹配作品</h3>
             <p className="text-ink-500 mb-4">尝试调整筛选条件或搜索关键词</p>
@@ -461,7 +473,7 @@ export default function MaterialsPage() {
                   {groupBy !== 'none' && (
                     <button
                       onClick={() => toggleGroupCollapse(groupKey)}
-                      className="w-full flex items-center justify-between mb-4 px-4 py-3 bg-white rounded-xl card-shadow hover:card-shadow-hover transition-all group"
+                      className="w-full flex items-center justify-between mb-4 px-4 py-3 bg-rice-50 rounded-xl shadow-card hover:shadow-card-hover transition-all group"
                     >
                       <div className="flex items-center gap-3">
                         <Tag className="w-4 h-4 text-cinnabar" />
@@ -482,7 +494,7 @@ export default function MaterialsPage() {
                           {artworks.map((artwork) => (
                             <div
                               key={artwork.id}
-                              className="bg-white rounded-2xl overflow-hidden card-shadow hover:card-shadow-hover transition-all group cursor-pointer"
+                              className="bg-rice-50 rounded-2xl overflow-hidden shadow-card hover:shadow-card-hover transition-all group cursor-pointer"
                               onClick={() => setSelectedArtwork(artwork)}
                             >
                               <div className="aspect-[4/3] overflow-hidden relative bg-ink-100">
@@ -508,7 +520,7 @@ export default function MaterialsPage() {
                                     onError={() => handleImageError(artwork.id)}
                                   />
                                 )}
-                                <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                                <div className="absolute inset-0 bg-gradient-to-t from-ink-900/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
                                 <div className="absolute top-3 left-3 flex gap-2">
                                   <span className="px-2 py-0.5 bg-cinnabar/90 text-white text-xs rounded-full">
                                     {categoryNames[artwork.category] || artwork.category}
@@ -533,12 +545,21 @@ export default function MaterialsPage() {
                                     <h3 className="font-serif text-lg font-bold text-ink-900">{artwork.title}</h3>
                                     <p className="text-sm text-ink-500">{artwork.artist} · {artwork.era}</p>
                                   </div>
-                                  <button
-                                    onClick={(e) => { e.stopPropagation(); toggleFavorite(artwork.id); }}
-                                    className="p-1.5 rounded-full hover:bg-rice-100 transition-all"
-                                  >
-                                    <Heart className={`w-4 h-4 ${favorites.has(artwork.id) ? 'text-cinnabar fill-cinnabar' : 'text-ink-400'}`} />
-                                  </button>
+                                  <div className="flex items-center gap-1">
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); handleSendToFuse(artwork); }}
+                                      className="p-1.5 rounded-full hover:bg-cinnabar/10 hover:text-cinnabar text-ink-400 transition-all"
+                                      title="用于嫁接"
+                                    >
+                                      <Sparkles className="w-4 h-4" />
+                                    </button>
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); toggleFavorite(artwork.id); }}
+                                      className="p-1.5 rounded-full hover:bg-rice-100 transition-all"
+                                    >
+                                      <Heart className={`w-4 h-4 ${favorites.has(artwork.id) ? 'text-cinnabar fill-cinnabar' : 'text-ink-400'}`} />
+                                    </button>
+                                  </div>
                                 </div>
                                 <p className="text-sm text-ink-600 line-clamp-2">{artwork.description}</p>
                                 <div className="flex gap-2 mt-3 flex-wrap">
@@ -554,7 +575,7 @@ export default function MaterialsPage() {
                           {artworks.map((artwork) => (
                             <div
                               key={artwork.id}
-                              className="bg-white rounded-2xl overflow-hidden card-shadow hover:card-shadow-hover transition-all cursor-pointer flex"
+                              className="bg-rice-50 rounded-2xl overflow-hidden shadow-card hover:shadow-card-hover transition-all cursor-pointer flex"
                               onClick={() => setSelectedArtwork(artwork)}
                             >
                               <div className="w-48 h-36 flex-shrink-0 overflow-hidden bg-ink-100 relative">
@@ -587,12 +608,21 @@ export default function MaterialsPage() {
                                     <h3 className="font-serif text-lg font-bold text-ink-900">{artwork.title}</h3>
                                     <p className="text-sm text-ink-500">{artwork.artist} · {artwork.era} · {artwork.style}</p>
                                   </div>
-                                  <button
-                                    onClick={(e) => { e.stopPropagation(); toggleFavorite(artwork.id); }}
-                                    className="p-1.5 rounded-full hover:bg-rice-100 transition-all"
-                                  >
-                                    <Heart className={`w-4 h-4 ${favorites.has(artwork.id) ? 'text-cinnabar fill-cinnabar' : 'text-ink-400'}`} />
-                                  </button>
+                                  <div className="flex items-center gap-1">
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); handleSendToFuse(artwork); }}
+                                      className="p-1.5 rounded-full hover:bg-cinnabar/10 hover:text-cinnabar text-ink-400 transition-all"
+                                      title="用于嫁接"
+                                    >
+                                      <Sparkles className="w-4 h-4" />
+                                    </button>
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); toggleFavorite(artwork.id); }}
+                                      className="p-1.5 rounded-full hover:bg-rice-100 transition-all"
+                                    >
+                                      <Heart className={`w-4 h-4 ${favorites.has(artwork.id) ? 'text-cinnabar fill-cinnabar' : 'text-ink-400'}`} />
+                                    </button>
+                                  </div>
                                 </div>
                                 <p className="text-sm text-ink-600 mt-2 line-clamp-2">{artwork.description}</p>
                                 <div className="flex gap-2 mt-3 flex-wrap">
@@ -615,8 +645,8 @@ export default function MaterialsPage() {
 
         {/* Detail Modal */}
         {selectedArtwork && (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setSelectedArtwork(null)}>
-            <div className="bg-white rounded-2xl overflow-hidden max-w-5xl w-full max-h-[90vh] flex flex-col md:flex-row" onClick={(e) => e.stopPropagation()}>
+          <div className="fixed inset-0 bg-ink-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setSelectedArtwork(null)}>
+            <div className="bg-rice-50 rounded-2xl overflow-hidden max-w-5xl w-full max-h-[90vh] flex flex-col md:flex-row" onClick={(e) => e.stopPropagation()}>
               <div className="md:w-3/5 relative bg-ink-900 flex items-center justify-center min-h-[300px]">
                 {imageLoadStates[selectedArtwork.id] === 'loading' && (
                   <div className="absolute inset-0 flex items-center justify-center z-10">

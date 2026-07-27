@@ -1,4 +1,5 @@
-import { useState, useRef, useCallback, useMemo } from 'react';
+import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Heart, Upload, Download, Loader2, Sparkles, X, Plus, Layout, Palette,
   Layers, Wand2, MapPin, Zap, Shuffle, Settings2, ChevronRight, Check,
@@ -13,6 +14,7 @@ import {
 } from '../services/fuseStandards';
 import { generateImage } from '../services/imageService';
 import { artworksDatabase, type ArtworkItem } from '../services/artworksDatabase';
+import { useToast } from '../components/ToastProvider';
 
 const methodIconMap: Record<string, typeof Layout> = {
   composition: Layout,
@@ -34,6 +36,8 @@ interface FuseResult {
 }
 
 export default function FusePage() {
+  const toast = useToast();
+  const [searchParams] = useSearchParams();
   const [artwork1, setArtwork1] = useState<ArtworkItem | null>(null);
   const [artwork2, setArtwork2] = useState<ArtworkItem | null>(null);
   const [customImage1, setCustomImage1] = useState<string>('');
@@ -57,6 +61,42 @@ export default function FusePage() {
 
   const image1 = artwork1?.imageUrl || customImage1;
   const image2 = artwork2?.imageUrl || customImage2;
+
+  // 接收来自素材库的 URL 参数：?src=material&imageUrl=xxx
+  useEffect(() => {
+    const src = searchParams.get('src');
+    const imageUrl = searchParams.get('imageUrl');
+    if (src === 'material' && imageUrl) {
+      setCustomImage1(imageUrl);
+      setArtwork1(null);
+      setResults([]);
+      toast.info('已从素材库载入作品1');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 保存当前嫁接结果到素材库（localStorage）
+  const handleSaveToMaterials = () => {
+    const result = results[selectedResultIndex];
+    if (!result) return;
+    const item = {
+      id: `fuse-${Date.now()}`,
+      imageUrl: result.url,
+      title: `嫁接作品-${new Date().toLocaleDateString('zh-CN')}`,
+      createdAt: new Date().toISOString(),
+      source: 'fuse' as const,
+    };
+    try {
+      const raw = localStorage.getItem('danqing-ai-saved-materials');
+      const list = raw ? JSON.parse(raw) : [];
+      list.unshift(item);
+      localStorage.setItem('danqing-ai-saved-materials', JSON.stringify(list));
+      toast.success('已保存到素材库');
+    } catch (err) {
+      console.error('保存到素材库失败:', err);
+      toast.error('保存失败', '请稍后重试');
+    }
+  };
 
   const handleFileSelect = useCallback((file: File, slot: 1 | 2) => {
     const reader = new FileReader();
@@ -116,7 +156,7 @@ export default function FusePage() {
 
   const handleFuse = async () => {
     if (!image1 || !image2) {
-      alert('请选择两张作品');
+      toast.warning('请选择两张作品', '需要两张作品才能进行灵感嫁接');
       return;
     }
     setFusing(true);
@@ -159,8 +199,10 @@ export default function FusePage() {
 
       await new Promise((resolve) => setTimeout(resolve, 2500));
       setResults(newResults);
+      toast.success('灵感融合完成', `生成 ${newResults.length} 张融合作品`);
     } catch (error) {
       console.error('灵感融合失败:', error);
+      toast.error('灵感融合失败', '请检查网络或重试');
     } finally {
       setFusing(false);
     }
@@ -212,7 +254,7 @@ export default function FusePage() {
     const inputRef = slot === 1 ? fileInput1Ref : fileInput2Ref;
     const img = artwork?.imageUrl || customImg;
     return (
-      <div className="bg-white rounded-2xl p-6 card-shadow">
+      <div className="bg-rice-50 rounded-2xl p-6 shadow-card">
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-serif text-lg font-bold text-ink-900">
             作品 {slot} · {label}
@@ -253,7 +295,7 @@ export default function FusePage() {
               alt={`作品 ${slot}`}
               className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
             />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+            <div className="absolute inset-0 bg-gradient-to-t from-ink-900/50 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
             <div className="absolute top-3 left-3">
               <span className="px-2 py-1 bg-cinnabar/90 text-white text-xs rounded-full backdrop-blur-sm">
                 作品 {slot}
@@ -278,7 +320,7 @@ export default function FusePage() {
   };
 
   const renderSettingsPanel = () => (
-    <div className="bg-white rounded-2xl p-6 card-shadow mb-8">
+    <div className="bg-rice-50 rounded-2xl p-6 shadow-card mb-8">
       <div className="flex items-center justify-between mb-6">
         <h3 className="font-serif text-lg font-bold text-ink-900 flex items-center gap-2">
           <Settings2 className="w-5 h-5 text-cinnabar" />
@@ -481,7 +523,7 @@ export default function FusePage() {
   );
 
   const renderAnalysisPanel = (result: FuseResult) => (
-    <div className="bg-white rounded-2xl p-6 card-shadow mt-6">
+    <div className="bg-rice-50 rounded-2xl p-6 shadow-card mt-6">
       <div className="flex items-center justify-between mb-4">
         <h3 className="font-serif text-lg font-bold text-ink-900 flex items-center gap-2">
           <Target className="w-5 h-5 text-cinnabar" />
@@ -614,7 +656,7 @@ export default function FusePage() {
         <div className="flex justify-center mb-6">
           <button
             onClick={() => setShowSettings(!showSettings)}
-            className="inline-flex items-center gap-2 px-5 py-2.5 bg-white rounded-full card-shadow hover:card-shadow-hover transition-all"
+            className="inline-flex items-center gap-2 px-5 py-2.5 bg-white rounded-full shadow-card hover:shadow-card-hover transition-all"
           >
             <Settings2 className="w-4 h-4 text-cinnabar" />
             <span className="font-medium text-ink-700">
@@ -637,7 +679,7 @@ export default function FusePage() {
         </div>
 
         {/* Fusion Formula */}
-        <div className="bg-white rounded-2xl p-6 card-shadow mb-8">
+        <div className="bg-rice-50 rounded-2xl p-6 shadow-card mb-8">
           <div className="flex flex-col md:flex-row items-center justify-center gap-4 md:gap-6">
             <div className="flex items-center gap-3">
               <div className="w-16 h-16 bg-rice-100 rounded-xl flex items-center justify-center overflow-hidden shadow-sm">
@@ -702,7 +744,7 @@ export default function FusePage() {
             <button
               onClick={handleFuse}
               disabled={fusing}
-              className="inline-flex items-center gap-3 px-12 py-4 bg-gradient-to-r from-cinnabar to-stone text-white rounded-xl hover:opacity-90 transition-all disabled:opacity-50 transform hover:scale-105 card-shadow"
+              className="inline-flex items-center gap-3 px-12 py-4 bg-gradient-to-r from-cinnabar to-stone text-white rounded-xl hover:opacity-90 transition-all disabled:opacity-50 transform hover:scale-105 shadow-card"
             >
               <Sparkles className="w-6 h-6" />
               <span className="font-serif text-lg">开始灵感嫁接</span>
@@ -712,7 +754,7 @@ export default function FusePage() {
 
         {/* Process Animation */}
         {fusing && (
-          <div className="bg-white rounded-2xl p-12 card-shadow text-center mb-8">
+          <div className="bg-rice-50 rounded-2xl p-12 shadow-card text-center mb-8">
             <div className="flex items-center justify-center gap-4 mb-6 flex-wrap">
               <div className="w-20 h-20 rounded-xl overflow-hidden shadow">
                 <img src={image1} alt="作品1" className="w-full h-full object-cover" />
@@ -752,7 +794,7 @@ export default function FusePage() {
 
         {/* Results */}
         {results.length > 0 && (
-          <div className="bg-white rounded-2xl p-6 card-shadow">
+          <div className="bg-rice-50 rounded-2xl p-6 shadow-card">
             <div className="flex items-center justify-between mb-4 flex-wrap gap-4">
               <h2 className="font-serif text-xl font-bold text-ink-900 flex items-center gap-2">
                 <Sparkles className="w-5 h-5 text-cinnabar" />
@@ -777,6 +819,14 @@ export default function FusePage() {
                 >
                   <Download className="w-4 h-4" />
                   <span className="text-sm font-medium">下载</span>
+                </button>
+                <button
+                  onClick={handleSaveToMaterials}
+                  className="flex items-center gap-2 px-4 py-2 border-2 border-cinnabar/40 text-cinnabar rounded-lg hover:bg-cinnabar hover:text-white transition-all"
+                  title="保存到素材库"
+                >
+                  <Bookmark className="w-4 h-4" />
+                  <span className="text-sm font-medium">保存到素材库</span>
                 </button>
                 <button
                   onClick={handleFuse}
@@ -849,7 +899,7 @@ export default function FusePage() {
 
         {/* Empty State */}
         {!image1 && !image2 && results.length === 0 && !fusing && (
-          <div className="bg-white rounded-2xl p-12 card-shadow text-center">
+          <div className="bg-rice-50 rounded-2xl p-12 shadow-card text-center">
             <div className="w-20 h-20 bg-ink-900/5 rounded-full flex items-center justify-center mx-auto mb-4">
               <Heart className="w-10 h-10 text-ink-400" />
             </div>
@@ -883,11 +933,11 @@ export default function FusePage() {
         {/* Artwork Picker Modal */}
         {showArtworkPicker && (
           <div
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+            className="fixed inset-0 bg-ink-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
             onClick={() => setShowArtworkPicker(null)}
           >
             <div
-              className="bg-white rounded-2xl overflow-hidden max-w-5xl w-full max-h-[85vh] flex flex-col"
+              className="bg-rice-50 rounded-2xl overflow-hidden max-w-5xl w-full max-h-[85vh] flex flex-col"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="p-4 border-b border-ink-100 flex items-center justify-between">

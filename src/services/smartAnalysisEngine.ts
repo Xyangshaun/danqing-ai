@@ -1,5 +1,5 @@
 import type { AnalysisResult, ArtType, PaintingAnalysis, DesignAnalysis, ProductAnalysis, SculptureAnalysis } from '../types';
-import { analyzeImage } from './analysisService';
+import { analyzeImage, getBackendUrl } from './analysisService';
 
 /**
  * 图片复杂度评估接口
@@ -143,20 +143,22 @@ export function decideAnalysisMode(
 }
 
 /**
- * 检查后端服务是否可用
+ * 检查后端服务是否可用（v3.0.0：GET /health → {code, message, data: {status, ...}, traceId}）
  */
 export async function checkServerHealth(): Promise<boolean> {
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 2000);
-    
-    const response = await fetch('http://localhost:3001/api/health', {
+
+    const response = await fetch(`${getBackendUrl()}/health`, {
       method: 'GET',
       signal: controller.signal,
     });
-    
+
     clearTimeout(timeoutId);
-    return response.ok;
+    if (!response.ok) return false;
+    const data = await response.json();
+    return data.code === 0 && data.data?.status === 'up';
   } catch {
     return false;
   }
@@ -328,15 +330,15 @@ export async function smartAnalyze(
   if (decision.mode === 'server' && file) {
     const formData = new FormData();
     formData.append('image', file);
-    formData.append('artType', artType);
+    formData.append('art_type', artType);
 
-    const response = await fetch('http://localhost:3001/api/analyze', {
+    const response = await fetch(`${getBackendUrl()}/analyses/upload`, {
       method: 'POST',
-      body: formData,
+      body: formData, // 不设置 Content-Type，让浏览器自动设置 boundary
     });
 
     const data = await response.json();
-    if (data.success && data.data) {
+    if (data.code === 0 && data.data) {
       return convertBackendResult(data.data, artType);
     }
     throw new Error(data.message || '服务器分析失败');
@@ -362,7 +364,7 @@ export function getComplexityLabel(level: ImageComplexity['level']): string {
  */
 export function getComplexityColor(level: ImageComplexity['level']): string {
   const colors: Record<string, string> = {
-    simple: 'text-green-600',
+    simple: 'text-jade',
     normal: 'text-gold',
     complex: 'text-cinnabar',
   };

@@ -14,7 +14,11 @@ export function setUseExternalApi(value: boolean) {
 export function getUseExternalApi(): boolean {
   const stored = localStorage.getItem('danqing-ai-use-api');
   if (stored) {
-    useExternalApi = JSON.parse(stored);
+    try {
+      useExternalApi = JSON.parse(stored) === true;
+    } catch {
+      useExternalApi = false;
+    }
   }
   return useExternalApi;
 }

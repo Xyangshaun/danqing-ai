@@ -10,94 +10,164 @@
 
 html {
   scroll-behavior: smooth;
+  font-size: 16px;
 }
 
 body {
-  font-family: 'Noto Sans SC', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial, sans-serif;
   background-color: #f5f2eb;
   color: #1a1a1a;
   line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 .font-serif {
-  font-family: 'Noto Serif SC', serif;
+  font-family: 'Noto Serif SC', 'Songti SC', 'SimSun', 'STSong', serif;
 }
 
+.font-mono {
+  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+}
+
+/* ====== 水墨纹理 ====== */
 .ink-texture {
-  background-image: 
+  background-image:
     radial-gradient(ellipse at 20% 30%, rgba(26, 26, 26, 0.03) 0%, transparent 50%),
     radial-gradient(ellipse at 80% 70%, rgba(26, 26, 26, 0.02) 0%, transparent 50%);
 }
 
-.card-shadow {
-  box-shadow: 
-    0 2px 8px rgba(26, 26, 26, 0.08),
-    0 1px 2px rgba(26, 26, 26, 0.04);
+/* ====== 卡片层级 ====== */
+.surface-1 {
+  background-color: #fdfcf9;
+  border: 1px solid rgba(15, 15, 15, 0.06);
+}
+.surface-2 {
+  background-color: #f9f6f0;
+  border: 1px solid rgba(15, 15, 15, 0.08);
+}
+.surface-3 {
+  background-color: #f5f2eb;
+  border: 1px solid rgba(15, 15, 15, 0.1);
 }
 
-.card-shadow-hover {
-  box-shadow: 
-    0 8px 24px rgba(26, 26, 26, 0.12),
-    0 2px 4px rgba(26, 26, 26, 0.06);
-}
+/* ====== 兼容旧样式 ====== */
+.card-shadow { box-shadow: 0 1px 3px 0 rgba(15, 15, 15, 0.06), 0 1px 2px 0 rgba(15, 15, 15, 0.04); }
+.card-shadow-hover { box-shadow: 0 4px 12px -2px rgba(15, 15, 15, 0.08), 0 2px 4px -1px rgba(15, 15, 15, 0.04); }
+.ink-border { border: 2px solid #1a1a1a; border-radius: 4px; }
 
-.ink-border {
-  border: 2px solid #1a1a1a;
+/* ====== 滚动条美化（生态软件感） ====== */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(15, 15, 15, 0.15);
   border-radius: 4px;
 }
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(15, 15, 15, 0.25);
+}
+.scrollbar-thin::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
 
+/* ====== 焦点环（专业软件感） ====== */
+.focus-ring {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(196, 30, 58, 0.4);
+}
+.focus-ring-stone {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(46, 95, 161, 0.4);
+}
+
+/* ====== 热力图叠层 ====== */
 .heatmap-overlay {
-  background: radial-gradient(circle at 50% 50%, 
-    rgba(196, 30, 58, 0.3) 0%, 
-    rgba(196, 30, 58, 0.1) 40%, 
+  background: radial-gradient(circle at 50% 50%,
+    rgba(196, 30, 58, 0.3) 0%,
+    rgba(196, 30, 58, 0.1) 40%,
     transparent 70%);
 }
 
+/* ====== 动画 ====== */
 @keyframes inkDrop {
-  0% {
-    transform: scale(0);
-    opacity: 0.8;
-  }
-  100% {
-    transform: scale(4);
-    opacity: 0;
-  }
+  0% { transform: scale(0); opacity: 0.8; }
+  100% { transform: scale(4); opacity: 0; }
 }
-
-.ink-drop-animation {
-  animation: inkDrop 1.5s ease-out infinite;
-}
+.ink-drop-animation { animation: inkDrop 1.5s ease-out infinite; }
 
 @keyframes float {
-  0%, 100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-10px);
-  }
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
 }
-
-.float-animation {
-  animation: float 3s ease-in-out infinite;
-}
+.float-animation { animation: float 3s ease-in-out infinite; }
 
 @keyframes brushStroke {
-  0% {
-    width: 0;
-  }
-  100% {
-    width: 100%;
-  }
+  0% { width: 0; }
+  100% { width: 100%; }
+}
+.brush-stroke-animation { animation: brushStroke 2s ease-out forwards; }
+
+/* ====== AI 分析过程动画 ====== */
+/* 扫描线：在图片上从上到下移动，模拟 AI 视觉扫描 */
+@keyframes scanLine {
+  0% { top: 0%; opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
+  100% { top: 100%; opacity: 0; }
+}
+.scan-line-animation { animation: scanLine 2.4s ease-in-out infinite; }
+
+/* 阶段卡片脉冲：当前进行中的阶段有呼吸光晕 */
+@keyframes stagePulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(196, 30, 58, 0.4); }
+  50% { box-shadow: 0 0 0 8px rgba(196, 30, 58, 0); }
+}
+.stage-pulse-animation { animation: stagePulse 1.6s ease-out infinite; }
+
+/* 进度条流光：进度条内部有流动的高光带 */
+@keyframes progressShine {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(200%); }
+}
+.progress-shine-animation { animation: progressShine 1.8s ease-in-out infinite; }
+
+/* 数据点闪烁：分析详情文字切换时的淡入 */
+@keyframes detailFade {
+  0% { opacity: 0; transform: translateY(4px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+.detail-fade-animation { animation: detailFade 0.4s ease-out; }
+
+/* ====== 骨架屏闪烁 ====== */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    rgba(15, 15, 15, 0.04) 25%,
+    rgba(15, 15, 15, 0.08) 37%,
+    rgba(15, 15, 15, 0.04) 63%
+  );
+  background-size: 400% 100%;
+  animation: shimmer 1.4s ease infinite;
 }
 
-.brush-stroke-animation {
-  animation: brushStroke 2s ease-out forwards;
+/* ====== 安全区 ====== */
+.safe-area-top { padding-top: env(safe-area-inset-top); }
+.safe-area-bottom { padding-bottom: env(safe-area-inset-bottom); }
+
+/* ====== 命令面板样式（生态软件感） ====== */
+.cmd-overlay {
+  backdrop-filter: blur(12px);
+  background-color: rgba(15, 15, 15, 0.4);
 }
 
-.safe-area-top {
-  padding-top: env(safe-area-inset-top);
-}
-
-.safe-area-bottom {
-  padding-bottom: env(safe-area-inset-bottom);
+/* ====== 选中文本 ====== */
+::selection {
+  background-color: rgba(196, 30, 58, 0.2);
+  color: #0f0f0f;
 }

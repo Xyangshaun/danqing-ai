@@ -1,11 +1,21 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { TrendingUp, TrendingDown, BarChart3, Award, Sparkles, Lightbulb, Target, Layers } from 'lucide-react';
 import { Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area } from 'recharts';
 import { generateGrowthDataFromHistory, calculateGrowthInsights, getHistory } from '../services/mockData';
 import type { GrowthData } from '../types';
 
 export default function GrowthPage() {
+  const navigate = useNavigate();
   const [growthData, setGrowthData] = useState<GrowthData[]>([]);
+
+  // 点击图表数据点跳转到对应日期的历史记录
+  const handleChartClick = (payload: { payload?: GrowthData } | undefined) => {
+    const dataPoint = payload?.payload;
+    if (dataPoint?.date) {
+      navigate(`/history?date=${encodeURIComponent(dataPoint.date)}`);
+    }
+  };
 
   useEffect(() => {
     const data = generateGrowthDataFromHistory();
@@ -31,7 +41,7 @@ export default function GrowthPage() {
   const overallTrend = calculateTrend(growthData, 'overall');
 
   const getTrendIcon = (trend: string) => {
-    if (trend === 'up') return <TrendingUp className="w-4 h-4 text-green-600" />;
+    if (trend === 'up') return <TrendingUp className="w-4 h-4 text-jade" />;
     if (trend === 'down') return <TrendingDown className="w-4 h-4 text-cinnabar" />;
     return <span className="w-4 h-4" />;
   };
@@ -43,7 +53,7 @@ export default function GrowthPage() {
   };
 
   const getTrendColor = (trend: string) => {
-    if (trend === 'up') return 'text-green-600';
+    if (trend === 'up') return 'text-jade';
     if (trend === 'down') return 'text-cinnabar';
     return 'text-ink-500';
   };
@@ -74,28 +84,28 @@ export default function GrowthPage() {
 
         {/* Stats Cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-          <div className="bg-white rounded-xl p-6 card-shadow">
+          <div className="bg-rice-50 rounded-xl p-6 shadow-card">
             <div className="flex items-center gap-3 mb-3">
               <Award className="w-6 h-6 text-gold" />
               <span className="text-sm text-ink-500">平均评分</span>
             </div>
             <div className="font-serif text-3xl font-bold text-ink-900">{avgScore}</div>
           </div>
-          <div className="bg-white rounded-xl p-6 card-shadow">
+          <div className="bg-rice-50 rounded-xl p-6 shadow-card">
             <div className="flex items-center gap-3 mb-3">
-              <TrendingUp className="w-6 h-6 text-green-600" />
+              <TrendingUp className="w-6 h-6 text-jade" />
               <span className="text-sm text-ink-500">最高评分</span>
             </div>
             <div className="font-serif text-3xl font-bold text-ink-900">{maxScore}</div>
           </div>
-          <div className="bg-white rounded-xl p-6 card-shadow">
+          <div className="bg-rice-50 rounded-xl p-6 shadow-card">
             <div className="flex items-center gap-3 mb-3">
               <Sparkles className="w-6 h-6 text-cinnabar" />
               <span className="text-sm text-ink-500">分析次数</span>
             </div>
             <div className="font-serif text-3xl font-bold text-ink-900">{historyCount}</div>
           </div>
-          <div className="bg-white rounded-xl p-6 card-shadow">
+          <div className="bg-rice-50 rounded-xl p-6 shadow-card">
             <div className="flex items-center gap-3 mb-3">
               <Layers className="w-6 h-6 text-stone" />
               <span className="text-sm text-ink-500">当前趋势</span>
@@ -109,7 +119,7 @@ export default function GrowthPage() {
 
         {/* Smart Insights */}
         {insights && (
-          <div className="bg-white rounded-2xl p-6 card-shadow mb-8">
+          <div className="bg-rice-50 rounded-2xl p-6 shadow-card mb-8">
             <div className="flex items-center gap-3 mb-4">
               <div className="w-10 h-10 bg-cinnabar/10 rounded-lg flex items-center justify-center">
                 <Lightbulb className="w-5 h-5 text-cinnabar" />
@@ -125,13 +135,13 @@ export default function GrowthPage() {
                   <Target className="w-4 h-4 text-cinnabar" />
                   <span className="text-sm font-medium text-ink-700">整体变化</span>
                 </div>
-                <p className={`text-2xl font-bold font-serif ${insights.overallChange >= 0 ? 'text-green-600' : 'text-cinnabar'}`}>
+                <p className={`text-2xl font-bold font-serif ${insights.overallChange >= 0 ? 'text-jade' : 'text-cinnabar'}`}>
                   {insights.overallChange >= 0 ? '+' : ''}{insights.overallChange} 分
                 </p>
               </div>
               <div className="bg-rice-50 rounded-xl p-4">
                 <div className="flex items-center gap-2 mb-2">
-                  <TrendingUp className="w-4 h-4 text-green-600" />
+                  <TrendingUp className="w-4 h-4 text-jade" />
                   <span className="text-sm font-medium text-ink-700">最强维度</span>
                 </div>
                 <p className="text-2xl font-bold font-serif text-ink-900">
@@ -163,11 +173,11 @@ export default function GrowthPage() {
         )}
 
         {/* Area Chart */}
-        <div className="bg-white rounded-2xl p-6 md:p-8 card-shadow mb-8">
+        <div className="bg-rice-50 rounded-2xl p-6 md:p-8 shadow-card mb-8">
           <h2 className="font-serif text-xl font-bold text-ink-900 mb-6">能力成长趋势</h2>
           <div className="h-80 md:h-96">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={growthData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+              <AreaChart data={growthData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }} onClick={(payload) => handleChartClick(payload as { payload?: GrowthData })}>
                 <defs>
                   <linearGradient id="colorDim1" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#c41e3a" stopOpacity={0.1}/>
@@ -183,62 +193,63 @@ export default function GrowthPage() {
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="#ede8df" />
-                <XAxis 
-                  dataKey="date" 
+                <XAxis
+                  dataKey="date"
                   tick={{ fill: '#595959', fontSize: 12 }}
                   axisLine={{ stroke: '#ede8df' }}
                   tickLine={{ stroke: '#ede8df' }}
                 />
-                <YAxis 
-                  domain={[60, 100]} 
+                <YAxis
+                  domain={[60, 100]}
                   tick={{ fill: '#595959', fontSize: 12 }}
                   axisLine={{ stroke: '#ede8df' }}
                   tickLine={{ stroke: '#ede8df' }}
                 />
-                <Tooltip 
-                  contentStyle={{ 
-                    backgroundColor: '#fdfcf9', 
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: '#fdfcf9',
                     border: '1px solid #ede8df',
                     borderRadius: '8px',
                     padding: '12px'
                   }}
                 />
-                <Legend 
+                <Legend
                   wrapperStyle={{ paddingTop: '16px' }}
                   iconType="circle"
                 />
-                <Area 
-                  type="monotone" 
-                  dataKey="dimension1" 
-                  name="维度一" 
-                  stroke="#c41e3a" 
+                <Area
+                  type="monotone"
+                  dataKey="dimension1"
+                  name="维度一"
+                  stroke="#c41e3a"
                   fill="url(#colorDim1)"
                   strokeWidth={2}
                 />
-                <Area 
-                  type="monotone" 
-                  dataKey="dimension2" 
-                  name="维度二" 
-                  stroke="#2e5fa1" 
+                <Area
+                  type="monotone"
+                  dataKey="dimension2"
+                  name="维度二"
+                  stroke="#2e5fa1"
                   fill="url(#colorDim2)"
                   strokeWidth={2}
                 />
-                <Area 
-                  type="monotone" 
-                  dataKey="dimension3" 
-                  name="维度三" 
-                  stroke="#d4af37" 
+                <Area
+                  type="monotone"
+                  dataKey="dimension3"
+                  name="维度三"
+                  stroke="#d4af37"
                   fill="url(#colorDim3)"
                   strokeWidth={2}
                 />
-                <Line 
-                  type="monotone" 
-                  dataKey="overall" 
-                  name="综合" 
-                  stroke="#1a1a1a" 
+                <Line
+                  type="monotone"
+                  dataKey="overall"
+                  name="综合"
+                  stroke="#1a1a1a"
                   strokeWidth={3}
                   dot={{ r: 5, fill: '#1a1a1a', strokeWidth: 2 }}
                   activeDot={{ r: 7, fill: '#1a1a1a', strokeWidth: 2 }}
+                  onClick={(payload) => handleChartClick(payload as { payload?: GrowthData })}
                 />
               </AreaChart>
             </ResponsiveContainer>
@@ -247,7 +258,7 @@ export default function GrowthPage() {
 
         {/* Dimension Breakdown */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="bg-white rounded-2xl p-6 card-shadow">
+          <div className="bg-rice-50 rounded-2xl p-6 shadow-card">
             <div className="flex items-center gap-3 mb-4">
               <div className="w-10 h-10 bg-cinnabar/10 rounded-lg flex items-center justify-center">
                 <Layers className="w-5 h-5 text-cinnabar" />
@@ -264,7 +275,7 @@ export default function GrowthPage() {
             {insights && (
               <div className="mb-4 p-3 bg-rice-50 rounded-lg">
                 <p className="text-xs text-ink-500">变化幅度</p>
-                <p className={`text-lg font-bold font-serif ${insights.d1Change >= 0 ? 'text-green-600' : 'text-cinnabar'}`}>
+                <p className={`text-lg font-bold font-serif ${insights.d1Change >= 0 ? 'text-jade' : 'text-cinnabar'}`}>
                   {insights.d1Change >= 0 ? '+' : ''}{insights.d1Change} 分
                 </p>
               </div>
@@ -287,7 +298,7 @@ export default function GrowthPage() {
             </div>
           </div>
 
-          <div className="bg-white rounded-2xl p-6 card-shadow">
+          <div className="bg-rice-50 rounded-2xl p-6 shadow-card">
             <div className="flex items-center gap-3 mb-4">
               <div className="w-10 h-10 bg-stone/10 rounded-lg flex items-center justify-center">
                 <Layers className="w-5 h-5 text-stone" />
@@ -304,7 +315,7 @@ export default function GrowthPage() {
             {insights && (
               <div className="mb-4 p-3 bg-rice-50 rounded-lg">
                 <p className="text-xs text-ink-500">变化幅度</p>
-                <p className={`text-lg font-bold font-serif ${insights.d2Change >= 0 ? 'text-green-600' : 'text-cinnabar'}`}>
+                <p className={`text-lg font-bold font-serif ${insights.d2Change >= 0 ? 'text-jade' : 'text-cinnabar'}`}>
                   {insights.d2Change >= 0 ? '+' : ''}{insights.d2Change} 分
                 </p>
               </div>
@@ -327,7 +338,7 @@ export default function GrowthPage() {
             </div>
           </div>
 
-          <div className="bg-white rounded-2xl p-6 card-shadow">
+          <div className="bg-rice-50 rounded-2xl p-6 shadow-card">
             <div className="flex items-center gap-3 mb-4">
               <div className="w-10 h-10 bg-gold/10 rounded-lg flex items-center justify-center">
                 <Layers className="w-5 h-5 text-gold" />
@@ -344,7 +355,7 @@ export default function GrowthPage() {
             {insights && (
               <div className="mb-4 p-3 bg-rice-50 rounded-lg">
                 <p className="text-xs text-ink-500">变化幅度</p>
-                <p className={`text-lg font-bold font-serif ${insights.d3Change >= 0 ? 'text-green-600' : 'text-cinnabar'}`}>
+                <p className={`text-lg font-bold font-serif ${insights.d3Change >= 0 ? 'text-jade' : 'text-cinnabar'}`}>
                   {insights.d3Change >= 0 ? '+' : ''}{insights.d3Change} 分
                 </p>
               </div>

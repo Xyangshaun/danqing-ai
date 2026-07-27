@@ -1,0 +1,38 @@
+services:
+  - type: web
+    name: danqing-ai-server
+    env: node
+    region: singapore
+    plan: free
+    buildCommand: cd server && npm install && npm run build && npx prisma generate
+    startCommand: node server/dist/index.js
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        render:
+          source: envPort
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: JWT_PRIVATE_KEY
+        sync: false
+      - key: JWT_PUBLIC_KEY
+        sync: false
+      - key: JWT_KEY_ID
+        sync: false
+      - key: FEISHU_APP_ID
+        sync: false
+      - key: FEISHU_APP_SECRET
+        sync: false
+      - key: FEISHU_REDIRECT_URI
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: COOKIE_DOMAIN
+        sync: false
+    autoDeploy: true

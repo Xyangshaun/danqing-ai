@@ -1,8 +1,13 @@
-import { useState, useEffect } from 'react';
-import { History, Calendar, Eye, ArrowRight, X, Brush, PenTool, Box, Layers, Palette, Sparkles, Type, Gem, Settings, Move } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { useSearchParams, useNavigate } from 'react-router-dom';
+import { History, Calendar, Eye, ArrowRight, X, Brush, PenTool, Box, Layers, Palette, Sparkles, Type, Gem, Settings, Move, RefreshCw } from 'lucide-react';
 import { getHistory, getAnalysisResult } from '../services/mockData';
-import type { HistoryRecord, AnalysisResult, PaintingAnalysis, DesignAnalysis, ProductAnalysis, SculptureAnalysis } from '../types';
+import type { HistoryRecord, AnalysisResult, PaintingAnalysis, DesignAnalysis, ProductAnalysis, SculptureAnalysis, ArtType } from '../types';
 import HeatmapCanvas from '../components/HeatmapCanvas';
+
+type ArtTypeFilter = 'all' | ArtType;
+type ScoreFilter = 'all' | 'excellent' | 'good' | 'pending';
+type SortMode = 'desc' | 'score_desc' | 'score_asc';
 
 const artTypeConfig: Record<string, { name: string; icon: React.ComponentType<{ className?: string }>; color: string }> = {
   painting: { name: '绘画', icon: Brush, color: 'bg-cinnabar' },
@@ -11,8 +16,29 @@ const artTypeConfig: Record<string, { name: string; icon: React.ComponentType<{ 
   sculpture: { name: '雕塑', icon: Layers, color: 'bg-purple-500' },
 };
 
+const artTypeOptions: { id: ArtTypeFilter; name: string }[] = [
+  { id: 'all', name: '全部' },
+  { id: 'painting', name: '绘画' },
+  { id: 'design', name: '设计' },
+  { id: 'product', name: '产品设计' },
+  { id: 'sculpture', name: '雕塑' },
+];
+
+const scoreOptions: { id: ScoreFilter; name: string }[] = [
+  { id: 'all', name: '全部' },
+  { id: 'excellent', name: '优秀≥85' },
+  { id: 'good', name: '良好70-84' },
+  { id: 'pending', name: '待改进<70' },
+];
+
+const sortOptions: { id: SortMode; name: string }[] = [
+  { id: 'desc', name: '最新优先' },
+  { id: 'score_desc', name: '分数从高到低' },
+  { id: 'score_asc', name: '分数从低到高' },
+];
+
 function getScoreBg(score: number) {
-  if (score >= 85) return 'bg-green-600';
+  if (score >= 85) return 'bg-jade';
   if (score >= 70) return 'bg-gold';
   return 'bg-cinnabar';
 }
@@ -28,6 +54,28 @@ function isProduct(dims: AnalysisResult['dimensions']): dims is ProductAnalysis 
 }
 function isSculpture(dims: AnalysisResult['dimensions']): dims is SculptureAnalysis {
   return dims.type === 'sculpture';
+}
+
+function FilterButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`h-8 px-3 text-xs rounded-md transition-colors ${
+        active ? 'bg-ink-900 text-rice-100' : 'text-ink-600 hover:bg-ink-900/5'
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function FilterGroup({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-xs text-ink-500 font-medium">{label}：</span>
+      <div className="flex items-center gap-1">{children}</div>
+    </div>
+  );
 }
 
 function ScoreCard({ icon: Icon, label, score, color }: { icon: React.ComponentType<{className?: string}>, label: string, score: number, color: 'cinnabar' | 'stone' | 'gold' }) {
@@ -46,7 +94,7 @@ function ScoreCard({ icon: Icon, label, score, color }: { icon: React.ComponentT
   );
 }
 
-function DetailModal({ result, onClose }: { result: AnalysisResult; onClose: () => void }) {
+function DetailModal({ result, onClose, onRediagnose }: { result: AnalysisResult; onClose: () => void; onRediagnose?: (artType: string) => void }) {
   const dims = result.dimensions;
 
   const renderPaintingDetail = (d: PaintingAnalysis) => (
@@ -170,24 +218,24 @@ function DetailModal({ result, onClose }: { result: AnalysisResult; onClose: () 
   );
 
   return (
-    <div 
+    <div
       className="fixed inset-0 bg-ink-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
       onClick={onClose}
     >
-      <div 
+      <div
         className="bg-rice-100 rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="sticky top-0 bg-rice-100 border-b border-ink-200 p-4 flex items-center justify-between">
+        <div className="sticky top-0 bg-rice-100 border-b border-ink-200 p-4 flex items-center justify-between z-10">
           <h2 className="font-serif text-xl font-bold text-ink-900">分析报告详情</h2>
-          <button 
+          <button
             onClick={onClose}
             className="p-2 hover:bg-ink-100 rounded-lg transition-colors"
           >
             <X className="w-6 h-6 text-ink-600" />
           </button>
         </div>
-        
+
         <div className="p-6 space-y-6">
           <div className="bg-white rounded-xl overflow-hidden">
             <img
@@ -237,14 +285,49 @@ function DetailModal({ result, onClose }: { result: AnalysisResult; onClose: () 
             <p className="text-sm text-ink-600">{result.originality.suggestion}</p>
           </div>
         </div>
+
+        <div className="sticky bottom-0 bg-rice-100 border-t border-ink-200 px-6 py-3 flex items-center justify-end gap-3">
+          <button
+            onClick={onClose}
+            className="px-4 h-9 text-sm font-medium text-ink-600 hover:text-ink-900 hover:bg-ink-900/5 rounded-md transition-colors"
+          >
+            关闭
+          </button>
+          {onRediagnose && (
+            <button
+              onClick={() => onRediagnose(result.artType)}
+              className="inline-flex items-center gap-2 bg-cinnabar hover:bg-cinnabar-dark text-white rounded-md px-4 h-9 text-sm font-medium transition-colors"
+            >
+              <RefreshCw className="w-4 h-4" />
+              用相同参数重新诊断
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
 }
 
 export default function HistoryPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
   const [history, setHistory] = useState<HistoryRecord[]>([]);
   const [selectedRecord, setSelectedRecord] = useState<AnalysisResult | null>(null);
+
+  // 初始化筛选状态：从 URL 参数读取
+  const typeParam = searchParams.get('type') as ArtTypeFilter | null;
+  const filterParam = searchParams.get('filter') as ScoreFilter | null;
+  const sortParam = searchParams.get('sort') as SortMode | null;
+
+  const [typeFilter, setTypeFilter] = useState<ArtTypeFilter>(
+    typeParam && artTypeOptions.some((o) => o.id === typeParam) ? typeParam : 'all'
+  );
+  const [scoreFilter, setScoreFilter] = useState<ScoreFilter>(
+    filterParam && scoreOptions.some((o) => o.id === filterParam) ? filterParam : 'all'
+  );
+  const [sortMode, setSortMode] = useState<SortMode>(
+    sortParam && sortOptions.some((o) => o.id === sortParam) ? sortParam : 'desc'
+  );
 
   useEffect(() => {
     setHistory(getHistory());
@@ -259,11 +342,70 @@ export default function HistoryPage() {
     return `${month}月${day}日 ${hours}:${minutes}`;
   };
 
+  // 切换筛选时同步 URL 参数（保持可分享）
+  const syncUrlParams = (next: { type?: ArtTypeFilter; filter?: ScoreFilter; sort?: SortMode }) => {
+    const params: Record<string, string> = {};
+    const t = next.type ?? typeFilter;
+    const f = next.filter ?? scoreFilter;
+    const s = next.sort ?? sortMode;
+    if (t !== 'all') params.type = t;
+    if (f !== 'all') params.filter = f;
+    if (s !== 'desc') params.sort = s;
+    setSearchParams(params, { replace: true });
+  };
+
+  const handleTypeChange = (v: ArtTypeFilter) => {
+    setTypeFilter(v);
+    syncUrlParams({ type: v });
+  };
+  const handleScoreChange = (v: ScoreFilter) => {
+    setScoreFilter(v);
+    syncUrlParams({ filter: v });
+  };
+  const handleSortChange = (v: SortMode) => {
+    setSortMode(v);
+    syncUrlParams({ sort: v });
+  };
+
+  const handleClearFilters = () => {
+    setTypeFilter('all');
+    setScoreFilter('all');
+    setSortMode('desc');
+    setSearchParams({}, { replace: true });
+  };
+
+  // 使用 useMemo 计算筛选 + 排序后的列表
+  const filteredHistory = useMemo(() => {
+    let list = [...history];
+    if (typeFilter !== 'all') {
+      list = list.filter((r) => r.artType === typeFilter);
+    }
+    if (scoreFilter !== 'all') {
+      list = list.filter((r) => {
+        if (scoreFilter === 'excellent') return r.overallScore >= 85;
+        if (scoreFilter === 'good') return r.overallScore >= 70 && r.overallScore < 85;
+        return r.overallScore < 70;
+      });
+    }
+    if (sortMode === 'desc') {
+      list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    } else if (sortMode === 'score_desc') {
+      list.sort((a, b) => b.overallScore - a.overallScore);
+    } else {
+      list.sort((a, b) => a.overallScore - b.overallScore);
+    }
+    return list;
+  }, [history, typeFilter, scoreFilter, sortMode]);
+
   const handleViewDetail = (record: HistoryRecord) => {
     const result = getAnalysisResult(record.id);
     if (result) {
       setSelectedRecord(result);
     }
+  };
+
+  const handleRediagnose = (artType: string) => {
+    navigate(`/analyze?type=${artType}`);
   };
 
   const handleCloseModal = () => {
@@ -292,93 +434,173 @@ export default function HistoryPage() {
           </div>
         ) : (
           <div className="max-w-4xl mx-auto">
-            <div className="relative">
-              <div className="absolute left-6 top-0 bottom-0 w-0.5 bg-ink-200" />
-              
-              <div className="space-y-6">
-                {history.map((record, index) => {
-                  const artConfig = artTypeConfig[record.artType] || artTypeConfig.painting;
-                  const Icon = artConfig.icon;
-                  return (
-                    <div
-                      key={record.id}
-                      className="relative pl-16 group"
+            {/* 筛选功能栏 */}
+            <div className="bg-rice-50 rounded-lg p-3 border border-ink-900/6 mb-6">
+              <div className="flex flex-wrap items-center gap-4">
+                <FilterGroup label="艺术类型">
+                  {artTypeOptions.map((opt) => (
+                    <FilterButton
+                      key={opt.id}
+                      active={typeFilter === opt.id}
+                      onClick={() => handleTypeChange(opt.id)}
                     >
-                      <div className={`absolute left-4 top-6 w-5 h-5 ${getScoreBg(record.overallScore)} rounded-full border-4 border-rice-200 z-10`} />
-                      
-                      <div className="bg-white rounded-2xl p-6 card-shadow hover:card-shadow-hover transition-all duration-300 transform hover:-translate-y-1">
-                        <div className="flex flex-col md:flex-row md:items-center gap-4">
-                          <div className="flex-shrink-0">
-                            <img
-                              src={record.imageUrl}
-                              alt={`分析记录 ${index + 1}`}
-                              className="w-32 h-32 object-cover rounded-xl"
-                            />
+                      {opt.name}
+                    </FilterButton>
+                  ))}
+                </FilterGroup>
+                <FilterGroup label="分数区间">
+                  {scoreOptions.map((opt) => (
+                    <FilterButton
+                      key={opt.id}
+                      active={scoreFilter === opt.id}
+                      onClick={() => handleScoreChange(opt.id)}
+                    >
+                      {opt.name}
+                    </FilterButton>
+                  ))}
+                </FilterGroup>
+                <FilterGroup label="排序">
+                  {sortOptions.map((opt) => (
+                    <FilterButton
+                      key={opt.id}
+                      active={sortMode === opt.id}
+                      onClick={() => handleSortChange(opt.id)}
+                    >
+                      {opt.name}
+                    </FilterButton>
+                  ))}
+                </FilterGroup>
+              </div>
+            </div>
+
+            {filteredHistory.length === 0 ? (
+              <div className="text-center py-16">
+                <div className="w-20 h-20 bg-ink-900/5 rounded-full flex items-center justify-center mx-auto mb-6">
+                  <History className="w-10 h-10 text-ink-400" />
+                </div>
+                <h3 className="font-serif text-xl font-semibold text-ink-700 mb-2">
+                  没有符合筛选条件的记录
+                </h3>
+                <p className="text-ink-500 mb-4">尝试调整筛选条件或清除全部筛选</p>
+                <button
+                  onClick={handleClearFilters}
+                  className="inline-flex items-center gap-2 px-4 h-9 bg-ink-900 text-rice-100 rounded-md hover:bg-ink-800 transition-colors text-sm font-medium"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  清除筛选
+                </button>
+              </div>
+            ) : (
+              <div className="relative">
+                <div className="absolute left-6 top-0 bottom-0 w-0.5 bg-ink-200" />
+
+                <div className="space-y-6">
+                  {filteredHistory.map((record, index) => {
+                    const artConfig = artTypeConfig[record.artType] || artTypeConfig.painting;
+                    const Icon = artConfig.icon;
+                    return (
+                      <div
+                        key={record.id}
+                        className="relative pl-16 group"
+                      >
+                        <div className={`absolute left-4 top-6 w-5 h-5 ${getScoreBg(record.overallScore)} rounded-full border-4 border-rice-200 z-10`} />
+
+                        <div className="bg-rice-50 rounded-2xl p-6 shadow-card hover:shadow-card-hover transition-all duration-300 transform hover:-translate-y-1 relative">
+                          {/* 卡片 hover 时显示的快捷操作 */}
+                          <div className="absolute top-3 right-3 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                            <button
+                              onClick={() => handleViewDetail(record)}
+                              title="查看详情"
+                              className="w-8 h-8 bg-white/95 backdrop-blur rounded-md flex items-center justify-center text-ink-600 hover:text-ink-900 hover:bg-white shadow-card border border-ink-900/6 transition-colors"
+                            >
+                              <Eye className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleRediagnose(record.artType)}
+                              title="再次诊断"
+                              className="w-8 h-8 bg-white/95 backdrop-blur rounded-md flex items-center justify-center text-ink-600 hover:text-cinnabar hover:bg-white shadow-card border border-ink-900/6 transition-colors"
+                            >
+                              <RefreshCw className="w-4 h-4" />
+                            </button>
                           </div>
-                          
-                          <div className="flex-1">
-                            <div className="flex items-center gap-3 mb-2">
-                              <Calendar className="w-4 h-4 text-ink-400" />
-                              <span className="text-sm text-ink-500">
-                                {formatDate(record.createdAt)}
-                              </span>
-                              <span className={`inline-flex items-center gap-1 px-2 py-1 ${artConfig.color}/10 text-ink-700 text-xs rounded-full`}>
-                                <Icon className="w-3 h-3" />
-                                {artConfig.name}
-                              </span>
+
+                          <div className="flex flex-col md:flex-row md:items-center gap-4">
+                            <div className="flex-shrink-0">
+                              <img
+                                src={record.imageUrl}
+                                alt={`分析记录 ${index + 1}`}
+                                className="w-32 h-32 object-cover rounded-xl"
+                              />
                             </div>
-                            
-                            <div className="flex flex-wrap items-center gap-4 mb-3">
-                              <div className="flex items-center gap-2">
-                                <span className="text-sm text-ink-500">综合</span>
-                                <div className={`w-10 h-10 ${getScoreBg(record.overallScore)} rounded-full flex items-center justify-center`}>
-                                  <span className="font-serif text-lg font-bold text-white">
-                                    {record.overallScore}
+
+                            <div className="flex-1">
+                              <div className="flex items-center gap-3 mb-2">
+                                <Calendar className="w-4 h-4 text-ink-400" />
+                                <span className="text-sm text-ink-500">
+                                  {formatDate(record.createdAt)}
+                                </span>
+                                <span className={`inline-flex items-center gap-1 px-2 py-1 ${artConfig.color}/10 text-ink-700 text-xs rounded-full`}>
+                                  <Icon className="w-3 h-3" />
+                                  {artConfig.name}
+                                </span>
+                              </div>
+
+                              <div className="flex flex-wrap items-center gap-4 mb-3">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm text-ink-500">综合</span>
+                                  <div className={`w-10 h-10 ${getScoreBg(record.overallScore)} rounded-full flex items-center justify-center`}>
+                                    <span className="font-serif text-lg font-bold text-white">
+                                      {record.overallScore}
+                                    </span>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm text-ink-500">维度一</span>
+                                  <span className="font-medium text-ink-700">
+                                    {record.dimension1Score}分
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm text-ink-500">维度二</span>
+                                  <span className="font-medium text-ink-700">
+                                    {record.dimension2Score}分
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm text-ink-500">维度三</span>
+                                  <span className="font-medium text-ink-700">
+                                    {record.dimension3Score}分
                                   </span>
                                 </div>
                               </div>
-                              <div className="flex items-center gap-2">
-                                <span className="text-sm text-ink-500">维度一</span>
-                                <span className="font-medium text-ink-700">
-                                  {record.dimension1Score}分
-                                </span>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <span className="text-sm text-ink-500">维度二</span>
-                                <span className="font-medium text-ink-700">
-                                  {record.dimension2Score}分
-                                </span>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <span className="text-sm text-ink-500">维度三</span>
-                                <span className="font-medium text-ink-700">
-                                  {record.dimension3Score}分
-                                </span>
-                              </div>
                             </div>
+
+                            <button
+                              onClick={() => handleViewDetail(record)}
+                              className="flex items-center gap-2 px-4 py-2 bg-ink-900/5 text-ink-700 rounded-lg hover:bg-ink-900 hover:text-rice-100 transition-all duration-300"
+                            >
+                              <Eye className="w-4 h-4" />
+                              <span className="text-sm font-medium">查看详情</span>
+                              <ArrowRight className="w-4 h-4" />
+                            </button>
                           </div>
-                          
-                          <button 
-                            onClick={() => handleViewDetail(record)}
-                            className="flex items-center gap-2 px-4 py-2 bg-ink-900/5 text-ink-700 rounded-lg hover:bg-ink-900 hover:text-rice-100 transition-all duration-300"
-                          >
-                            <Eye className="w-4 h-4" />
-                            <span className="text-sm font-medium">查看详情</span>
-                            <ArrowRight className="w-4 h-4" />
-                          </button>
                         </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
-            </div>
+            )}
           </div>
         )}
       </div>
 
       {selectedRecord && (
-        <DetailModal result={selectedRecord} onClose={handleCloseModal} />
+        <DetailModal
+          result={selectedRecord}
+          onClose={handleCloseModal}
+          onRediagnose={handleRediagnose}
+        />
       )}
     </div>
   );

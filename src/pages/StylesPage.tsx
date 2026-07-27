@@ -90,7 +90,7 @@ export default function StylesPage() {
                 return (
                   <div
                     key={key}
-                    className="bg-white rounded-2xl overflow-hidden card-shadow hover:card-shadow-hover transition-all group cursor-pointer"
+                    className="bg-rice-50 rounded-2xl overflow-hidden shadow-card hover:shadow-card-hover transition-all group cursor-pointer"
                     onClick={() => setSelectedCategory(key as keyof typeof styleCategories)}
                   >
                     <div className="aspect-[16/9] relative overflow-hidden">
@@ -99,7 +99,7 @@ export default function StylesPage() {
                         alt={config.name}
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                       />
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
+                      <div className="absolute inset-0 bg-gradient-to-t from-ink-900/70 via-ink-900/20 to-transparent" />
                       <div className="absolute bottom-0 left-0 right-0 p-6">
                         <div className="flex items-center gap-3 mb-2">
                           <div className="w-10 h-10 bg-cinnabar rounded-lg flex items-center justify-center">
@@ -126,7 +126,7 @@ export default function StylesPage() {
             </div>
 
             {/* Quick Stats */}
-            <div className="bg-white rounded-2xl p-6 card-shadow mb-8">
+            <div className="bg-rice-50 rounded-2xl p-6 shadow-card mb-8">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 {Object.entries(styleCategories).map(([key, cat]) => {
                   const config = styleConfigs[key as keyof typeof styleConfigs];
@@ -152,7 +152,7 @@ export default function StylesPage() {
             </div>
 
             {/* Popular Styles */}
-            <div className="bg-white rounded-2xl p-6 card-shadow">
+            <div className="bg-rice-50 rounded-2xl p-6 shadow-card">
               <h3 className="font-serif text-lg font-bold text-ink-900 mb-4">热门风格</h3>
               <div className="flex flex-wrap gap-3">
                 {Object.entries(styleCategories).flatMap(([key, cat]) =>
@@ -191,7 +191,7 @@ export default function StylesPage() {
                 <span>返回分类</span>
               </button>
               
-              <div className="bg-white rounded-2xl p-6 card-shadow">
+              <div className="bg-rice-50 rounded-2xl p-6 shadow-card">
                 <div className="flex items-center gap-3 mb-4">
                   <div className="w-12 h-12 bg-cinnabar rounded-lg flex items-center justify-center">
                     {(() => {
@@ -273,7 +273,7 @@ export default function StylesPage() {
               ).map((artwork) => (
                 <div
                   key={artwork.id}
-                  className="bg-white rounded-2xl overflow-hidden card-shadow hover:card-shadow-hover transition-all group cursor-pointer"
+                  className="bg-rice-50 rounded-2xl overflow-hidden shadow-card hover:shadow-card-hover transition-all group cursor-pointer"
                   onClick={() => setSelectedArtwork(artwork)}
                 >
                   <div className="aspect-[4/3] overflow-hidden relative bg-ink-100">
@@ -339,11 +339,11 @@ export default function StylesPage() {
         {/* Artwork Detail Modal */}
         {selectedArtwork && (
           <div
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+            className="fixed inset-0 bg-ink-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
             onClick={() => setSelectedArtwork(null)}
           >
             <div
-              className="bg-white rounded-2xl overflow-hidden max-w-5xl w-full max-h-[90vh] flex flex-col md:flex-row"
+              className="bg-rice-50 rounded-2xl overflow-hidden max-w-5xl w-full max-h-[90vh] flex flex-col md:flex-row"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="md:w-3/5 relative bg-ink-900 flex items-center justify-center min-h-[300px]">

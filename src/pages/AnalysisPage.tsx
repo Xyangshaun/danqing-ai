@@ -1,12 +1,91 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { Upload, Eye, Palette, Sparkles, CheckCircle2, Loader2, ArrowRight, PenTool, Layers, Box, Brush, Download, Share2, Cpu, Cloud, Zap, Type, Gem, Settings, Move } from 'lucide-react';
+import { Upload, Eye, Palette, Sparkles, CheckCircle2, Loader2, ArrowRight, PenTool, Layers, Box, Brush, Download, Share2, Cpu, Cloud, Zap, Type, Gem, Settings, Move, Scan, Brain, FileText, Image as ImageIcon } from 'lucide-react';
 import type { AnalysisResult, PaintingAnalysis, DesignAnalysis, ProductAnalysis, SculptureAnalysis } from '../types';
 import { saveToHistory } from '../services/mockData';
 import HeatmapCanvas from '../components/HeatmapCanvas';
+import { useToast } from '../components/ToastProvider';
 import { smartAnalyze, type AnalysisDecision } from '../services/smartAnalysisEngine';
 
 type Step = 'upload' | 'analyzing' | 'result';
 type ArtTypeLocal = 'painting' | 'design' | 'product' | 'sculpture';
+
+/* AI 分析过程可视化：5 阶段流水线，让用户清晰看到分析进度与当前动作 */
+const ANALYSIS_STAGES = [
+  { id: 0, name: '图像预处理', desc: '解析画面构成', icon: ImageIcon },
+  { id: 1, name: '特征提取', desc: '识别主体与元素', icon: Scan },
+  { id: 2, name: '维度分析', desc: '多维度智能诊断', icon: Layers },
+  { id: 3, name: '综合评估', desc: '生成评分与建议', icon: Brain },
+  { id: 4, name: '报告生成', desc: '整理诊断报告', icon: FileText },
+];
+
+/* 实时专业术语描述：按阶段分组，每阶段 4 句专业描述
+   阶段 2（维度分析）按艺术类型自适应，呈现绘画/设计/产品/雕塑各自的专业维度 */
+const STAGE_DETAILS_GENERIC: string[][] = [
+  /* 阶段 0：图像预处理 */
+  [
+    '解析 EXIF 元数据与分辨率信息',
+    '转换 RGB → Lab 色彩空间',
+    '建立像素矩阵，去噪与锐化处理',
+    '生成画面直方图与亮度分布',
+  ],
+  /* 阶段 1：特征提取 */
+  [
+    'Canny 边缘检测识别轮廓形态',
+    'HOG 方向梯度直方图提取',
+    'SIFT 关键点匹配与定位',
+    '主体物识别与背景区域分割',
+  ],
+  /* 阶段 2 占位（按艺术类型动态选择，见 STAGE_DETAILS_BY_ART_TYPE） */
+  [],
+  /* 阶段 3：综合评估 */
+  [
+    '多维度加权评分模型计算',
+    '对比风格库匹配相似作品',
+    '识别优势项与待改进维度',
+    '生成改进建议与参考方向',
+  ],
+  /* 阶段 4：报告生成 */
+  [
+    '结构化输出诊断报告',
+    '整理可视化热力图数据',
+    '生成具体改进建议清单',
+    '保存诊断记录到历史档案',
+  ],
+];
+
+/* 阶段 2 维度分析：按艺术类型给出 4 句专业术语，对应 3 个核心维度 + 综合 */
+const STAGE_DETAILS_BY_ART_TYPE: Record<ArtTypeLocal, string[]> = {
+  painting: [
+    '黄金分割与三分法则构图验证',
+    '视觉重心坐标计算与焦点定位',
+    '主色调提取与色彩饱和度分析',
+    '笔触纹理特征与飞白密度识别',
+  ],
+  design: [
+    '网格系统对齐与视觉层次评估',
+    '字体排版节奏与阅读路径分析',
+    '色彩对比度与无障碍标准验证',
+    '留白比例与信息密度平衡',
+  ],
+  product: [
+    '形态语义与曲面连续性分析',
+    '材质表现与反光特性识别',
+    '人机工程学与握持比例评估',
+    '功能逻辑与操作流程推演',
+  ],
+  sculpture: [
+    '空间构成与体量平衡分析',
+    '形体语言与轮廓张力评估',
+    '材料肌理与表面处理识别',
+    '虚实关系与负空间计算',
+  ],
+};
+
+/* 根据当前阶段 + 艺术类型获取对应的描述列表 */
+function getStageDetails(stage: number, artType: ArtTypeLocal): string[] {
+  if (stage === 2) return STAGE_DETAILS_BY_ART_TYPE[artType];
+  return STAGE_DETAILS_GENERIC[stage] || ['正在分析...'];
+}
 
 const artTypes: { id: ArtTypeLocal; name: string; icon: React.ComponentType<{ className?: string }>; desc: string }[] = [
   { id: 'painting', name: '绘画', icon: Brush, desc: '油画、水彩、素描、国画等' },
@@ -47,7 +126,7 @@ const ANALYSIS_CONFIG: Record<ArtTypeLocal, { dimensions: { label: string; icon:
 };
 
 function getScoreBg(score: number) {
-  if (score >= 85) return 'bg-green-600';
+  if (score >= 85) return 'bg-jade';
   if (score >= 70) return 'bg-gold';
   return 'bg-cinnabar';
 }
@@ -120,14 +199,24 @@ function HeatmapSection({ data, focusPoint, title = '视觉焦点热力图' }: {
 }
 
 export default function AnalysisPage() {
+  const toast = useToast();
   const [step, setStep] = useState<Step>('upload');
   const [imageUrl, setImageUrl] = useState<string>('');
   const [result, setResult] = useState<AnalysisResult | null>(null);
-  const [countdown, setCountdown] = useState(3);
+  const [progress, setProgress] = useState(0);
+  const [detailIndex, setDetailIndex] = useState(0);
   const [selectedArtType, setSelectedArtType] = useState<ArtTypeLocal>('painting');
   const [analysisDecision, setAnalysisDecision] = useState<AnalysisDecision | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const fileRef = useRef<File | null>(null);
+
+  /* 根据 progress 计算当前阶段（0-4），每 20% 切换一个阶段 */
+  const currentStage = Math.min(4, Math.floor(progress / 20));
+
+  /* 阶段切换时重置 detailIndex，让新阶段从第一句描述开始 */
+  useEffect(() => {
+    setDetailIndex(0);
+  }, [currentStage]);
 
   const handleFileSelect = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -137,7 +226,8 @@ export default function AnalysisPage() {
       reader.onload = (e) => {
         setImageUrl(e.target?.result as string);
         setStep('analyzing');
-        setCountdown(3);
+        setProgress(0);
+        setDetailIndex(0);
       };
       reader.readAsDataURL(file);
     }
@@ -152,7 +242,8 @@ export default function AnalysisPage() {
       reader.onload = (e) => {
         setImageUrl(e.target?.result as string);
         setStep('analyzing');
-        setCountdown(3);
+        setProgress(0);
+        setDetailIndex(0);
       };
       reader.readAsDataURL(file);
     }
@@ -165,49 +256,67 @@ export default function AnalysisPage() {
   useEffect(() => {
     if (step === 'analyzing') {
       let completed = false;
-      
-      const timer = setInterval(() => {
-        setCountdown((prev) => {
-          if (prev <= 1) {
-            clearInterval(timer);
-            return 0;
-          }
-          return prev - 1;
+
+      /* 进度推进定时器：每 60ms 推进 1%，到 95% 后等待真实分析完成再冲到 100%
+         总时长约 5.7s（95% × 60ms），与 smartAnalyze 的实际耗时大致匹配 */
+      const progressTimer = setInterval(() => {
+        setProgress((prev) => {
+          if (prev >= 95) return prev;            /* 等待真实分析完成 */
+          return Math.min(95, prev + 1);
         });
-      }, 1000);
-      
+      }, 60);
+
+      /* 详情文字轮播：每 600ms 切换一句，在当前阶段的专业描述组内循环
+         从 progress 实时计算 stage，避免 ref 同步 */
+      const detailTimer = setInterval(() => {
+        setProgress((prevProgress) => {
+          const stage = Math.min(4, Math.floor(prevProgress / 20));
+          const list = getStageDetails(stage, selectedArtType);
+          setDetailIndex((prev) => (prev + 1) % (list.length || 1));
+          return prevProgress;  /* 不修改 progress，只用于读取最新值 */
+        });
+      }, 600);
+
       const processResult = (analysisResult: AnalysisResult) => {
         if (!completed) {
           completed = true;
-          clearInterval(timer);
-          setResult(analysisResult);
-          saveToHistory(analysisResult);
-          setStep('result');
+          clearInterval(progressTimer);
+          clearInterval(detailTimer);
+          /* 真实分析完成，进度冲到 100% */
+          setProgress(100);
+          /* 短暂展示 100% 完成态，再切换到结果页 */
+          setTimeout(() => {
+            setResult(analysisResult);
+            saveToHistory(analysisResult);
+            setStep('result');
+            toast.success('分析完成', '诊断报告已生成并保存到历史记录');
+          }, 400);
         }
       };
-      
+
       const handleError = (error: unknown) => {
         console.error('分析失败:', error);
         if (!completed) {
           completed = true;
-          clearInterval(timer);
-          alert('图像分析失败，请重试');
+          clearInterval(progressTimer);
+          clearInterval(detailTimer);
+          toast.error('图像分析失败', '请检查图片或网络后重试');
           setStep('upload');
           setImageUrl('');
           setAnalysisDecision(null);
         }
       };
-      
+
       smartAnalyze(fileRef.current, imageUrl, selectedArtType, (decision) => {
         setAnalysisDecision(decision);
-        setCountdown(decision.estimatedTime);
       })
         .then(processResult)
         .catch(handleError);
-      
+
       return () => {
         completed = true;
-        clearInterval(timer);
+        clearInterval(progressTimer);
+        clearInterval(detailTimer);
       };
     }
   }, [step, imageUrl, selectedArtType]);
@@ -245,8 +354,8 @@ export default function AnalysisPage() {
                       onClick={() => setSelectedArtType(art.id)}
                       className={`p-4 rounded-xl text-center transition-all ${
                         isSelected
-                          ? 'bg-cinnabar text-white card-shadow'
-                          : 'bg-white text-ink-700 card-shadow hover:card-shadow-hover'
+                          ? 'bg-cinnabar text-white shadow-card'
+                          : 'bg-white text-ink-700 shadow-card hover:shadow-card-hover'
                       }`}
                     >
                       <Icon className="w-6 h-6 mx-auto mb-2" />
@@ -261,7 +370,7 @@ export default function AnalysisPage() {
             </div>
 
             <div className="mb-6">
-              <div className="bg-white rounded-xl p-4 card-shadow">
+              <div className="bg-rice-50 rounded-xl p-4 shadow-card">
                 <div className="flex items-center gap-3 mb-3">
                   <Zap className="w-5 h-5 text-cinnabar" />
                   <h3 className="font-serif text-base font-bold text-ink-900">智能分析引擎</h3>
@@ -270,7 +379,7 @@ export default function AnalysisPage() {
                   <div className="bg-rice-50 rounded-lg p-3">
                     <Cpu className="w-5 h-5 text-ink-600 mx-auto mb-1" />
                     <p className="text-xs text-ink-500">简单作品</p>
-                    <p className="text-xs font-medium text-green-600">本地分析</p>
+                    <p className="text-xs font-medium text-jade">本地分析</p>
                   </div>
                   <div className="bg-rice-50 rounded-lg p-3">
                     <Zap className="w-5 h-5 text-gold mx-auto mb-1" />
@@ -314,59 +423,168 @@ export default function AnalysisPage() {
         )}
 
         {step === 'analyzing' && (
-          <div className="max-w-2xl mx-auto">
-            <div className="bg-white rounded-2xl overflow-hidden card-shadow">
+          <div className="max-w-3xl mx-auto">
+            {/* === 顶部：作品 + 扫描线 + 中央进度环 === */}
+            <div className="bg-rice-50 rounded-2xl overflow-hidden shadow-card">
               <div className="relative">
                 <img
                   src={imageUrl}
                   alt="上传的作品"
                   className="w-full max-h-96 object-contain"
                 />
-                <div className="absolute inset-0 bg-ink-900/30 flex items-center justify-center">
-                  <div className="text-center">
-                    <div className="relative w-24 h-24 mx-auto mb-4">
-                      <div className="absolute inset-0 bg-cinnabar/20 rounded-full" />
-                      <div className="absolute inset-2 bg-cinnabar/30 rounded-full ink-drop-animation" />
-                      <div className="absolute inset-4 bg-cinnabar/40 rounded-full ink-drop-animation" style={{ animationDelay: '0.5s' }} />
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <Loader2 className="w-8 h-8 text-cinnabar animate-spin" />
-                      </div>
+                {/* 半透明遮罩 + 扫描线（仅分析进行中显示，100% 时隐藏） */}
+                {progress < 100 && (
+                  <>
+                    <div className="absolute inset-0 bg-ink-900/40" />
+                    {/* AI 扫描线：从上到下循环移动 */}
+                    <div className="absolute inset-x-0 scan-line-animation pointer-events-none">
+                      <div className="h-0.5 bg-gradient-to-r from-transparent via-cinnabar to-transparent shadow-[0_0_12px_rgba(196,30,58,0.8)]" />
+                      <div className="h-8 bg-gradient-to-b from-cinnabar/20 to-transparent" />
                     </div>
-                    <p className="font-serif text-2xl font-bold text-white mb-2">
-                      智绘分析中
-                    </p>
-                    <p className="text-rice-200">
-                      预计 {countdown} 秒完成
-                    </p>
-                    {analysisDecision && (
-                      <div className="mt-3 bg-white/20 backdrop-blur-sm rounded-lg px-3 py-2 inline-block">
-                        <p className="text-xs text-rice-100">
-                          {analysisDecision.mode === 'server' ? (
-                            <span className="flex items-center gap-1">
-                              <Cloud className="w-3 h-3" /> 后端深度学习分析
-                            </span>
-                          ) : (
-                            <span className="flex items-center gap-1">
-                              <Cpu className="w-3 h-3" /> 本地智能分析
-                            </span>
-                          )}
-                        </p>
+                  </>
+                )}
+
+                {/* 中央：大号进度百分比 + 当前阶段名 */}
+                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                  <p className="font-serif text-6xl font-bold text-white tabular-nums tracking-tight drop-shadow-lg">
+                    {progress}<span className="text-3xl">%</span>
+                  </p>
+                  <p className="font-serif text-xl text-rice-100 mt-2 drop-shadow">
+                    {ANALYSIS_STAGES[currentStage].name}
+                  </p>
+                  {analysisDecision && (
+                    <div className="mt-3 bg-white/15 backdrop-blur-sm rounded-full px-3 py-1 inline-flex items-center gap-1.5">
+                      {analysisDecision.mode === 'server' ? (
+                        <Cloud className="w-3 h-3 text-rice-100" />
+                      ) : (
+                        <Cpu className="w-3 h-3 text-rice-100" />
+                      )}
+                      <span className="text-xs text-rice-100">
+                        {analysisDecision.mode === 'server' ? '后端深度学习分析' : '本地智能分析'}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* 完成态标记 */}
+                {progress === 100 && (
+                  <div className="absolute top-4 right-4 bg-jade/90 backdrop-blur-sm px-3 py-1.5 rounded-full flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4 text-white" />
+                    <span className="text-xs text-white font-medium">分析完成</span>
+                  </div>
+                )}
+              </div>
+
+              {/* === 进度条（带流光高光） === */}
+              <div className="px-6 py-4 border-t border-ink-900/6">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-medium text-ink-500">
+                    {progress < 100 ? '正在分析' : '分析完成'}
+                  </span>
+                  <span className="text-xs font-mono text-ink-500 tabular-nums">{progress}/100</span>
+                </div>
+                <div className="relative h-2 bg-ink-900/8 rounded-full overflow-hidden">
+                  <div
+                    className="absolute inset-y-0 left-0 bg-gradient-to-r from-cinnabar to-cinnabar-dark rounded-full transition-all duration-150 ease-out"
+                    style={{ width: `${progress}%` }}
+                  >
+                    {/* 进度条流光 */}
+                    {progress < 100 && (
+                      <div className="absolute inset-0 overflow-hidden rounded-full">
+                        <div className="absolute inset-y-0 w-1/3 bg-gradient-to-r from-transparent via-white/40 to-transparent progress-shine-animation" />
                       </div>
                     )}
                   </div>
                 </div>
               </div>
             </div>
-            
-            <div className="mt-8 grid grid-cols-3 gap-4">
+
+            {/* === 5 阶段流水线卡片 === */}
+            <div className="mt-6 grid grid-cols-5 gap-2">
+              {ANALYSIS_STAGES.map((stage, i) => {
+                const Icon = stage.icon;
+                const isDone = i < currentStage || progress === 100;
+                const isActive = i === currentStage && progress < 100;
+                const isPending = i > currentStage;
+                return (
+                  <div
+                    key={stage.id}
+                    className={[
+                      'relative rounded-xl p-3 text-center border transition-all duration-300',
+                      isDone
+                        ? 'bg-jade/8 border-jade/30'
+                        : isActive
+                        ? 'bg-cinnabar/10 border-cinnabar/40 stage-pulse-animation'
+                        : 'bg-rice-50 border-ink-900/6 opacity-60',
+                    ].join(' ')}
+                  >
+                    <div className="flex justify-center mb-2">
+                      {isDone ? (
+                        <CheckCircle2 className="w-5 h-5 text-jade" />
+                      ) : isActive ? (
+                        <Loader2 className={`w-5 h-5 text-cinnabar animate-spin`} />
+                      ) : (
+                        <Icon className={`w-5 h-5 ${isPending ? 'text-ink-400' : 'text-ink-500'}`} />
+                      )}
+                    </div>
+                    <p className={`text-xs font-medium ${isDone ? 'text-jade' : isActive ? 'text-cinnabar' : 'text-ink-500'}`}>
+                      {stage.name}
+                    </p>
+                    <p className="text-2xs text-ink-400 mt-0.5 hidden sm:block">{stage.desc}</p>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* === 实时专业术语描述（按阶段 + 艺术类型自适应，轮播淡入） === */}
+            {(() => {
+              const stageDetails = getStageDetails(currentStage, selectedArtType);
+              const currentDetail = stageDetails[detailIndex % (stageDetails.length || 1)] || '';
+              const StageIcon = ANALYSIS_STAGES[currentStage].icon;
+              return (
+                <div className="mt-4 bg-rice-50 border border-ink-900/6 rounded-xl overflow-hidden">
+                  {/* 阶段标题栏 */}
+                  <div className="px-4 py-2 bg-ink-900/[0.03] border-b border-ink-900/6 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <StageIcon className="w-3.5 h-3.5 text-cinnabar" />
+                      <span className="text-xs font-medium text-ink-700">
+                        阶段 {currentStage + 1}/5 · {ANALYSIS_STAGES[currentStage].name}
+                      </span>
+                    </div>
+                    <span className="text-2xs font-mono text-ink-400">
+                      {String((detailIndex % (stageDetails.length || 1)) + 1).padStart(2, '0')}/{String(stageDetails.length).padStart(2, '0')}
+                    </span>
+                  </div>
+                  {/* 当前专业描述文字（轮播淡入） */}
+                  <div className="px-4 py-3 flex items-center gap-3">
+                    <span className="relative flex h-2 w-2 flex-shrink-0">
+                      <span className="absolute inline-flex h-full w-full rounded-full bg-cinnabar opacity-75 animate-ping" />
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-cinnabar" />
+                    </span>
+                    <p
+                      key={`${currentStage}-${detailIndex}`}
+                      className="text-sm text-ink-700 detail-fade-animation flex-1 truncate font-medium"
+                    >
+                      {currentDetail}
+                    </p>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* === 三个维度的小预览（保持原有信息架构） === */}
+            <div className="mt-4 grid grid-cols-3 gap-3">
               {ANALYSIS_CONFIG[selectedArtType].dimensions.map((dim, i) => {
                 const Icon = dim.icon;
                 return (
-                  <div key={i} className="bg-white rounded-xl p-4 text-center card-shadow">
-                    <Icon className={`w-6 h-6 ${dim.color} mx-auto mb-2`} />
-                    <p className="text-sm text-ink-500">{dim.label}</p>
-                    <div className="mt-2 h-1 bg-ink-100 rounded-full overflow-hidden">
-                      <div className={`h-full ${dim.barColor} rounded-full brush-stroke-animation`} style={{ animationDelay: `${i * 0.5}s` }} />
+                  <div key={i} className="bg-rice-50 rounded-xl p-3 text-center border border-ink-900/6">
+                    <Icon className={`w-5 h-5 ${dim.color} mx-auto mb-1.5`} />
+                    <p className="text-xs text-ink-500">{dim.label}</p>
+                    <div className="mt-2 h-1 bg-ink-900/8 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full ${dim.barColor} rounded-full transition-all duration-500 ease-out`}
+                        style={{ width: `${Math.min(100, progress + i * 5)}%` }}
+                      />
                     </div>
                   </div>
                 );
@@ -377,7 +595,7 @@ export default function AnalysisPage() {
 
         {step === 'result' && result && (
           <div className="space-y-8">
-            <div className="bg-white rounded-2xl overflow-hidden card-shadow">
+            <div className="bg-rice-50 rounded-2xl overflow-hidden shadow-card">
               <div className="relative">
                 <img
                   src={result.imageUrl}
@@ -385,7 +603,7 @@ export default function AnalysisPage() {
                   className="w-full max-h-96 object-contain"
                 />
                 <div className="absolute top-4 right-4 bg-white/90 backdrop-blur-sm px-4 py-2 rounded-xl flex items-center gap-2">
-                  <CheckCircle2 className="w-5 h-5 text-green-600" />
+                  <CheckCircle2 className="w-5 h-5 text-jade" />
                   <span className="font-bold text-ink-900">分析完成</span>
                 </div>
                 <div className="absolute top-4 left-4 bg-ink-900/80 backdrop-blur-sm px-3 py-1 rounded-lg">
@@ -434,7 +652,7 @@ export default function AnalysisPage() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {isPainting(result.dimensions) && (
                 <>
-                  <div className="bg-white rounded-2xl p-6 card-shadow">
+                  <div className="bg-rice-50 rounded-2xl p-6 shadow-card">
                     <DimensionHeader icon={Eye} title="构图分析" score={result.dimensions.composition.score} color="cinnabar" />
                     <HeatmapSection data={result.dimensions.composition.heatmapData} focusPoint={result.dimensions.composition.focusPoint} />
                     <div className="grid grid-cols-2 gap-3 mb-4">
@@ -455,7 +673,7 @@ export default function AnalysisPage() {
                     </div>
                   </div>
 
-                  <div className="bg-white rounded-2xl p-6 card-shadow">
+                  <div className="bg-rice-50 rounded-2xl p-6 shadow-card">
                     <DimensionHeader icon={Palette} title="色彩诊断" score={result.dimensions.color.score} color="stone" />
                     <div className="grid grid-cols-2 gap-3 mb-4">
                       <MetricItem label="冷暖比" value={`${result.dimensions.color.warmRatio.toFixed(1)} : ${(1 - result.dimensions.color.warmRatio).toFixed(1)}`} />
@@ -480,7 +698,7 @@ export default function AnalysisPage() {
                     </div>
                   </div>
 
-                  <div className="bg-white rounded-2xl p-6 card-shadow">
+                  <div className="bg-rice-50 rounded-2xl p-6 shadow-card">
                     <DimensionHeader icon={PenTool} title="笔触技法" score={result.dimensions.brushwork.score} color="gold" />
                     <div className="grid grid-cols-2 gap-3 mb-4">
                       <MetricItem label="肌理层次" value={
@@ -499,7 +717,7 @@ export default function AnalysisPage() {
 
               {isDesign(result.dimensions) && (
                 <>
-                  <div className="bg-white rounded-2xl p-6 card-shadow">
+                  <div className="bg-rice-50 rounded-2xl p-6 shadow-card">
                     <DimensionHeader icon={Eye} title="视觉层次" score={result.dimensions.visualHierarchy.score} color="cinnabar" />
                     <HeatmapSection data={result.dimensions.visualHierarchy.heatmapData} focusPoint={result.dimensions.visualHierarchy.focusPoint} />
                     <div className="grid grid-cols-2 gap-3 mb-4">
@@ -517,7 +735,7 @@ export default function AnalysisPage() {
                     </div>
                   </div>
 
-                  <div className="bg-white rounded-2xl p-6 card-shadow">
+                  <div className="bg-rice-50 rounded-2xl p-6 shadow-card">
                     <DimensionHeader icon={Type} title="排版" score={result.dimensions.typography.score} color="stone" />
                     <div className="grid grid-cols-2 gap-3 mb-4">
                       <MetricItem label="对齐质量" value={
@@ -541,7 +759,7 @@ export default function AnalysisPage() {
                     </div>
                   </div>
 
-                  <div className="bg-white rounded-2xl p-6 card-shadow">
+                  <div className="bg-rice-50 rounded-2xl p-6 shadow-card">
                     <DimensionHeader icon={Palette} title="色彩应用" score={result.dimensions.colorApplication.score} color="gold" />
                     <div className="grid grid-cols-2 gap-3 mb-4">
                       <MetricItem label="对比度" value={
@@ -563,7 +781,7 @@ export default function AnalysisPage() {
 
               {isProduct(result.dimensions) && (
                 <>
-                  <div className="bg-white rounded-2xl p-6 card-shadow">
+                  <div className="bg-rice-50 rounded-2xl p-6 shadow-card">
                     <DimensionHeader icon={Box} title="形态" score={result.dimensions.form.score} color="cinnabar" />
                     <HeatmapSection data={result.dimensions.form.heatmapData} focusPoint={result.dimensions.form.focusPoint} title="形态焦点热力图" />
                     <div className="grid grid-cols-2 gap-3 mb-4">
@@ -591,7 +809,7 @@ export default function AnalysisPage() {
                     </div>
                   </div>
 
-                  <div className="bg-white rounded-2xl p-6 card-shadow">
+                  <div className="bg-rice-50 rounded-2xl p-6 shadow-card">
                     <DimensionHeader icon={Gem} title="材质表现" score={result.dimensions.materialExpression.score} color="stone" />
                     <div className="grid grid-cols-2 gap-3 mb-4">
                       <MetricItem label="质感真实度" value={
@@ -612,7 +830,7 @@ export default function AnalysisPage() {
                     </div>
                   </div>
 
-                  <div className="bg-white rounded-2xl p-6 card-shadow">
+                  <div className="bg-rice-50 rounded-2xl p-6 shadow-card">
                     <DimensionHeader icon={Settings} title="功能表达" score={result.dimensions.functionExpression.score} color="gold" />
                     <div className="grid grid-cols-2 gap-3 mb-4">
                       <MetricItem label="结构清晰度" value={
@@ -637,7 +855,7 @@ export default function AnalysisPage() {
 
               {isSculpture(result.dimensions) && (
                 <>
-                  <div className="bg-white rounded-2xl p-6 card-shadow">
+                  <div className="bg-rice-50 rounded-2xl p-6 shadow-card">
                     <DimensionHeader icon={Box} title="空间构成" score={result.dimensions.spatialComposition.score} color="cinnabar" />
                     <HeatmapSection data={result.dimensions.spatialComposition.heatmapData} focusPoint={result.dimensions.spatialComposition.focusPoint} title="空间焦点热力图" />
                     <div className="grid grid-cols-2 gap-3 mb-4">
@@ -659,7 +877,7 @@ export default function AnalysisPage() {
                     </div>
                   </div>
 
-                  <div className="bg-white rounded-2xl p-6 card-shadow">
+                  <div className="bg-rice-50 rounded-2xl p-6 shadow-card">
                     <DimensionHeader icon={Move} title="形体语言" score={result.dimensions.bodyLanguage.score} color="stone" />
                     <div className="grid grid-cols-2 gap-3 mb-4">
                       <MetricItem label="动态感" value={
@@ -680,7 +898,7 @@ export default function AnalysisPage() {
                     </div>
                   </div>
 
-                  <div className="bg-white rounded-2xl p-6 card-shadow">
+                  <div className="bg-rice-50 rounded-2xl p-6 shadow-card">
                     <DimensionHeader icon={Gem} title="材料语言" score={result.dimensions.materialLanguage.score} color="gold" />
                     <div className="grid grid-cols-2 gap-3 mb-4">
                       <MetricItem label="材料特性" value={
@@ -705,7 +923,7 @@ export default function AnalysisPage() {
             </div>
 
             {/* 原创性检测 - 全宽卡片 */}
-            <div className="bg-white rounded-2xl p-6 card-shadow">
+            <div className="bg-rice-50 rounded-2xl p-6 shadow-card">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 bg-gold/10 rounded-lg flex items-center justify-center">
@@ -721,7 +939,7 @@ export default function AnalysisPage() {
                 <MetricItem label="相似度" value={`${(result.originality.similarity * 100).toFixed(0)}%`} />
                 <MetricItem label="评级" value={
                   <span className={
-                    result.originality.similarity < 0.15 ? 'text-green-600' :
+                    result.originality.similarity < 0.15 ? 'text-jade' :
                     result.originality.similarity < 0.25 ? 'text-gold' : 'text-cinnabar'
                   }>
                     {result.originality.similarity < 0.15 ? '优秀' :
@@ -739,7 +957,7 @@ export default function AnalysisPage() {
                 <div className="w-full h-2 bg-ink-200 rounded-full overflow-hidden">
                   <div 
                     className={`h-full rounded-full ${
-                      result.originality.similarity < 0.15 ? 'bg-green-600' :
+                      result.originality.similarity < 0.15 ? 'bg-jade' :
                       result.originality.similarity < 0.25 ? 'bg-gold' : 'bg-cinnabar'
                     }`}
                     style={{ width: `${(1 - result.originality.similarity) * 100}%` }}
@@ -793,7 +1011,7 @@ export default function AnalysisPage() {
                     });
                   } else {
                     navigator.clipboard.writeText(window.location.href);
-                    alert('链接已复制到剪贴板');
+                    toast.success('链接已复制', '可直接粘贴分享诊断结果');
                   }
                 }}
                 className="inline-flex items-center gap-2 px-6 py-3 bg-cinnabar text-rice-100 rounded-lg hover:bg-stone transition-all duration-300"

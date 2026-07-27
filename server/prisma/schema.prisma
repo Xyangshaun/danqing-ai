@@ -1,0 +1,206 @@
+// ============================================================
+// 丹青有AI - Prisma Schema v1
+// 数据库:PostgreSQL 14+(生产强制,禁止 SQLite)
+// 主键策略:UUID v4
+// 多租户:所有业务表强制 tenant_id(除 Tenant 表本身)
+// 字段命名:Prisma 字段 camelCase,数据库列 snake_case(通过 @map)
+// 表名:复数蛇形(通过 @@map)
+// 维护人:backend-service
+// 对应文档:.trae/documents/data-model-v1.md
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// 枚举定义(与 API 契约第 3 节类型保持一致)
+// ============================================================
+
+/// 用户角色(租户内角色)
+enum UserRole {
+  admin      // 管理员(school/college)
+  teacher    // 教师(college/class)
+  student    // 学生(class/individual)
+  owner      // 所有者(individual,等同 admin)
+}
+
+/// 租户类型
+enum TenantType {
+  school       // 学校级
+  college      // 学院级
+  class        // 班级级
+  individual   // 个人
+}
+
+/// 订阅计划
+enum TenantPlan {
+  free        // 免费版(50 次/月,1 席位)
+  standard    // 标准版(2000 次/月,50 席位)
+  enterprise  // 院校版(无限,500 席位)
+}
+
+/// 租户状态
+enum TenantStatus {
+  active     // 启用
+  disabled   // 禁用
+}
+
+/// 艺术作品类型(四类)
+enum ArtType {
+  painting    // 绘画
+  design      // 设计
+  product     // 产品设计
+  sculpture   // 雕塑
+}
+
+/// 分析任务状态
+enum AnalysisStatus {
+  pending      // 待处理(已入队)
+  processing   // 处理中(Worker 已取走)
+  success      // 成功
+  failed       // 失败
+}
+
+// ============================================================
+// 1. 租户表(Tenant)
+// ============================================================
+
+model Tenant {
+  id              String       @id @default(uuid()) @map("id")
+  name            String       @map("name")
+  type            TenantType   @map("type")
+  feishuTenantKey String?      @unique @map("feishu_tenant_key")
+  plan            TenantPlan   @default(free) @map("plan")
+  status          TenantStatus @default(active) @map("status")
+  maxSeats        Int          @default(1) @map("max_seats")
+  parentId        String?      @map("parent_id")
+  createdAt       DateTime     @default(now()) @map("created_at")
+  updatedAt       DateTime     @updatedAt @map("updated_at")
+
+  // 关系:租户层级(自引用)
+  parent          Tenant?      @relation("TenantHierarchy", fields: [parentId], references: [id])
+  children        Tenant[]     @relation("TenantHierarchy")
+
+  // 关系:租户内的成员、用户、分析、会话
+  members         TenantMember[]
+  users           User[]       // 当前激活租户为该租户的用户
+  analyses        Analysis[]
+  sessions        Session[]
+
+  @@index([parentId], map: "tenants_parent_id_idx")
+  @@index([feishuTenantKey], map: "tenants_feishu_tenant_key_idx")
+  @@map("tenants")
+}
+
+// ============================================================
+// 2. 用户表(User)
+// ============================================================
+
+model User {
+  id              String       @id @default(uuid()) @map("id")
+  tenantId        String       @map("tenant_id") // 当前激活租户(可切换)
+  feishuOpenId    String       @unique @map("feishu_open_id")
+  feishuUnionId   String       @unique @map("feishu_union_id")
+  name            String       @map("name")
+  avatar          String       @default("") @map("avatar")
+  email           String?      @unique @map("email")
+  phone           String?      @unique @map("phone")
+  role            UserRole     @default(student) @map("role") // 当前激活租户内的角色(冗余,与 TenantMember.role 一致)
+  createdAt       DateTime     @default(now()) @map("created_at")
+  updatedAt       DateTime     @updatedAt @map("updated_at")
+  lastLoginAt     DateTime?    @map("last_login_at")
+
+  // 关系
+  tenant          Tenant       @relation(fields: [tenantId], references: [id])
+  sessions        Session[]
+  memberships     TenantMember[]
+  analyses        Analysis[]
+
+  @@index([tenantId], map: "users_tenant_id_idx")
+  @@index([feishuUnionId], map: "users_feishu_union_id_idx")
+  @@map("users")
+}
+
+// ============================================================
+// 3. 会话表(Session)
+// ============================================================
+
+model Session {
+  id                String    @id @default(uuid()) @map("id")
+  userId            String    @map("user_id")
+  tenantId          String    @map("tenant_id") // 会话创建时的租户上下文(多租户强制)
+  refreshTokenHash  String    @unique @map("refresh_token_hash") // SHA-256 哈希,禁止存明文
+  userAgent         String    @map("user_agent") @db.Text
+  ip                String    @map("ip") @db.VarChar(45) // 兼容 IPv6
+  expiresAt         DateTime  @map("expires_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  revokedAt         DateTime? @map("revoked_at") // 撤销时间(非空表示已登出/踢出)
+
+  // 关系
+  user              User      @relation(fields: [userId], references: [id])
+  tenant            Tenant    @relation(fields: [tenantId], references: [id])
+
+  @@index([userId], map: "sessions_user_id_idx")
+  @@index([tenantId], map: "sessions_tenant_id_idx")
+  @@index([expiresAt], map: "sessions_expires_at_idx")
+  @@index([revokedAt], map: "sessions_revoked_at_idx")
+  @@map("sessions")
+}
+
+// ============================================================
+// 4. 租户成员关系表(TenantMember,多对多)
+// ============================================================
+
+model TenantMember {
+  userId      String    @map("user_id")
+  tenantId    String    @map("tenant_id")
+  role        UserRole  @default(student) @map("role")
+  joinedAt    DateTime  @default(now()) @map("joined_at")
+
+  // 关系
+  user        User      @relation(fields: [userId], references: [id])
+  tenant      Tenant    @relation(fields: [tenantId], references: [id])
+
+  @@id([userId, tenantId]) // 复合主键
+  @@index([tenantId], map: "tenant_members_tenant_id_idx")
+  @@index([role], map: "tenant_members_role_idx")
+  @@map("tenant_members")
+}
+
+// ============================================================
+// 5. AI 分析任务表(Analysis)
+// ============================================================
+
+model Analysis {
+  id              String          @id @default(uuid()) @map("id")
+  tenantId        String          @map("tenant_id") // 多租户隔离核心字段
+  userId          String          @map("user_id")
+  workType        ArtType         @map("work_type")
+  imageUrl        String          @map("image_url") @db.Text
+  title           String?         @map("title") @db.VarChar(64)
+  remark          String?         @map("remark") @db.VarChar(500)
+  status          AnalysisStatus  @default(pending) @map("status")
+  result          Json?           @map("result") // 成功时存 AnalysisResult 结构(见 API 契约 3.6)
+  failureReason   String?         @map("failure_reason") @db.Text
+  overallScore    Int?            @map("overall_score") // 冗余字段,从 result.overallScore 提取,便于列表排序
+  durationMs      Int?            @map("duration_ms") // 分析耗时(毫秒),用于 SLA 监控
+  createdAt       DateTime        @default(now()) @map("created_at")
+  completedAt     DateTime?       @map("completed_at")
+
+  // 关系
+  tenant          Tenant          @relation(fields: [tenantId], references: [id])
+  user            User            @relation(fields: [userId], references: [id])
+
+  @@index([tenantId, createdAt], map: "analyses_tenant_id_created_at_idx") // 租户内按时间倒序查询
+  @@index([tenantId, userId], map: "analyses_tenant_id_user_id_idx") // 教师查看指定学生
+  @@index([tenantId, status], map: "analyses_tenant_id_status_idx") // 按状态筛选
+  @@index([tenantId, workType], map: "analyses_tenant_id_work_type_idx") // 按作品类型筛选
+  @@index([overallScore], map: "analyses_overall_score_idx") // 评分排序
+  @@map("analyses")
+}

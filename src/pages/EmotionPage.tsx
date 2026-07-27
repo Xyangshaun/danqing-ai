@@ -1,6 +1,8 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Heart, Sparkles, Loader2, Download, Share2, Sun, Moon, Wind, Droplets, Flame, Waves, Palette, Sliders, Layers, Copy, RefreshCw } from 'lucide-react';
 import { generateEmotionCanvas, emotionPresets } from '../services/imageService';
+import { useToast } from '../components/ToastProvider';
 
 const emotionData: Record<string, {
   desc: string;
@@ -81,6 +83,8 @@ const intensityLevels = [
 ];
 
 export default function EmotionPage() {
+  const toast = useToast();
+  const navigate = useNavigate();
   const [selectedEmotion, setSelectedEmotion] = useState('宁静');
   const [intensity, setIntensity] = useState(0.6);
   const [secondaryEmotion, setSecondaryEmotion] = useState<string | null>(null);
@@ -90,14 +94,34 @@ export default function EmotionPage() {
   const currentEmotion = emotionData[selectedEmotion];
   const secondaryEmotionData = secondaryEmotion ? emotionData[secondaryEmotion] : null;
 
+  // 将当前情绪色板保存到 localStorage 并跳转到风格库
+  const handleApplyToStyles = () => {
+    const palette = {
+      emotion: selectedEmotion,
+      colorPalette: currentEmotion.colorPalette,
+      intensity,
+      createdAt: new Date().toISOString(),
+    };
+    try {
+      localStorage.setItem('danqing-ai-emotion-palette', JSON.stringify(palette));
+      toast.success('色板已保存，可在风格库查看');
+      navigate('/styles?from=emotion');
+    } catch (err) {
+      console.error('保存色板失败:', err);
+      toast.error('保存失败', '请稍后重试');
+    }
+  };
+
   const handleGenerate = async () => {
     setGenerating(true);
     setResults([]);
     try {
       const images = await generateEmotionCanvas(selectedEmotion + (secondaryEmotion ? `+${secondaryEmotion}` : ''));
       setResults(images);
+      toast.success('情绪画布已生成', `共 ${images.length} 张参考图`);
     } catch (error) {
       console.error('生成失败:', error);
+      toast.error('生成失败', '请检查网络后重试');
     } finally {
       setGenerating(false);
     }
@@ -156,10 +180,10 @@ export default function EmotionPage() {
                 <button
                   key={emotion.id}
                   onClick={() => setSelectedEmotion(emotion.name)}
-                  className={`group relative bg-white rounded-2xl p-6 card-shadow transition-all overflow-hidden ${
+                  className={`group relative bg-rice-50 rounded-2xl p-6 shadow-card transition-all overflow-hidden ${
                     isSelected
-                      ? 'ring-2 ring-cinnabar card-shadow-hover transform -translate-y-1'
-                      : 'hover:card-shadow-hover hover:-translate-y-0.5'
+                      ? 'ring-2 ring-cinnabar shadow-card-hover transform -translate-y-1'
+                      : 'hover:shadow-card-hover hover:-translate-y-0.5'
                   }`}
                 >
                   {isSelected && (
@@ -194,7 +218,7 @@ export default function EmotionPage() {
         {/* Intensity + Secondary Emotion */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
           {/* Intensity Control */}
-          <div className="bg-white rounded-2xl p-6 card-shadow">
+          <div className="bg-rice-50 rounded-2xl p-6 shadow-card">
             <h3 className="font-serif text-lg font-bold text-ink-900 mb-4 flex items-center gap-2">
               <Sliders className="w-5 h-5 text-cinnabar" />
               情绪浓度
@@ -242,7 +266,7 @@ export default function EmotionPage() {
           </div>
 
           {/* Secondary Emotion (Mix) */}
-          <div className="bg-white rounded-2xl p-6 card-shadow">
+          <div className="bg-rice-50 rounded-2xl p-6 shadow-card">
             <h3 className="font-serif text-lg font-bold text-ink-900 mb-4 flex items-center gap-2">
               <Layers className="w-5 h-5 text-cinnabar" />
               情绪叠加
@@ -308,7 +332,7 @@ export default function EmotionPage() {
         </div>
 
         {/* Emotion Details */}
-        <div className="bg-white rounded-2xl p-6 md:p-8 card-shadow mb-8">
+        <div className="bg-rice-50 rounded-2xl p-6 md:p-8 shadow-card mb-8">
           <div className="grid grid-cols-1 md:grid-cols-5 gap-8">
             <div className="md:col-span-3">
               <div className="flex items-center gap-3 mb-4">
@@ -415,7 +439,7 @@ export default function EmotionPage() {
           <button
             onClick={handleGenerate}
             disabled={generating}
-            className="inline-flex items-center gap-3 px-12 py-4 rounded-xl transition-all disabled:opacity-50 transform hover:scale-105 card-shadow text-white font-serif text-lg"
+            className="inline-flex items-center gap-3 px-12 py-4 rounded-xl transition-all disabled:opacity-50 transform hover:scale-105 shadow-card text-white font-serif text-lg"
             style={{ background: getGradient(currentEmotion.colorPalette, 1) }}
           >
             {generating ? (
@@ -437,7 +461,7 @@ export default function EmotionPage() {
 
         {/* Loading State */}
         {generating && (
-          <div className="bg-white rounded-2xl p-12 card-shadow text-center mb-8">
+          <div className="bg-rice-50 rounded-2xl p-12 shadow-card text-center mb-8">
             <div className="relative w-24 h-24 mx-auto mb-6">
               <div
                 className="absolute inset-0 rounded-full animate-pulse"
@@ -477,19 +501,30 @@ export default function EmotionPage() {
                 <Heart className="w-5 h-5 text-cinnabar" />
                 「{selectedEmotion}」的视觉表达
               </h2>
-              <button
-                onClick={handleGenerate}
-                className="flex items-center gap-2 text-sm text-ink-500 hover:text-cinnabar transition-all"
-              >
-                <RefreshCw className="w-4 h-4" />
-                换一批
-              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={handleApplyToStyles}
+                  className="flex items-center gap-2 px-3 py-1.5 text-sm border-2 rounded-lg transition-all hover:bg-cinnabar hover:text-white hover:border-cinnabar"
+                  style={{ borderColor: `${currentEmotion.color}40`, color: currentEmotion.color }}
+                  title="应用到风格调色板"
+                >
+                  <Palette className="w-4 h-4" />
+                  应用到风格调色板
+                </button>
+                <button
+                  onClick={handleGenerate}
+                  className="flex items-center gap-2 text-sm text-ink-500 hover:text-cinnabar transition-all"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  换一批
+                </button>
+              </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
               {results.map((url, index) => (
                 <div
                   key={index}
-                  className="bg-white rounded-2xl overflow-hidden card-shadow hover:card-shadow-hover transition-all group"
+                  className="bg-rice-50 rounded-2xl overflow-hidden shadow-card hover:shadow-card-hover transition-all group"
                 >
                   <div className="aspect-square overflow-hidden relative">
                     <img
@@ -533,7 +568,7 @@ export default function EmotionPage() {
 
         {/* Empty State */}
         {results.length === 0 && !generating && (
-          <div className="bg-white rounded-2xl p-12 card-shadow text-center">
+          <div className="bg-rice-50 rounded-2xl p-12 shadow-card text-center">
             <div
               className="w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4"
               style={{ background: getGradient(currentEmotion.colorPalette, 0.2) }}

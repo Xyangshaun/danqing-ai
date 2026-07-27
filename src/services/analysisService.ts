@@ -1,4 +1,46 @@
 import type { AnalysisResult, ArtType, PaintingAnalysis, DesignAnalysis, ProductAnalysis, SculptureAnalysis } from '../types';
+import type { ArtworkItem } from './artworksDatabase';
+
+/* ============================================================
+   后端 v3.0.0 统一响应类型（传输层类型，非跨端领域类型）
+   ============================================================ */
+
+/** 后端 v3.0.0 统一响应外壳：{ code, message, data, traceId } */
+interface ApiEnvelope<T> {
+  code: number;
+  message: string;
+  data: T;
+  traceId?: string;
+}
+
+/** 健康检查响应 data 字段结构 */
+interface HealthData {
+  status: string;
+  service?: string;
+  version?: string;
+  nodeEnv?: string;
+  timestamp?: string;
+}
+
+/** 分页查询响应 data 字段结构（ artworks 列表 ） */
+export interface PaginatedArtworks {
+  data: ArtworkItem[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+}
+
+/** 风格分类单条结构 */
+interface StyleCategoryDef {
+  name: string;
+  styles: string[];
+  eras: string[];
+  subjects: string[];
+}
+
+/** 风格分类响应结构：按 art_type 索引 */
+export type StyleCategoriesResponse = Record<string, StyleCategoryDef>;
 
 interface PixelData { r: number; g: number; b: number; a: number; }
 
@@ -719,4 +761,149 @@ function generateFallbackAnalysis(imageUrl: string, artType: ArtType): AnalysisR
     dimensions, originality,
     overallScore: Math.round((baseScore + baseScore + baseScore + originality.score) / 4),
   };
+}
+
+/* ============================================================
+   后端API调用（可选启用）
+   ============================================================ */
+
+// 后端API地址，可通过localStorage配置（v3.0.0 默认端口 3000）
+export function getBackendUrl(): string {
+  return localStorage.getItem('danqing_backend_url') || 'http://localhost:3000';
+}
+
+export function isBackendEnabled(): boolean {
+  return localStorage.getItem('danqing_backend_enabled') === 'true';
+}
+
+export function setBackendEnabled(enabled: boolean): void {
+  localStorage.setItem('danqing_backend_enabled', enabled ? 'true' : 'false');
+}
+
+export function setBackendUrl(url: string): void {
+  localStorage.setItem('danqing_backend_url', url);
+}
+
+// 健康检查（v3.0.0：GET /health → {code, message, data: {status, ...}, traceId}）
+export async function checkBackendHealth(): Promise<boolean> {
+  try {
+    const res = await fetch(`${getBackendUrl()}/health`, {
+      method: 'GET',
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return false;
+    const data: ApiEnvelope<HealthData> = await res.json();
+    return data.code === 0 && data.data?.status === 'up';
+  } catch {
+    return false;
+  }
+}
+
+// 通过后端分析图片（URL方式，v3.0.0：POST /analyses，body: {art_type, image_url}）
+export async function analyzeImageBackend(imageUrl: string, artType: ArtType): Promise<AnalysisResult> {
+  const res = await fetch(`${getBackendUrl()}/analyses`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ art_type: artType, image_url: imageUrl }),
+    signal: AbortSignal.timeout(15000),
+  });
+
+  if (!res.ok) {
+    throw new Error(`后端响应错误: ${res.status}`);
+  }
+
+  const data: ApiEnvelope<AnalysisResult> = await res.json();
+  if (data.code !== 0) {
+    throw new Error(data.message || '后端分析失败');
+  }
+
+  return data.data;
+}
+
+// 通过后端分析图片（文件上传方式，v3.0.0：POST /analyses/upload，FormData: image + art_type）
+export async function analyzeImageUpload(file: File, artType: ArtType): Promise<AnalysisResult> {
+  const formData = new FormData();
+  formData.append('image', file);
+  formData.append('art_type', artType);
+
+  const res = await fetch(`${getBackendUrl()}/analyses/upload`, {
+    method: 'POST',
+    body: formData, // 不要设置 Content-Type，让浏览器自动设置 boundary
+    signal: AbortSignal.timeout(15000),
+  });
+
+  if (!res.ok) {
+    throw new Error(`后端响应错误: ${res.status}`);
+  }
+
+  const data: ApiEnvelope<AnalysisResult> = await res.json();
+  if (data.code !== 0) {
+    throw new Error(data.message || '后端分析失败');
+  }
+
+  return data.data;
+}
+
+// 智能调用：优先后端，失败回退前端
+export async function analyzeImageWithFallback(imageUrl: string, artType: ArtType): Promise<AnalysisResult> {
+  if (isBackendEnabled()) {
+    try {
+      return await analyzeImageBackend(imageUrl, artType);
+    } catch (error) {
+      console.warn('后端分析失败，回退到前端分析:', error);
+    }
+  }
+  return analyzeImage(imageUrl, artType);
+}
+
+/* ============================================================
+   知识库API调用
+   ============================================================ */
+
+// 搜索作品（v3.0.0：GET /artworks/search?q=&page=&page_size=）
+export async function searchArtworksAPI(
+  query: string,
+  page = 1,
+  pageSize = 20
+): Promise<PaginatedArtworks> {
+  const res = await fetch(
+    `${getBackendUrl()}/artworks/search?q=${encodeURIComponent(query)}&page=${page}&page_size=${pageSize}`
+  );
+  if (!res.ok) throw new Error(`后端响应错误: ${res.status}`);
+  const json: ApiEnvelope<PaginatedArtworks> = await res.json();
+  if (json.code !== 0) throw new Error(json.message || '请求失败');
+  return json.data;
+}
+
+// 按分类查询作品（v3.0.0：GET /artworks/category/:category?page=&page_size=）
+export async function getArtworksByCategoryAPI(
+  category: string,
+  page = 1,
+  pageSize = 20
+): Promise<PaginatedArtworks> {
+  const res = await fetch(
+    `${getBackendUrl()}/artworks/category/${encodeURIComponent(category)}?page=${page}&page_size=${pageSize}`
+  );
+  if (!res.ok) throw new Error(`后端响应错误: ${res.status}`);
+  const json: ApiEnvelope<PaginatedArtworks> = await res.json();
+  if (json.code !== 0) throw new Error(json.message || '请求失败');
+  return json.data;
+}
+
+// 按 ID 获取作品详情（v3.0.0：GET /artworks/:id）
+export async function getArtworkByIdAPI(id: string): Promise<ArtworkItem> {
+  const res = await fetch(`${getBackendUrl()}/artworks/${encodeURIComponent(id)}`);
+  if (!res.ok) throw new Error(`后端响应错误: ${res.status}`);
+  const json: ApiEnvelope<ArtworkItem> = await res.json();
+  if (json.code !== 0) throw new Error(json.message || '请求失败');
+  return json.data;
+}
+
+// 获取风格分类（v3.0.0：GET /artworks/style-categories）
+export async function getStyleCategoriesAPI(): Promise<StyleCategoriesResponse> {
+  const res = await fetch(`${getBackendUrl()}/artworks/style-categories`);
+  if (!res.ok) throw new Error(`后端响应错误: ${res.status}`);
+  const json: ApiEnvelope<StyleCategoriesResponse> = await res.json();
+  if (json.code !== 0) throw new Error(json.message || '请求失败');
+  return json.data;
 }

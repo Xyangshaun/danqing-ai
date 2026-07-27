@@ -1,0 +1,171 @@
+// ============================================================
+// 丹青有AI - 服务启动入口
+// 对应文档:
+//   - auth-design.md §4.7 启动自检
+//   - context-log-2026-07-27.md 技术约束
+//
+// 启动顺序(关键):
+//   1. initEnv()           加载并校验环境变量(失败立即退出)
+//   2. initLogger()        初始化 Winston(后续日志可用)
+//   3. initPrisma()        初始化 Prisma(数据库连接池)
+//   4. initRedis()         初始化 Redis(state/限流/黑名单)
+//   5. createApp()         构建 Express 应用(由 app.ts 默认导出已自动构建)
+//   6. http.createServer    启动 HTTP 监听
+//
+// 优雅关闭(SIGTERM/SIGINT):
+//   - 停止接收新连接
+//   - 关闭 HTTP server
+//   - 关闭 Prisma / Redis 连接
+//   - 进程退出
+//
+// 兜底:
+//   - uncaughtException:记录后退出(进程状态不可预测)
+//   - unhandledRejection:记录后退出(避免资源泄漏)
+// ============================================================
+
+import http from 'node:http';
+import { initEnv, env } from './config/env.js';
+import { initLogger, logger } from './utils/logger.js';
+import { initPrisma, closePrisma } from './config/prisma.js';
+import { initRedis, closeRedis } from './config/redis.js';
+import app from './app.js';
+
+/**
+ * 启动服务器(主入口)
+ */
+async function startServer(): Promise<void> {
+  // 1. 环境变量(启动自检:任一必填项缺失都会抛错)
+  initEnv();
+
+  // 2. Logger(后续所有日志使用此实例)
+  initLogger();
+
+  const cfg = env();
+  logger.info(
+    { nodeEnv: cfg.nodeEnv, port: cfg.port, logLevel: cfg.logLevel },
+    '[startup] env loaded',
+  );
+
+  // 3. Prisma 初始化(连接池由 DATABASE_URL 控制)
+  try {
+    initPrisma();
+    logger.info('[startup] prisma initialized');
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.error({ err: msg }, '[startup] prisma init failed');
+    process.exit(1);
+  }
+
+  // 4. Redis 初始化(用于 OAuth state / 限流 / 黑名单)
+  try {
+    initRedis();
+    logger.info('[startup] redis initialized');
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.error({ err: msg }, '[startup] redis init failed');
+    // Redis 是认证与限流的核心依赖,不可降级,直接退出
+    process.exit(1);
+  }
+
+  // 5. HTTP 服务(由 app.ts 已构建)
+  const server = http.createServer(app);
+
+  // 6. 启动监听
+  server.listen(cfg.port, () => {
+    logger.info(
+      { port: cfg.port, nodeEnv: cfg.nodeEnv },
+      '[startup] danqing-ai-server listening',
+    );
+    logger.info(
+      {
+        auth: `/auth/*`,
+        users: `/users/*`,
+        tenants: `/tenants/*`,
+        analyses: `/analyses/*`,
+        health: `/health`,
+      },
+      '[startup] routes mounted',
+    );
+  });
+
+  // ---------- 优雅关闭 ----------
+  // 关闭标识:防止 SIGTERM/SIGINT 多次触发重复执行清理
+  let isShuttingDown = false;
+
+  async function gracefulShutdown(signal: string): Promise<void> {
+    if (isShuttingDown) {
+      logger.warn({ signal }, '[shutdown] already in progress, skip');
+      return;
+    }
+    isShuttingDown = true;
+    logger.info({ signal }, '[shutdown] graceful shutdown start');
+
+    // 6a. 停止接收新连接(noNewConnections)
+    server.close((err) => {
+      if (err) {
+        logger.error({ err: err.message }, '[shutdown] http server close error');
+      } else {
+        logger.info('[shutdown] http server closed');
+      }
+    });
+
+    // 6b. 关闭 Redis(给 in-flight 请求 5s 缓冲)
+    try {
+      await closeRedis();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.error({ err: msg }, '[shutdown] redis close error');
+    }
+
+    // 6c. 关闭 Prisma
+    try {
+      await closePrisma();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.error({ err: msg }, '[shutdown] prisma close error');
+    }
+
+    logger.info('[shutdown] graceful shutdown complete, exit 0');
+    process.exit(0);
+  }
+
+  // SIGTERM:K8s/Docker 停容器时发送
+  process.on('SIGTERM', () => {
+    void gracefulShutdown('SIGTERM');
+  });
+
+  // SIGINT:Ctrl+C
+  process.on('SIGINT', () => {
+    void gracefulShutdown('SIGINT');
+  });
+
+  // ---------- 进程级兜底 ----------
+  // uncaughtException:同步代码未捕获的异常
+  // 进程状态已不可预测,记录后强制退出(交给进程管理器重启)
+  process.on('uncaughtException', (err) => {
+    logger.error(
+      { err: err.message, stack: err.stack, name: err.name },
+      '[fatal] uncaughtException',
+    );
+    process.exit(1);
+  });
+
+  // unhandledRejection:Promise 未处理的 rejection
+  // Node 15+ 默认会终止进程,这里显式处理确保日志落盘
+  process.on('unhandledRejection', (reason) => {
+    const msg = reason instanceof Error ? reason.message : String(reason);
+    const stack = reason instanceof Error ? reason.stack : undefined;
+    logger.error({ reason: msg, stack }, '[fatal] unhandledRejection');
+    process.exit(1);
+  });
+}
+
+// 启动(顶层 await 仅在 ESM 中可用,本项目 type:module)
+void startServer().catch((err) => {
+  // 启动失败兜底(initEnv 抛错时 logger 可能还未初始化)
+  const msg = err instanceof Error ? err.message : String(err);
+  const stack = err instanceof Error ? err.stack : undefined;
+  // eslint-disable-next-line no-console
+  console.error('[fatal] startup failed:', msg, stack);
+  process.exit(1);
+});
