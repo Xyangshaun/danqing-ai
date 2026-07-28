@@ -1,6 +1,6 @@
 // ============================================================
 // AI 分析业务服务
-// 对应 API:POST /analyses + POST /analyses/upload + GET /analyses + GET /analyses/:id
+// 对应 API:POST /analyses + POST /analyses/upload + GET /analyses + GET /analyses/:id + DELETE /analyses/:id
 //
 // 实现策略(3 秒 SLA):
 //   - Jimp 像素分析通常 < 1 秒,走同步模式:直接返回 status=success + 完整 result
@@ -12,6 +12,11 @@
 //   - 创建时 status=pending(短暂状态)
 //   - 分析完成后 update 为 status=success,写入 result/overallScore/durationMs/completedAt
 //   - 失败时 update 为 status=failed,写入 failureReason
+//
+// RBAC 数据范围过滤(对应 server/src/config/permissions.ts):
+//   - listAnalyses:student 强制 WHERE user_id=自己;teacher/admin/owner 租户全量
+//   - getAnalysis:student 越权访问他人记录 → 404(不泄露存在性)
+//   - deleteAnalysis:teacher/student 仅删自己;admin/owner 删任意
 // ============================================================
 
 import { existsSync, promises as fs } from 'node:fs';
@@ -28,7 +33,10 @@ import {
   type ListAnalysesResponse,
   type ArtType,
   type AnalysisResult,
+  type DeleteAnalysisResponse,
+  type UserRole,
 } from '../types/api-contract.js';
+import { canReadTenantWide, canDeleteTenantWide } from '../config/permissions.js';
 import { analyzeImage } from './analysis-engine.service.js';
 import { runHybridAnalysis } from './ai-analysis.service.js';
 import { isAIEnabled } from './ai-vision.service.js';
@@ -104,21 +112,29 @@ class AnalysisServiceClass {
 
   /**
    * 查询分析历史(分页)
-   * - 学生:仅返回自己的记录
-   * - 教师/管理员:返回租户内所有记录(可按 userId 筛选)
+   * 数据范围过滤(基于 RBAC 权限矩阵):
+   *   - student:强制 WHERE user_id = ?(只能看自己的,忽略 query.userId 越权)
+   *   - teacher / admin / owner:租户内全量可见(canReadTenantWide=true),
+   *     可通过 query.userId 按用户筛选
+   *
+   * 安全策略:
+   *   - tenantId 强制从 JWT 注入(防跨租户)
+   *   - 越权 query.userId(student 试图查询他人)被 service 层强制覆盖
    */
   async listAnalyses(params: {
     tenantId: string;
     userId: string;
-    role: 'admin' | 'teacher' | 'student' | 'owner';
+    role: UserRole;
     query: ListAnalysesQuery;
   }): Promise<ListAnalysesResponse> {
     const { tenantId, userId, role, query } = params;
     const page = query.page ?? 1;
     const pageSize = Math.min(query.pageSize ?? 20, 100);
 
-    // 学生权限:强制 userId 过滤(只能看自己)
-    const effectiveUserId = role === 'student' ? userId : query.userId;
+    // 数据范围过滤:非"租户全量可见"角色强制只能看自己
+    // canReadTenantWide(role) === true → teacher/admin/owner
+    // canReadTenantWide(role) === false → student,强制 userId=自己,忽略 query.userId
+    const effectiveUserId = canReadTenantWide(role) ? query.userId : userId;
 
     const result = await analysisRepository.list({
       tenantId,
@@ -152,14 +168,31 @@ class AnalysisServiceClass {
 
   /**
    * 查询单条分析详情
-   * 跨租户访问 → 3004 TENANT_MISMATCH(由 repository findFirst 过滤实现,返回 404)
+   * 数据范围过滤(基于 RBAC 权限矩阵):
+   *   - 跨租户访问 → 404(由 repository findFirst 过滤实现,不泄露存在性)
+   *   - student 查询他人记录 → 404(强制 ownership 校验,不泄露存在性)
+   *   - teacher / admin / owner 可查询租户内任意记录
+   *
+   * 安全策略:
+   *   - 不返回 403 FORBIDDEN 以免泄露资源存在性
+   *   - 越权访问统一返回 404 ANALYSIS_NOT_FOUND
    */
   async getAnalysis(params: {
     tenantId: string;
     analysisId: string;
+    userId: string;
+    role: UserRole;
   }): Promise<AnalysisDetail> {
-    const analysis = await analysisRepository.findById(params.tenantId, params.analysisId);
+    const { tenantId, analysisId, userId, role } = params;
+    const analysis = await analysisRepository.findById(tenantId, analysisId);
     if (!analysis) {
+      throw new BusinessError(ErrorCode.ANALYSIS_NOT_FOUND, '分析记录不存在', 404);
+    }
+
+    // 数据范围过滤:非"租户全量可见"角色仅可查看自己创建的记录
+    // canReadTenantWide(role) === false → student,必须 ownership
+    if (!canReadTenantWide(role) && analysis.userId !== userId) {
+      // 出于安全,不暴露 403(避免泄露存在性),统一返回 404
       throw new BusinessError(ErrorCode.ANALYSIS_NOT_FOUND, '分析记录不存在', 404);
     }
 
@@ -177,6 +210,71 @@ class AnalysisServiceClass {
       durationMs: analysis.durationMs,
       createdAt: analysis.createdAt.toISOString(),
       completedAt: analysis.completedAt?.toISOString() ?? null,
+    };
+  }
+
+  /**
+   * 删除分析记录
+   * 数据范围过滤(基于 RBAC 权限矩阵):
+   *   - admin / owner(canDeleteTenantWide=true):可删除租户内任意记录
+   *   - teacher / student:仅可删除自己创建的记录(ownership 校验)
+   *
+   * 路由层权限:requireAnyPermission('analysis:delete:own', 'analysis:delete:tenant')
+   *   - teacher 拥有 analysis:delete:own,无 analysis:delete:tenant
+   *   - student 拥有 analysis:delete:own,无 analysis:delete:tenant
+   *   - admin / owner 拥有两者
+   *
+   * 安全策略:
+   *   - tenantId 强制从 JWT 注入(防跨租户删除)
+   *   - 越权删除(teacher/student 删他人记录)统一返回 404(不泄露存在性)
+   *   - 审计日志:记录删除操作(operatorUserId / analysisId / ownerId / role)
+   */
+  async deleteAnalysis(params: {
+    tenantId: string;
+    analysisId: string;
+    operatorUserId: string;
+    role: UserRole;
+  }): Promise<DeleteAnalysisResponse> {
+    const { tenantId, analysisId, operatorUserId, role } = params;
+
+    // 1. 查询记录(强制 tenant_id 过滤,跨租户返回 null)
+    const analysis = await analysisRepository.findById(tenantId, analysisId);
+    if (!analysis) {
+      throw new BusinessError(ErrorCode.ANALYSIS_NOT_FOUND, '分析记录不存在', 404);
+    }
+
+    // 2. 数据范围过滤:非"租户全量删除"角色仅可删除自己的记录
+    // canDeleteTenantWide(role) === false → teacher/student,必须 ownership
+    if (!canDeleteTenantWide(role) && analysis.userId !== operatorUserId) {
+      // 越权删除:统一返回 404(不泄露存在性)
+      throw new BusinessError(ErrorCode.ANALYSIS_NOT_FOUND, '分析记录不存在', 404);
+    }
+
+    // 3. 执行删除(repository 内部再次校验 tenant_id)
+    const deleted = await analysisRepository.delete(tenantId, analysisId);
+    if (!deleted) {
+      // 极端情况:并发删除导致记录已被清除
+      throw new BusinessError(ErrorCode.ANALYSIS_NOT_FOUND, '分析记录不存在', 404);
+    }
+
+    // 4. 审计日志(对应技术约束:所有写操作必须审计)
+    // 不记录敏感信息(imageUrl/title 等),仅记录删除操作的元数据
+    logger.info(
+      {
+        action: 'analysis.delete',
+        tenantId,
+        analysisId,
+        operatorUserId,
+        operatorRole: role,
+        ownerId: analysis.userId,
+        workType: analysis.workType,
+      },
+      '[audit] analysis deleted',
+    );
+
+    return {
+      id: analysisId,
+      deleted: true,
     };
   }
 

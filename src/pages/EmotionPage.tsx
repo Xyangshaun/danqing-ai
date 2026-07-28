@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Heart, Sparkles, Loader2, Download, Share2, Sun, Moon, Wind, Droplets, Flame, Waves, Palette, Sliders, Layers, Copy, RefreshCw } from 'lucide-react';
 import { generateEmotionCanvas, emotionPresets } from '../services/imageService';
+import { saveEmotionPalette } from '../services/data-service';
 import { useToast } from '../components/ToastProvider';
 
 const emotionData: Record<string, {
@@ -94,16 +95,14 @@ export default function EmotionPage() {
   const currentEmotion = emotionData[selectedEmotion];
   const secondaryEmotionData = secondaryEmotion ? emotionData[secondaryEmotion] : null;
 
-  // 将当前情绪色板保存到 localStorage 并跳转到风格库
-  const handleApplyToStyles = () => {
-    const palette = {
-      emotion: selectedEmotion,
-      colorPalette: currentEmotion.colorPalette,
-      intensity,
-      createdAt: new Date().toISOString(),
-    };
+  // 将当前情绪色板通过 data-service 保存并跳转到风格库
+  const handleApplyToStyles = async () => {
     try {
-      localStorage.setItem('danqing-ai-emotion-palette', JSON.stringify(palette));
+      await saveEmotionPalette({
+        emotion: selectedEmotion,
+        colorPalette: currentEmotion.colorPalette,
+        intensity,
+      });
       toast.success('色板已保存，可在风格库查看');
       navigate('/styles?from=emotion');
     } catch (err) {

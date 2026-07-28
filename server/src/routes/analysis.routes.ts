@@ -1,10 +1,22 @@
 // ============================================================
 // 分析路由
 // 对应 API:
-//   POST /analyses          (JSON: artType + imageUrl)         (需鉴权 + 租户)
-//   POST /analyses/upload   (multipart/form-data: image)      (需鉴权 + 租户)
-//   GET  /analyses          (分页查询历史)                     (需鉴权 + 租户)
-//   GET  /analyses/:id      (查询单条详情)                     (需鉴权 + 租户)
+//   POST   /analyses          (JSON: artType + imageUrl)         (需鉴权 + analysis:create)
+//   POST   /analyses/upload   (multipart/form-data: image)      (需鉴权 + analysis:create)
+//   GET    /analyses          (分页查询历史)                     (需鉴权 + analysis:read:own|tenant)
+//   GET    /analyses/:id      (查询单条详情)                     (需鉴权 + analysis:read:own|tenant)
+//   DELETE /analyses/:id      (删除分析记录)                     (需鉴权 + analysis:delete:own|tenant)
+//
+// 权限矩阵:
+//   - 所有角色(student/teacher/admin/owner)拥有 analysis:create + analysis:read:own + analysis:delete:own
+//   - teacher/admin/owner 额外拥有 analysis:read:tenant
+//   - admin/owner 额外拥有 analysis:delete:tenant
+//
+// 数据范围过滤(service 层基于 role 实现):
+//   - student:仅自己的记录(canReadTenantWide=false)
+//   - teacher/admin/owner:租户内全量(canReadTenantWide=true)
+//   - teacher/student 删除:仅自己的记录(canDeleteTenantWide=false)
+//   - admin/owner 删除:租户内任意(canDeleteTenantWide=true)
 //
 // multer 配置:
 //   - storage:磁盘存储到 server/uploads/(env UPLOAD_DIR 可配置)
@@ -22,10 +34,15 @@ import {
   uploadAnalysis,
   listAnalyses,
   getAnalysis,
+  deleteAnalysis,
 } from '../controllers/analysis.controller.js';
 import { authMiddleware } from '../middlewares/auth.js';
 import { tenantMiddleware } from '../middlewares/tenant.js';
 import { apiRateLimiter } from '../middlewares/rate-limit.js';
+import {
+  requirePermission,
+  requireAnyPermission,
+} from '../middlewares/permission.js';
 import { env } from '../config/env.js';
 import { ErrorCode } from '../types/api-contract.js';
 import { error } from '../utils/response.js';
@@ -174,16 +191,23 @@ uploadMiddleware.use((req, res, next) => {
 });
 
 // ---------- 业务路由 ----------
+// 权限校验顺序:authMiddleware → tenantMiddleware → apiRateLimiter → requirePermission → handler
+// 数据范围过滤由 service 层基于 req.role 实现(见 analysis.service.ts)
 
-// POST /analyses - JSON 模式(imageUrl)
-analysisRouter.post('/', createAnalysis);
+// POST /analyses - JSON 模式(imageUrl),需 analysis:create 权限(所有角色拥有)
+analysisRouter.post('/', requirePermission('analysis:create'), createAnalysis);
 
-// POST /analyses/upload - multipart/form-data 文件上传
+// POST /analyses/upload - multipart/form-data 文件上传,需 analysis:create 权限
 // 必须在 GET /:id 之前注册(避免 /upload 被解析为 :id)
-analysisRouter.post('/upload', uploadMiddleware, uploadAnalysis);
+analysisRouter.post('/upload', uploadMiddleware, requirePermission('analysis:create'), uploadAnalysis);
 
-// GET /analyses - 分页查询历史
-analysisRouter.get('/', listAnalyses);
+// GET /analyses - 分页查询历史,需 analysis:read:own 或 analysis:read:tenant 权限
+// student 仅拥有 analysis:read:own,teacher/admin/owner 拥有两者
+analysisRouter.get('/', requireAnyPermission('analysis:read:own', 'analysis:read:tenant'), listAnalyses);
 
-// GET /analyses/:id - 查询单条详情
-analysisRouter.get('/:id', getAnalysis);
+// GET /analyses/:id - 查询单条详情,需 analysis:read:own 或 analysis:read:tenant 权限
+analysisRouter.get('/:id', requireAnyPermission('analysis:read:own', 'analysis:read:tenant'), getAnalysis);
+
+// DELETE /analyses/:id - 删除分析记录,需 analysis:delete:own 或 analysis:delete:tenant 权限
+// student/teacher 拥有 analysis:delete:own(仅删自己),admin/owner 拥有两者(删任意)
+analysisRouter.delete('/:id', requireAnyPermission('analysis:delete:own', 'analysis:delete:tenant'), deleteAnalysis);

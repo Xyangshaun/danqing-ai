@@ -68,6 +68,15 @@ process.env.PORT = '3000';
 process.env.UPLOAD_DIR = 'test-uploads';
 process.env.UPLOAD_MAX_SIZE = '10485760'; // 10MB
 
+// AI 视觉分析(Phase 2 追加)
+// 默认关闭,保持现有 260 个测试不受影响
+// AI 专项测试通过 vi.mock 替换 axios,并在测试内动态开启 AI_ENABLED
+process.env.AI_ENABLED = 'false';
+process.env.AI_API_KEY = '';
+process.env.AI_API_URL = 'https://open.bigmodel.cn/api/paas/v4/chat/completions';
+process.env.AI_API_TIMEOUT = '2500';
+process.env.AI_API_MODEL = 'glm-4v-flash';
+
 // ============================================================
 // 2. vi.mock:替换 Redis / Prisma / httpClient / Jimp
 // 工厂内动态 import mock 文件,返回匹配源码导出的对象

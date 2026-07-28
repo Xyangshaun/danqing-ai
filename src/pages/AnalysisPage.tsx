@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { Upload, Eye, Palette, Sparkles, CheckCircle2, Loader2, ArrowRight, PenTool, Layers, Box, Brush, Download, Share2, Cpu, Cloud, Zap, Type, Gem, Settings, Move, Scan, Brain, FileText, Image as ImageIcon } from 'lucide-react';
 import type { AnalysisResult, PaintingAnalysis, DesignAnalysis, ProductAnalysis, SculptureAnalysis } from '../types';
-import { saveToHistory } from '../services/mockData';
+import { saveAnalysis } from '../services/data-service';
 import HeatmapCanvas from '../components/HeatmapCanvas';
 import { useToast } from '../components/ToastProvider';
 import { smartAnalyze, type AnalysisDecision } from '../services/smartAnalysisEngine';
@@ -277,21 +277,25 @@ export default function AnalysisPage() {
         });
       }, 600);
 
-      const processResult = (analysisResult: AnalysisResult) => {
-        if (!completed) {
-          completed = true;
-          clearInterval(progressTimer);
-          clearInterval(detailTimer);
-          /* 真实分析完成，进度冲到 100% */
-          setProgress(100);
-          /* 短暂展示 100% 完成态，再切换到结果页 */
-          setTimeout(() => {
-            setResult(analysisResult);
-            saveToHistory(analysisResult);
-            setStep('result');
-            toast.success('分析完成', '诊断报告已生成并保存到历史记录');
-          }, 400);
+      const processResult = async (analysisResult: AnalysisResult) => {
+        if (completed) return;
+        completed = true;
+        clearInterval(progressTimer);
+        clearInterval(detailTimer);
+        /* 真实分析完成，进度冲到 100% */
+        setProgress(100);
+        /* 异步保存到 data-service(API 优先,失败回退 LocalStorage),不阻塞 UI 切换 */
+        try {
+          await saveAnalysis(analysisResult);
+        } catch (err) {
+          console.error('保存分析结果失败:', err);
         }
+        /* 短暂展示 100% 完成态，再切换到结果页 */
+        setTimeout(() => {
+          setResult(analysisResult);
+          setStep('result');
+          toast.success('分析完成', '诊断报告已生成并保存到历史记录');
+        }, 400);
       };
 
       const handleError = (error: unknown) => {

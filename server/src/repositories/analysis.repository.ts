@@ -123,6 +123,24 @@ export class AnalysisRepository {
       },
     });
   }
+
+  /**
+   * 删除分析任务(强制 tenant_id 校验,防跨租户删除)
+   * @param tenantId 租户 ID
+   * @param id 分析任务 ID
+   * @returns true 删除成功;false 记录不存在或不属于该租户
+   */
+  async delete(tenantId: string, id: string): Promise<boolean> {
+    const existing = await prisma().analysis.findFirst({
+      where: { id, tenantId },
+      select: { id: true },
+    });
+    if (!existing) return false;
+    await prisma().analysis.delete({
+      where: { id },
+    });
+    return true;
+  }
 }
 
 export const analysisRepository = new AnalysisRepository();

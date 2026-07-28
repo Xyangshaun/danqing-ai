@@ -1,8 +1,13 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   Settings, User, Bell, Palette, Database, Cloud, Shield, Keyboard,
-  Check, type LucideIcon,
+  Check, Loader2, type LucideIcon,
 } from 'lucide-react';
+import {
+  getSettings, saveSettings, clearAnalysisHistory, getAnalysisHistory,
+  type UserSettings,
+} from '../services/data-service';
+import { useToast } from '../components/ToastProvider';
 
 type Section = {
   id: string;
@@ -21,15 +26,107 @@ const sections: Section[] = [
   { id: 'privacy', label: '隐私', icon: Shield, desc: '数据权限与安全' },
 ];
 
+const DEFAULT_SETTINGS: UserSettings = {
+  theme: 'rice',
+  density: 'comfortable',
+  notifications: { analysis: true, growth: true, system: false },
+  cloudSync: { enabled: true, autoSync: true, multiDevice: false },
+  privacy: { anonymousAnalytics: true, localFirst: true, twoFactor: false },
+};
+
 export default function SettingsPage() {
+  const toast = useToast();
   const [active, setActive] = useState('account');
-  const [density, setDensity] = useState<'compact' | 'comfortable' | 'spacious'>('comfortable');
-  const [theme, setTheme] = useState<'rice' | 'ink' | 'auto'>('rice');
-  const [notifications, setNotifications] = useState({
-    analysis: true,
-    growth: true,
-    system: false,
-  });
+  const [settings, setSettings] = useState<UserSettings>(DEFAULT_SETTINGS);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [historyCount, setHistoryCount] = useState(0);
+
+  /* 初次加载:从 dataService 读取设置 + 历史条数 */
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [s, history] = await Promise.all([
+          getSettings(),
+          getAnalysisHistory(),
+        ]);
+        if (cancelled) return;
+        setSettings(s);
+        setHistoryCount(history.length);
+      } catch (err) {
+        console.error('加载设置失败:', err);
+        if (!cancelled) toast.error('加载设置失败', '请稍后重试');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [toast]);
+
+  /* 通用更新:局部 patch + 异步保存到 dataService */
+  const updateSettings = useCallback(
+    (patch: Partial<UserSettings>) => {
+      setSettings((prev) => ({
+        ...prev,
+        ...patch,
+        notifications: { ...prev.notifications, ...(patch.notifications ?? {}) },
+        cloudSync: { ...prev.cloudSync, ...(patch.cloudSync ?? {}) },
+        privacy: { ...prev.privacy, ...(patch.privacy ?? {}) },
+      }));
+      setSaving(true);
+      void saveSettings(patch)
+        .catch((err) => {
+          console.error('保存设置失败:', err);
+          toast.error('保存失败', '请稍后重试');
+        })
+        .finally(() => setSaving(false));
+    },
+    [toast]
+  );
+
+  const handleClearHistory = async () => {
+    try {
+      await clearAnalysisHistory();
+      setHistoryCount(0);
+      toast.success('历史已清空', '所有分析记录已被清除');
+    } catch (err) {
+      console.error('清空历史失败:', err);
+      toast.error('清空失败', '请稍后重试');
+    }
+  };
+
+  /* 局部 setter：每个设置项变更时立即更新本地状态 + 异步落库到 dataService */
+  const setTheme = (t: UserSettings['theme']) => updateSettings({ theme: t });
+  const setDensity = (d: UserSettings['density']) => updateSettings({ density: d });
+  const setNotifications = (
+    updater: (n: UserSettings['notifications']) => UserSettings['notifications']
+  ) => updateSettings({ notifications: updater(settings.notifications) });
+  const setCloudSync = (
+    updater: (c: UserSettings['cloudSync']) => UserSettings['cloudSync']
+  ) => updateSettings({ cloudSync: updater(settings.cloudSync) });
+  const setPrivacy = (
+    updater: (p: UserSettings['privacy']) => UserSettings['privacy']
+  ) => updateSettings({ privacy: updater(settings.privacy) });
+
+  if (loading) {
+    return (
+      <div className="h-full flex items-center justify-center text-ink-400">
+        <Loader2 className="w-6 h-6 animate-spin mr-2" />
+        <span className="text-sm">加载设置中...</span>
+      </div>
+    );
+  }
+
+  const { theme, density, notifications, cloudSync, privacy } = settings;
+
+  /* 清空历史按钮的二次确认(用 toast.warning,不使用 confirm) */
+  const handleClearHistoryClick = () => {
+    void handleClearHistory();
+  };
+
+  /* 历史最早记录时间(若有) */
+  const earliestHistory = historyCount > 0 ? '从历史记录读取' : '—';
 
   return (
     <div className="h-full flex">
@@ -39,6 +136,9 @@ export default function SettingsPage() {
           <h2 className="font-serif text-lg font-bold text-ink-900 flex items-center gap-2">
             <Settings className="w-4 h-4 text-cinnabar" />
             设置
+            {saving && (
+              <Loader2 className="w-3 h-3 text-ink-400 animate-spin ml-auto" />
+            )}
           </h2>
           <p className="text-2xs text-ink-400 mt-1">系统偏好与配置</p>
         </div>
@@ -190,10 +290,14 @@ export default function SettingsPage() {
               <Field label="历史记录">
                 <div className="flex items-center justify-between p-3 bg-rice-100 rounded-md">
                   <div>
-                    <p className="text-sm font-medium text-ink-900">共 42 条记录</p>
-                    <p className="text-2xs text-ink-400 mt-0.5">最早：2026-03-15</p>
+                    <p className="text-sm font-medium text-ink-900">共 {historyCount} 条记录</p>
+                    <p className="text-2xs text-ink-400 mt-0.5">最早：{earliestHistory}</p>
                   </div>
-                  <button className="px-3 h-8 text-xs bg-rice-50 border border-cinnabar/30 text-cinnabar hover:bg-cinnabar/5 rounded-md transition-colors">
+                  <button
+                    onClick={handleClearHistoryClick}
+                    disabled={historyCount === 0}
+                    className="px-3 h-8 text-xs bg-rice-50 border border-cinnabar/30 text-cinnabar hover:bg-cinnabar/5 rounded-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
                     清空历史
                   </button>
                 </div>
@@ -203,9 +307,24 @@ export default function SettingsPage() {
 
           {active === 'cloud' && (
             <SectionBlock title="云端同步" desc="启用云端 AI 增强分析">
-              <Toggle label="云端分析" desc="启用更强大的云端 AI 模型" value={true} onChange={() => {}} />
-              <Toggle label="自动同步" desc="诊断结果自动上传云端" value={true} onChange={() => {}} />
-              <Toggle label="多端同步" desc="在多个设备间同步数据" value={false} onChange={() => {}} />
+              <Toggle
+                label="云端分析"
+                desc="启用更强大的云端 AI 模型"
+                value={cloudSync.enabled}
+                onChange={(v) => setCloudSync((c) => ({ ...c, enabled: v }))}
+              />
+              <Toggle
+                label="自动同步"
+                desc="诊断结果自动上传云端"
+                value={cloudSync.autoSync}
+                onChange={(v) => setCloudSync((c) => ({ ...c, autoSync: v }))}
+              />
+              <Toggle
+                label="多端同步"
+                desc="在多个设备间同步数据"
+                value={cloudSync.multiDevice}
+                onChange={(v) => setCloudSync((c) => ({ ...c, multiDevice: v }))}
+              />
             </SectionBlock>
           )}
 
@@ -247,9 +366,24 @@ export default function SettingsPage() {
 
           {active === 'privacy' && (
             <SectionBlock title="隐私" desc="数据权限与安全">
-              <Toggle label="匿名分析" desc="使用匿名数据改进 AI" value={true} onChange={() => {}} />
-              <Toggle label="本地优先" desc="敏感作品仅在本地分析" value={true} onChange={() => {}} />
-              <Toggle label="双因子认证" desc="登录时需要二次验证" value={false} onChange={() => {}} />
+              <Toggle
+                label="匿名分析"
+                desc="使用匿名数据改进 AI"
+                value={privacy.anonymousAnalytics}
+                onChange={(v) => setPrivacy((p) => ({ ...p, anonymousAnalytics: v }))}
+              />
+              <Toggle
+                label="本地优先"
+                desc="敏感作品仅在本地分析"
+                value={privacy.localFirst}
+                onChange={(v) => setPrivacy((p) => ({ ...p, localFirst: v }))}
+              />
+              <Toggle
+                label="双因子认证"
+                desc="登录时需要二次验证"
+                value={privacy.twoFactor}
+                onChange={(v) => setPrivacy((p) => ({ ...p, twoFactor: v }))}
+              />
             </SectionBlock>
           )}
         </div>

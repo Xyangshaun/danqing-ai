@@ -160,43 +160,64 @@ function pickId(args: DelegateArgs): string | undefined {
   return undefined;
 }
 
+/**
+ * include 关系解析器:为记录附加关联模型数据
+ * 用于支持 tenantMember.findMany({ include: { user/tenant } }) 等场景
+ */
+type IncludeResolver<T> = (record: T, include: Record<string, unknown>) => T;
+
 function createModelDelegate<T extends Record<string, unknown> & { id: string }>(
   store: Map<string, T>,
   uniqueFields: string[] = [],
+  includeResolver?: IncludeResolver<T>,
 ) {
+  function applyInclude(record: T, include: unknown): T {
+    if (!include || typeof include !== 'object' || !includeResolver) return record;
+    return includeResolver(record, include as Record<string, unknown>);
+  }
+
   return {
     async findUnique(args: DelegateArgs): Promise<T | null> {
       const where = args.where ?? {};
+      let result: T | null = null;
       // 按 id 查找
       if (typeof where.id === 'string') {
-        return store.get(where.id) ?? null;
-      }
-      // 按唯一字段查找
-      for (const field of uniqueFields) {
-        if (typeof where[field] === 'string') {
-          for (const record of store.values()) {
-            if (record[field as keyof T] === where[field]) return record;
-          }
-          return null;
-        }
-        // 复合唯一键
-        if (field === 'userId_tenantId' && where.userId_tenantId && typeof where.userId_tenantId === 'object') {
-          const cond = where.userId_tenantId as { userId?: string; tenantId?: string };
-          for (const record of store.values()) {
-            if (record['userId' as keyof T] === cond.userId && record['tenantId' as keyof T] === cond.tenantId) {
-              return record;
+        result = store.get(where.id) ?? null;
+      } else {
+        // 按唯一字段查找
+        for (const field of uniqueFields) {
+          if (typeof where[field] === 'string') {
+            for (const record of store.values()) {
+              if (record[field as keyof T] === where[field]) {
+                result = record;
+                break;
+              }
             }
+            break;
           }
-          return null;
+          // 复合唯一键
+          if (field === 'userId_tenantId' && where.userId_tenantId && typeof where.userId_tenantId === 'object') {
+            const cond = where.userId_tenantId as { userId?: string; tenantId?: string };
+            for (const record of store.values()) {
+              if (record['userId' as keyof T] === cond.userId && record['tenantId' as keyof T] === cond.tenantId) {
+                result = record;
+                break;
+              }
+            }
+            break;
+          }
         }
       }
-      return null;
+      if (result === null) return null;
+      return applyInclude(result, args.include);
     },
 
     async findFirst(args: DelegateArgs): Promise<T | null> {
       const where = args.where ?? {};
       for (const record of store.values()) {
-        if (matchWhere(record, where)) return record;
+        if (matchWhere(record, where)) {
+          return applyInclude(record, args.include);
+        }
       }
       return null;
     },
@@ -222,6 +243,10 @@ function createModelDelegate<T extends Record<string, unknown> & { id: string }>
       // 分页
       if (args.skip !== undefined) items = items.slice(args.skip);
       if (args.take !== undefined) items = items.slice(0, args.take);
+      // include 解析
+      if (args.include && includeResolver) {
+        items = items.map((r) => applyInclude(r, args.include));
+      }
       return items;
     },
 
@@ -286,6 +311,67 @@ function createModelDelegate<T extends Record<string, unknown> & { id: string }>
       }
       return n;
     },
+
+    async delete(args: DelegateArgs): Promise<T> {
+      const where = args.where ?? {};
+      // 按 id 删除
+      if (typeof where.id === 'string') {
+        const existing = store.get(where.id);
+        if (!existing) {
+          const err = new Error('mock delete: record not found');
+          err.name = 'PrismaClientKnownRequestError';
+          throw err;
+        }
+        store.delete(where.id);
+        return existing;
+      }
+      // 按复合唯一键删除(userId_tenantId)
+      if (where.userId_tenantId && typeof where.userId_tenantId === 'object') {
+        const cond = where.userId_tenantId as { userId?: string; tenantId?: string };
+        for (const [key, record] of Array.from(store.entries())) {
+          if (record['userId' as keyof T] === cond.userId && record['tenantId' as keyof T] === cond.tenantId) {
+            store.delete(key);
+            return record;
+          }
+        }
+        const err = new Error('mock delete: record not found');
+        err.name = 'PrismaClientKnownRequestError';
+        throw err;
+      }
+      // 按唯一字段删除
+      for (const field of uniqueFields) {
+        if (typeof where[field] === 'string') {
+          for (const [key, record] of Array.from(store.entries())) {
+            if (record[field as keyof T] === where[field]) {
+              store.delete(key);
+              return record;
+            }
+          }
+        }
+      }
+      // findFirst 风格:按 where 条件删除首条匹配
+      for (const [key, record] of Array.from(store.entries())) {
+        if (matchWhere(record, where)) {
+          store.delete(key);
+          return record;
+        }
+      }
+      const err = new Error('mock delete: record not found');
+      err.name = 'PrismaClientKnownRequestError';
+      throw err;
+    },
+
+    async deleteMany(args: DelegateArgs): Promise<{ count: number }> {
+      const where = args.where ?? {};
+      let count = 0;
+      for (const [key, record] of Array.from(store.entries())) {
+        if (matchWhere(record, where)) {
+          store.delete(key);
+          count += 1;
+        }
+      }
+      return { count };
+    },
   };
 }
 
@@ -305,9 +391,95 @@ class PrismaMock {
   readonly analysisStore = new Map<string, MockAnalysis>();
 
   // 各模型委托(唯一字段对应 schema.prisma 中的 @unique)
-  readonly user = createModelDelegate<MockUser>(this.userStore, ['feishuUnionId', 'feishuOpenId']);
+  // tenantMember 委托:支持 include user / include tenant 关系解析
+  readonly tenantMember = createModelDelegate<MockTenantMember>(
+    this.tenantMemberStore,
+    ['userId_tenantId'],
+    (record, include) => {
+      const enriched = { ...record } as MockTenantMember & {
+        user?: Partial<MockUser>;
+        tenant?: Partial<MockTenant>;
+      };
+      if ('user' in include) {
+        const userSelect = (include as { user?: { select?: Record<string, boolean> } }).user?.select;
+        const fullUser = this.userStore.get(record.userId);
+        if (fullUser) {
+          if (userSelect) {
+            // 仅返回 select 指定字段
+            const picked: Partial<MockUser> = {};
+            for (const [field, enabled] of Object.entries(userSelect)) {
+              if (enabled && field in fullUser) {
+                (picked as Record<string, unknown>)[field] = (fullUser as Record<string, unknown>)[field];
+              }
+            }
+            enriched.user = picked;
+          } else {
+            enriched.user = fullUser;
+          }
+        }
+      }
+      if ('tenant' in include) {
+        const tenantSelect = (include as { tenant?: { select?: Record<string, boolean> } }).tenant?.select;
+        const fullTenant = this.tenantStore.get(record.tenantId);
+        if (fullTenant) {
+          if (tenantSelect) {
+            const picked: Partial<MockTenant> = {};
+            for (const [field, enabled] of Object.entries(tenantSelect)) {
+              if (enabled && field in fullTenant) {
+                (picked as Record<string, unknown>)[field] = (fullTenant as Record<string, unknown>)[field];
+              }
+            }
+            enriched.tenant = picked;
+          } else {
+            enriched.tenant = fullTenant;
+          }
+        }
+      }
+      return enriched as unknown as MockTenantMember;
+    },
+  );
+
+  // user 委托:支持 include memberships 关系解析(用于 /auth/me)
+  readonly user = createModelDelegate<MockUser>(
+    this.userStore,
+    ['feishuUnionId', 'feishuOpenId'],
+    (record, include) => {
+      const enriched = { ...record } as MockUser & {
+        memberships?: Array<MockTenantMember & { tenant?: Partial<MockTenant> }>;
+      };
+      if ('memberships' in include) {
+        const nestedInclude = (include as { memberships?: { include?: Record<string, unknown> } }).memberships?.include;
+        const memberships: Array<MockTenantMember & { tenant?: Partial<MockTenant> }> = [];
+        for (const m of this.tenantMemberStore.values()) {
+          if (m.userId === record.id) {
+            const mWithTenant = { ...m } as MockTenantMember & { tenant?: Partial<MockTenant> };
+            if (nestedInclude && 'tenant' in nestedInclude) {
+              const tenantSelect = (nestedInclude as { tenant?: { select?: Record<string, boolean> } }).tenant?.select;
+              const fullTenant = this.tenantStore.get(m.tenantId);
+              if (fullTenant) {
+                if (tenantSelect) {
+                  const picked: Partial<MockTenant> = {};
+                  for (const [field, enabled] of Object.entries(tenantSelect)) {
+                    if (enabled && field in fullTenant) {
+                      (picked as Record<string, unknown>)[field] = (fullTenant as Record<string, unknown>)[field];
+                    }
+                  }
+                  mWithTenant.tenant = picked;
+                } else {
+                  mWithTenant.tenant = fullTenant;
+                }
+              }
+            }
+            memberships.push(mWithTenant);
+          }
+        }
+        enriched.memberships = memberships;
+      }
+      return enriched as unknown as MockUser;
+    },
+  );
+
   readonly tenant = createModelDelegate<MockTenant>(this.tenantStore, ['feishuTenantKey']);
-  readonly tenantMember = createModelDelegate<MockTenantMember>(this.tenantMemberStore, ['userId_tenantId']);
   readonly session = createModelDelegate<MockSession>(this.sessionStore, ['refreshTokenHash']);
   readonly analysis = createModelDelegate<MockAnalysis>(this.analysisStore, []);
 

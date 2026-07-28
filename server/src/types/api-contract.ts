@@ -256,11 +256,13 @@ export interface SwitchTenantRequest {
   tenantId: string;
 }
 
-/** POST /tenants/switch 响应(返回新 access_token) */
+/** POST /tenants/switch 响应(返回新 access_token + 新角色) */
 export interface SwitchTenantResponse {
   accessToken: string;
   accessTokenExpiresAt: ISODateString;
   tenant: TenantInfo;
+  /** 切换后在新租户内的角色 */
+  role: UserRole;
 }
 
 /** 用户在某租户中的成员关系 */
@@ -270,6 +272,50 @@ export interface TenantMembership {
   tenantType: TenantType;
   role: UserRole;
   joinedAt: ISODateString;
+}
+
+/** GET /tenants 响应(当前用户所有租户成员关系) */
+export type ListUserTenantsResponse = TenantMembership[];
+
+/** 租户成员信息(列表项) */
+export interface TenantMemberInfo {
+  userId: string;
+  tenantId: string;
+  role: UserRole;
+  joinedAt: ISODateString;
+  user: {
+    id: string;
+    name: string;
+    avatar: string;
+    email: string | null;
+    feishuOpenId: string;
+  };
+}
+
+/** GET /tenants/:id/members 响应 */
+export type ListTenantMembersResponse = TenantMemberInfo[];
+
+/** POST /tenants/:id/members 请求(邀请成员) */
+export interface InviteMemberRequest {
+  /** 被邀请用户的 ID(已注册用户)
+   *  注:Phase 1 简化为按 userId 直接添加;后续可扩展为按 email/feishuOpenId 邀请 */
+  userId: string;
+  /** 在本租户中的角色 */
+  role: UserRole;
+}
+
+/** POST /tenants/:id/members 响应 */
+export interface InviteMemberResponse {
+  userId: string;
+  tenantId: string;
+  role: UserRole;
+  joinedAt: ISODateString;
+}
+
+/** DELETE /tenants/:id/members/:userId 响应 */
+export interface RemoveMemberResponse {
+  removed: boolean;
+  userId: string;
 }
 
 // ============ 3.5 AI 分析相关类型 ============
@@ -351,6 +397,12 @@ export type ListAnalysesResponse = PaginatedData<AnalysisListItem>;
 
 /** GET /analyses/:id 响应 */
 export type GetAnalysisResponse = AnalysisDetail;
+
+/** DELETE /analyses/:id 响应 */
+export interface DeleteAnalysisResponse {
+  id: string;
+  deleted: boolean;
+}
 
 // ============ 3.6 分析结果类型(对齐现有 src/types/index.ts) ============
 

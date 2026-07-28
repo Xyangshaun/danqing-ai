@@ -2,12 +2,14 @@ import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { TrendingUp, TrendingDown, BarChart3, Award, Sparkles, Lightbulb, Target, Layers } from 'lucide-react';
 import { Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area } from 'recharts';
-import { generateGrowthDataFromHistory, calculateGrowthInsights, getHistory } from '../services/mockData';
+import { calculateGrowthInsights } from '../services/mockData';
+import { getGrowthData, getAnalysisHistory } from '../services/data-service';
 import type { GrowthData } from '../types';
 
 export default function GrowthPage() {
   const navigate = useNavigate();
   const [growthData, setGrowthData] = useState<GrowthData[]>([]);
+  const [historyCount, setHistoryCount] = useState<number>(0);
 
   // 点击图表数据点跳转到对应日期的历史记录
   const handleChartClick = (payload: { payload?: GrowthData } | undefined) => {
@@ -17,9 +19,24 @@ export default function GrowthPage() {
     }
   };
 
+  // 异步加载成长数据和分析次数：通过 data-service 自动选择数据源
   useEffect(() => {
-    const data = generateGrowthDataFromHistory();
-    setGrowthData(data);
+    let cancelled = false;
+    (async () => {
+      try {
+        const [data, records] = await Promise.all([
+          getGrowthData(),
+          getAnalysisHistory(),
+        ]);
+        if (!cancelled) {
+          setGrowthData(data);
+          setHistoryCount(records.length);
+        }
+      } catch (err) {
+        console.error('加载成长数据失败:', err);
+      }
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   const insights = useMemo(() => {
@@ -66,7 +83,7 @@ export default function GrowthPage() {
     ? Math.max(...growthData.map(d => d.overall))
     : 0;
 
-  const historyCount = getHistory().length;
+  // historyCount 已通过 useEffect 异步加载,见上方状态声明
 
   return (
     <div className="min-h-screen bg-rice-200 ink-texture pt-20 pb-20">

@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { History, Calendar, Eye, ArrowRight, X, Brush, PenTool, Box, Layers, Palette, Sparkles, Type, Gem, Settings, Move, RefreshCw } from 'lucide-react';
-import { getHistory, getAnalysisResult } from '../services/mockData';
+import { getAnalysisHistory, getAnalysisDetail } from '../services/data-service';
 import type { HistoryRecord, AnalysisResult, PaintingAnalysis, DesignAnalysis, ProductAnalysis, SculptureAnalysis, ArtType } from '../types';
 import HeatmapCanvas from '../components/HeatmapCanvas';
 
@@ -329,8 +329,18 @@ export default function HistoryPage() {
     sortParam && sortOptions.some((o) => o.id === sortParam) ? sortParam : 'desc'
   );
 
+  // 异步加载历史记录：通过 data-service 自动选择 API 或 LocalStorage
   useEffect(() => {
-    setHistory(getHistory());
+    let cancelled = false;
+    (async () => {
+      try {
+        const records = await getAnalysisHistory();
+        if (!cancelled) setHistory(records);
+      } catch (err) {
+        console.error('加载历史记录失败:', err);
+      }
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   const formatDate = (dateStr: string) => {
@@ -397,10 +407,15 @@ export default function HistoryPage() {
     return list;
   }, [history, typeFilter, scoreFilter, sortMode]);
 
-  const handleViewDetail = (record: HistoryRecord) => {
-    const result = getAnalysisResult(record.id);
-    if (result) {
-      setSelectedRecord(result);
+  // 查看详情：异步调用 data-service 获取完整分析结果
+  const handleViewDetail = async (record: HistoryRecord) => {
+    try {
+      const result = await getAnalysisDetail(record.id);
+      if (result) {
+        setSelectedRecord(result);
+      }
+    } catch (err) {
+      console.error('加载分析详情失败:', err);
     }
   };
 

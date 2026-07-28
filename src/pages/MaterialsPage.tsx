@@ -1,8 +1,9 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, Filter, Image as ImageIcon, X, ExternalLink, Heart, Download, Grid3X3, List, Globe, RefreshCw, Tag, ChevronDown, Check, Loader2, ImageOff, ChevronUp, Sparkles } from 'lucide-react';
 import { artworksDatabase, getFilterOptions, type ArtworkItem } from '../services/artworksDatabase';
 import { useToast } from '../components/ToastProvider';
+import { getFavorites, toggleFavorite as toggleFavoriteService } from '../services/data-service';
 
 const categoryNames: Record<string, string> = {
   painting: '绘画',
@@ -117,14 +118,21 @@ export default function MaterialsPage() {
     setImageLoadStates((prev) => ({ ...prev, [id]: 'loaded' }));
   };
 
-  const toggleFavorite = (id: string) => {
-    setFavorites((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
+  // 切换收藏：通过 data-service 异步落库,本地状态同步更新
+  const toggleFavorite = useCallback(async (id: string) => {
+    try {
+      const { favorited } = await toggleFavoriteService(id);
+      setFavorites((prev) => {
+        const next = new Set(prev);
+        if (favorited) next.add(id);
+        else next.delete(id);
+        return next;
+      });
+    } catch (err) {
+      console.error('收藏切换失败:', err);
+      toast.error('操作失败', '请稍后重试');
+    }
+  }, [toast]);
 
   const toggleSet = (
     value: string,
@@ -176,16 +184,19 @@ export default function MaterialsPage() {
     selectedRegions.size +
     selectedTags.size;
 
+  // 初始化：通过 data-service 异步加载收藏列表
   useEffect(() => {
-    const saved = localStorage.getItem('artwork-favorites');
-    if (saved) {
-      try { setFavorites(new Set(JSON.parse(saved))); } catch { /* ignore */ }
-    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const ids = await getFavorites();
+        if (!cancelled) setFavorites(new Set(ids));
+      } catch (err) {
+        console.error('加载收藏列表失败:', err);
+      }
+    })();
+    return () => { cancelled = true; };
   }, []);
-
-  useEffect(() => {
-    localStorage.setItem('artwork-favorites', JSON.stringify(Array.from(favorites)));
-  }, [favorites]);
 
   // 标签按钮组件
   const TagButton = ({ label, count, active, onClick }: { label: string; count?: number; active: boolean; onClick: () => void }) => (

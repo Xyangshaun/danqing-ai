@@ -10,6 +10,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import LogoMark from './LogoMark';
 import { useToast } from './ToastProvider';
 import { useAuth } from '../hooks/useAuth';
+import { getAnalysisHistory, clearAnalysisHistory } from '../services/data-service';
 import type { HistoryRecord, ArtType } from '../types';
 
 /* 路由 → 页面标题映射 */
@@ -180,25 +181,24 @@ export default function Header() {
     };
   }, [cmdOpen]);
 
-  /* 命令面板打开时聚焦输入框、重置状态、读取历史作品 */
+  /* 命令面板打开时聚焦输入框、重置状态、异步读取历史作品 */
   useEffect(() => {
-    if (cmdOpen) {
-      setTimeout(() => cmdInputRef.current?.focus(), 50);
-      setQuery('');
-      setSelectedIndex(0);
-      setActiveCategory('all');
+    if (!cmdOpen) return;
+    setTimeout(() => cmdInputRef.current?.focus(), 50);
+    setQuery('');
+    setSelectedIndex(0);
+    setActiveCategory('all');
+    let cancelled = false;
+    (async () => {
       try {
-        const stored = localStorage.getItem('danqing-ai-history');
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          setHistoryWorks(Array.isArray(parsed) ? parsed : []);
-        } else {
-          setHistoryWorks([]);
-        }
-      } catch {
-        setHistoryWorks([]);
+        const records = await getAnalysisHistory();
+        if (!cancelled) setHistoryWorks(records);
+      } catch (err) {
+        console.error('命令面板加载历史失败:', err);
+        if (!cancelled) setHistoryWorks([]);
       }
-    }
+    })();
+    return () => { cancelled = true; };
   }, [cmdOpen]);
 
   /* 记录最近访问页面（最多5个，去重） */
@@ -285,14 +285,17 @@ export default function Header() {
       icon: Trash2,
       iconClass: 'bg-cinnabar/10 text-cinnabar',
       action: () => {
-        try {
-          localStorage.removeItem('danqing-ai-history');
-          setHistoryWorks([]);
-          toast.success('缓存已清除', '历史记录已清空');
-        } catch {
-          toast.error('清除失败', '请稍后重试');
-        }
-        setCmdOpen(false);
+        /* 异步清空历史：通过 data-service 清空本地缓存(API 模式下也清本地兜底) */
+        (async () => {
+          try {
+            await clearAnalysisHistory();
+            setHistoryWorks([]);
+            toast.success('缓存已清除', '历史记录已清空');
+          } catch {
+            toast.error('清除失败', '请稍后重试');
+          }
+          setCmdOpen(false);
+        })();
       },
     },
     {

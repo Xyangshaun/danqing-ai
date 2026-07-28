@@ -15,6 +15,7 @@ import {
 import { generateImage } from '../services/imageService';
 import { artworksDatabase, type ArtworkItem } from '../services/artworksDatabase';
 import { useToast } from '../components/ToastProvider';
+import { saveSavedMaterial } from '../services/data-service';
 
 const methodIconMap: Record<string, typeof Layout> = {
   composition: Layout,
@@ -75,22 +76,16 @@ export default function FusePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 保存当前嫁接结果到素材库（localStorage）
-  const handleSaveToMaterials = () => {
+  // 保存当前嫁接结果到素材库（通过 data-service 异步落库）
+  const handleSaveToMaterials = async () => {
     const result = results[selectedResultIndex];
     if (!result) return;
-    const item = {
-      id: `fuse-${Date.now()}`,
-      imageUrl: result.url,
-      title: `嫁接作品-${new Date().toLocaleDateString('zh-CN')}`,
-      createdAt: new Date().toISOString(),
-      source: 'fuse' as const,
-    };
     try {
-      const raw = localStorage.getItem('danqing-ai-saved-materials');
-      const list = raw ? JSON.parse(raw) : [];
-      list.unshift(item);
-      localStorage.setItem('danqing-ai-saved-materials', JSON.stringify(list));
+      await saveSavedMaterial({
+        imageUrl: result.url,
+        title: `嫁接作品-${new Date().toLocaleDateString('zh-CN')}`,
+        source: 'fuse',
+      });
       toast.success('已保存到素材库');
     } catch (err) {
       console.error('保存到素材库失败:', err);

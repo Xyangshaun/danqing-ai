@@ -193,10 +193,13 @@ export const listAnalyses: RequestHandler = async (req, res, next) => {
 /**
  * GET /analyses/:id
  * 查询单条分析详情
+ * 数据范围过滤由 service 层基于 role 实现:
+ *   - student 仅可查自己创建的(越权返回 404,不泄露存在性)
+ *   - teacher / admin / owner 可查租户内任意记录
  */
 export const getAnalysis: RequestHandler = async (req, res, next) => {
   try {
-    if (!req.tenantId) {
+    if (!req.tenantId || !req.userId || !req.role) {
       return error(res, ErrorCode.UNAUTHORIZED, '未授权,请先登录', 401);
     }
 
@@ -210,9 +213,45 @@ export const getAnalysis: RequestHandler = async (req, res, next) => {
     const result = await analysisService.getAnalysis({
       tenantId: req.tenantId,
       analysisId: parsed.data.id,
+      userId: req.userId,
+      role: req.role,
     });
 
     return success(res, result, 'success');
+  } catch (err) {
+    return next(err);
+  }
+};
+
+/**
+ * DELETE /analyses/:id
+ * 删除分析记录
+ * 权限校验:requireAnyPermission('analysis:delete:own', 'analysis:delete:tenant')
+ * 数据范围:
+ *   - admin / owner 可删租户内任意记录
+ *   - teacher / student 仅可删自己创建的(越权返回 404,不泄露存在性)
+ */
+export const deleteAnalysis: RequestHandler = async (req, res, next) => {
+  try {
+    if (!req.tenantId || !req.userId || !req.role) {
+      return error(res, ErrorCode.UNAUTHORIZED, '未授权,请先登录', 401);
+    }
+
+    const parsed = analysisIdParamSchema.safeParse(req.params);
+    if (!parsed.success) {
+      const first = parsed.error.issues[0];
+      const msg = `参数错误:${first?.path.join('.') ?? 'unknown'} ${first?.message ?? 'invalid'}`;
+      return error(res, ErrorCode.PARAM_INVALID, msg, 400);
+    }
+
+    const result = await analysisService.deleteAnalysis({
+      tenantId: req.tenantId,
+      analysisId: parsed.data.id,
+      operatorUserId: req.userId,
+      role: req.role,
+    });
+
+    return success(res, result, '已删除');
   } catch (err) {
     return next(err);
   }

@@ -5,7 +5,7 @@ import {
   Plus, Clock, Award, Zap, Brush, PenTool, Box, Layers, RefreshCw, type LucideIcon,
   Quote, ChevronRight, Star, Target, AlertCircle,
 } from 'lucide-react';
-import { getHistory, generateGrowthDataFromHistory } from '../services/mockData';
+import { getAnalysisHistory, getGrowthData } from '../services/data-service';
 import type { HistoryRecord, GrowthData } from '../types';
 
 /* 艺术名言（每日一条） */
@@ -42,9 +42,24 @@ export default function HomePage() {
   const [growthData, setGrowthData] = useState<GrowthData[]>([]);
   const navigate = useNavigate();
 
+  // 异步并行加载历史和成长数据：通过 data-service 自动选择数据源
   useEffect(() => {
-    setHistory(getHistory());
-    setGrowthData(generateGrowthDataFromHistory());
+    let cancelled = false;
+    (async () => {
+      try {
+        const [records, growth] = await Promise.all([
+          getAnalysisHistory(),
+          getGrowthData(),
+        ]);
+        if (!cancelled) {
+          setHistory(records);
+          setGrowthData(growth);
+        }
+      } catch (err) {
+        console.error('加载工作台数据失败:', err);
+      }
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   /* 每日名言（按日期取） */
