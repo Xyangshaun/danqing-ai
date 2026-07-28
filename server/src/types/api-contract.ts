@@ -554,3 +554,32 @@ export type StyleCategories = Record<ArtType, StyleCategoryEntry>;
 
 /** 艺术品分页查询响应 */
 export type PaginatedArtworks = PaginatedData<ArtworkItem>;
+
+// ============ 3.8 AI 增强分析相关类型(Phase 2 追加,向后兼容) ============
+//
+// 设计原则:
+//   - 仅追加新类型,不修改现有类型(向后兼容)
+//   - AnalysisDetail.result 字段类型保持 AnalysisResult | null
+//     实际存储 HybridAnalysisResult(扩展 AnalysisResult,前端按 aiEnhanced 字段判断是否启用 AI 增强)
+//   - 前端旧版本忽略 aiEnhanced/aiVisionResult/aiMeta 字段,仍可正常渲染基础分析结果
+//
+// 详见:server/src/types/ai-analysis.ts(权威定义)
+// ====================================================================
+
+/**
+ * AI 增强后的分析结果摘要(用于列表项追加 AI 标识)
+ * 仅追加 aiEnhanced 字段,其余字段同 AnalysisListItem
+ */
+export interface AIEnhancedAnalysisListItem extends AnalysisListItem {
+  /** 是否经过 AI 增强 */
+  aiEnhanced: boolean;
+}
+
+/**
+ * AI 增强后的分析详情(用于 GET /analyses/:id 响应)
+ * 仅追加 aiEnhanced 字段,其余字段同 AnalysisDetail
+ */
+export interface AIEnhancedAnalysisDetail extends AnalysisDetail {
+  /** 是否经过 AI 增强 */
+  aiEnhanced: boolean;
+}

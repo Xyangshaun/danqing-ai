@@ -15,6 +15,7 @@ import { z } from 'zod';
 import { analysisService } from '../services/analysis.service.js';
 import { success, error } from '../utils/response.js';
 import { ErrorCode, type ArtType, type AnalysisStatus } from '../types/api-contract.js';
+import { logger } from '../utils/logger.js';
 
 /** 合法作品类型(四类) */
 const VALID_ART_TYPES: readonly ArtType[] = [
@@ -91,6 +92,18 @@ export const createAnalysis: RequestHandler = async (req, res, next) => {
       userId: req.userId,
       body: parsed.data,
     });
+
+    // Phase 2:AI 增强字段已嵌入 result.result(HybridAnalysisResult)
+    // 前端可通过 result.result?.aiEnhanced 判断是否经过 AI 增强
+    // 响应结构向后兼容:旧客户端忽略 aiEnhanced/aiVisionResult/aiMeta 字段
+    logger.debug(
+      {
+        analysisId: result.id,
+        status: result.status,
+        durationMs: result.durationMs,
+      },
+      '[analysis.controller] createAnalysis response',
+    );
 
     return success(res, result, '分析完成');
   } catch (err) {

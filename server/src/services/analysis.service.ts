@@ -30,6 +30,8 @@ import {
   type AnalysisResult,
 } from '../types/api-contract.js';
 import { analyzeImage } from './analysis-engine.service.js';
+import { runHybridAnalysis } from './ai-analysis.service.js';
+import { isAIEnabled } from './ai-vision.service.js';
 import { logger } from '../utils/logger.js';
 import type { Analysis, Tenant } from '@prisma/client';
 
@@ -235,16 +237,44 @@ class AnalysisServiceClass {
       remark: body.remark ?? null,
     });
 
-    // 5. 调用 Jimp 分析(同步模式,3 秒 SLA)
+    // 5. 调用分析引擎(同步模式,3 秒 SLA)
+    // AI_ENABLED=true 时走混合分析(Jimp + AI),否则走 Jimp-only(现有逻辑)
     const startMs = Date.now();
     let result: AnalysisResult;
     let analysisStatus: 'success' | 'failed' = 'success';
     let failureReason: string | null = null;
+    let aiEnhanced = false;
 
     try {
-      result = await analyzeImage(analysisSource, body.artType);
+      if (isAIEnabled()) {
+        // 混合分析:Jimp(~500ms)+ AI(~2s),总耗时 ~2.5s < 3s SLA
+        // AI 失败时内部自动 fallback 到 Jimp,保证可用性
+        const hybridResult = await runHybridAnalysis({
+          imageSource: analysisSource,
+          artType: body.artType,
+          title: body.title,
+          remark: body.remark,
+        });
+        result = hybridResult;
+        aiEnhanced = hybridResult.aiEnhanced;
+        if (!hybridResult.aiEnhanced && hybridResult.aiMeta.aiFailureReason) {
+          // AI 调用失败但 Jimp 兜底成功,记录警告日志(不影响响应)
+          logger.warn(
+            {
+              analysisId: analysis.id,
+              aiFailureReason: hybridResult.aiMeta.aiFailureReason,
+              aiDurationMs: hybridResult.aiMeta.aiDurationMs,
+            },
+            '[analysis] AI enhancement failed, fallback to Jimp-only',
+          );
+        }
+      } else {
+        // Jimp-only 模式(现有逻辑,~500ms)
+        result = await analyzeImage(analysisSource, body.artType);
+      }
     } catch (err) {
-      // analyzeImage 内部已捕获异常并返回 fallback,这里仅作兜底(理论上不会进入)
+      // 兜底:runHybridAnalysis/analyzeImage 内部已捕获异常并返回 fallback,
+      // 这里仅作终极兜底(理论上不会进入)
       const msg = err instanceof Error ? err.message : String(err);
       logger.error(
         { err: msg, analysisId: analysis.id, tenantId, userId, artType: body.artType },
@@ -301,6 +331,8 @@ class AnalysisServiceClass {
         status: analysisStatus,
         durationMs,
         overallScore: result.overallScore,
+        aiEnabled: isAIEnabled(),
+        aiEnhanced,
       },
       '[analysis] completed (synchronous)',
     );

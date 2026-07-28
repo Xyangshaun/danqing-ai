@@ -65,6 +65,18 @@ export interface EnvConfig {
   // 文件上传(multer 磁盘存储)
   uploadDir: string;
   uploadMaxSize: number;
+
+  // AI 视觉分析(Phase 2 追加,全部可选带默认值,保证向后兼容)
+  /** AI 功能总开关(默认 false,生产环境手动开启) */
+  aiEnabled: boolean;
+  /** 智谱 API Key(留空时 AI_ENABLED=true 也会自动 fallback) */
+  aiApiKey: string;
+  /** 智谱 GLM-4V API 端点(OpenAI 兼容格式) */
+  aiApiUrl: string;
+  /** AI 请求超时(毫秒,硬性 2500ms 保障 3 秒 SLA) */
+  aiApiTimeout: number;
+  /** AI 模型名(glm-4v-flash 免费 / glm-4v-plus 付费高精度) */
+  aiApiModel: string;
 }
 
 function parseBoolean(value: string | undefined, defaultValue: boolean): boolean {
@@ -254,6 +266,13 @@ export function loadEnv(): EnvConfig {
 
     uploadDir: env.UPLOAD_DIR ?? 'uploads',
     uploadMaxSize: parseInteger(env.UPLOAD_MAX_SIZE, 10 * 1024 * 1024),
+
+    // AI 视觉分析(Phase 2,全部带默认值,缺失不报错)
+    aiEnabled: parseBoolean(env.AI_ENABLED, false),
+    aiApiKey: env.AI_API_KEY ?? '',
+    aiApiUrl: env.AI_API_URL ?? 'https://open.bigmodel.cn/api/paas/v4/chat/completions',
+    aiApiTimeout: parseInteger(env.AI_API_TIMEOUT, 2500),
+    aiApiModel: env.AI_API_MODEL ?? 'glm-4v-flash',
   };
 }
 
