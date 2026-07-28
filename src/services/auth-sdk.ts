@@ -15,6 +15,7 @@ import type {
   SwitchTenantRequest,
   SwitchTenantResponse,
   TenantInfo,
+  TenantMembership,
   UserProfile,
 } from '../types/api-contract';
 import { get, post } from './api';
@@ -130,6 +131,18 @@ export async function getCurrentTenant(): Promise<GetCurrentTenantResponse> {
 }
 
 /* ============================================================
+ * 6.1 列出用户所有租户成员关系
+ * 对应:GET /tenants(返回 TenantMember 列表)
+ * 用于租户切换下拉刷新;AuthContext 在 /auth/me 已返回 memberships,
+ * 本方法供"租户列表可能变化"场景(如新加入租户后)主动刷新
+ * ============================================================ */
+export async function listTenants(): Promise<TenantMembership[]> {
+  return get<TenantMembership[]>('/tenants', undefined, {
+    silent: true,
+  });
+}
+
+/* ============================================================
  * 7. 切换租户(Phase 2 接口,SDK 先行实现)
  * 对应:POST /tenants/switch(api-contract-v1.md §6.3 Phase 2 计划)
  * 后端校验用户属于该租户 + 重新签发 access_token(refresh_token 不变)
@@ -152,5 +165,6 @@ export type {
   FeishuAuthorizeResponse,
   FeishuCallbackResponse,
   TenantInfo,
+  TenantMembership,
   UserProfile,
 };

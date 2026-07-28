@@ -17,6 +17,7 @@ import type {
 } from '../types/api-contract';
 import {
   getCurrentUser,
+  listTenants,
   logout as sdkLogout,
   refreshAccessToken,
   switchTenant as sdkSwitchTenant,
@@ -52,6 +53,8 @@ export interface AuthContextValue {
   refreshUser: () => Promise<void>;
   /** 切换租户(更新 tenant + access_token) */
   switchTenant: (tenantId: string) => Promise<void>;
+  /** 刷新用户所有租户成员关系(用于租户列表可能变化场景) */
+  loadTenants: () => Promise<void>;
 }
 
 export const AuthContext = createContext<AuthContextValue | null>(null);
@@ -182,16 +185,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async (tenantId: string) => {
       const result = await sdkSwitchTenant(tenantId);
       setTenant(result.tenant);
-      // 切换租户后用户角色可能变化,刷新 user
+      // 切换租户后用户角色可能变化,刷新 user(role 和 tenantId 会变化)
       try {
         await refreshUser();
       } catch {
         // 刷新 user 失败不阻塞(可能 token 已过期,由拦截器处理)
       }
+      // 触发全局事件,通知各页面基于新租户重新加载数据
+      // (data-service 通过 hasAccessToken 判断数据源,token 已更新会自动走 API)
+      window.dispatchEvent(
+        new CustomEvent('tenant-switched', {
+          detail: { tenantId: result.tenant.id, tenantName: result.tenant.name },
+        })
+      );
       toast.success('租户已切换', result.tenant.name);
     },
     [refreshUser, toast]
   );
+
+  /* ---------- loadTenants:刷新用户所有租户成员关系 ---------- */
+  const loadTenants = useCallback(async () => {
+    try {
+      const list = await listTenants();
+      setMemberships(list);
+    } catch {
+      // 刷新租户列表失败不阻塞(可能 token 已过期,由拦截器处理)
+      // 保留现有 memberships,不清空
+    }
+  }, []);
 
   /* ---------- 暴露 Context 值 ---------- */
   const value = useMemo<AuthContextValue>(
@@ -205,8 +226,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       logout,
       refreshUser,
       switchTenant,
+      loadTenants,
     }),
-    [user, tenant, memberships, isLoading, login, logout, refreshUser, switchTenant]
+    [user, tenant, memberships, isLoading, login, logout, refreshUser, switchTenant, loadTenants]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

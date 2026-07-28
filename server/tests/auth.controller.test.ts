@@ -59,7 +59,7 @@ describe('auth.controller (P0 接口集成测试)', () => {
   describe('GET /auth/feishu/authorize', () => {
     it('should_return_authorize_url_with_state_when_device_id_provided', async () => {
       const res = await request(getTestApp())
-        .get('/auth/feishu/authorize')
+        .get('/api/v1/auth/feishu/authorize')
         .set('X-Client-Context', buildClientContextHeader(TEST_DEVICE_ID, 'web'))
         .set('User-Agent', TEST_USER_AGENT)
         .set('X-Forwarded-For', TEST_CLIENT_IP)
@@ -95,7 +95,7 @@ describe('auth.controller (P0 接口集成测试)', () => {
 
     it('should_return_400_when_device_id_missing', async () => {
       const res = await request(getTestApp())
-        .get('/auth/feishu/authorize')
+        .get('/api/v1/auth/feishu/authorize')
         .set('User-Agent', TEST_USER_AGENT)
         .expect(400);
 
@@ -107,7 +107,7 @@ describe('auth.controller (P0 接口集成测试)', () => {
 
     it('should_use_web_redirect_uri_by_default', async () => {
       const res = await request(getTestApp())
-        .get('/auth/feishu/authorize')
+        .get('/api/v1/auth/feishu/authorize')
         .set('X-Client-Context', buildClientContextHeader(TEST_DEVICE_ID, 'web'))
         .set('User-Agent', TEST_USER_AGENT)
         .expect(200);
@@ -118,7 +118,7 @@ describe('auth.controller (P0 接口集成测试)', () => {
 
     it('should_use_admin_redirect_uri_when_client_admin', async () => {
       const res = await request(getTestApp())
-        .get('/auth/feishu/authorize')
+        .get('/api/v1/auth/feishu/authorize')
         .set('X-Client-Context', buildClientContextHeader(TEST_DEVICE_ID, 'admin'))
         .set('User-Agent', TEST_USER_AGENT)
         .expect(200);
@@ -129,7 +129,7 @@ describe('auth.controller (P0 接口集成测试)', () => {
 
     it('should_use_mobile_redirect_uri_when_client_mobile', async () => {
       const res = await request(getTestApp())
-        .get('/auth/feishu/authorize')
+        .get('/api/v1/auth/feishu/authorize')
         .set('X-Client-Context', buildClientContextHeader(TEST_DEVICE_ID, 'mobile'))
         .set('User-Agent', TEST_USER_AGENT)
         .expect(200);
@@ -140,7 +140,7 @@ describe('auth.controller (P0 接口集成测试)', () => {
 
     it('should_accept_x_device_id_header_as_fallback', async () => {
       const res = await request(getTestApp())
-        .get('/auth/feishu/authorize')
+        .get('/api/v1/auth/feishu/authorize')
         .set('X-Device-Id', 'alt-device-id')
         .set('X-Client', 'web')
         .set('User-Agent', TEST_USER_AGENT)
@@ -155,7 +155,7 @@ describe('auth.controller (P0 接口集成测试)', () => {
       const app = getTestApp();
       for (let i = 0; i < 10; i++) {
         await request(app)
-          .get('/auth/feishu/authorize')
+          .get('/api/v1/auth/feishu/authorize')
           .set('X-Client-Context', buildClientContextHeader(`${TEST_DEVICE_ID}-${i}`, 'web'))
           .set('User-Agent', TEST_USER_AGENT)
           .set('X-Forwarded-For', '10.0.0.1') // 固定 IP 触发限流
@@ -163,7 +163,7 @@ describe('auth.controller (P0 接口集成测试)', () => {
       }
       // 第 11 次:限流
       const res = await request(app)
-        .get('/auth/feishu/authorize')
+        .get('/api/v1/auth/feishu/authorize')
         .set('X-Client-Context', buildClientContextHeader('dev-11', 'web'))
         .set('User-Agent', TEST_USER_AGENT)
         .set('X-Forwarded-For', '10.0.0.1')
@@ -190,7 +190,7 @@ describe('auth.controller (P0 接口集成测试)', () => {
       feishuMockState.__reset();
 
       const res = await request(getTestApp())
-        .get('/auth/feishu/callback')
+        .get('/api/v1/auth/feishu/callback')
         .query({ code: 'auth-code-001', state })
         .set('X-Client-Context', buildClientContextHeader(TEST_DEVICE_ID, 'web'))
         .set('User-Agent', TEST_USER_AGENT)
@@ -224,7 +224,7 @@ describe('auth.controller (P0 接口集成测试)', () => {
     it('should_set_refresh_token_cookie_with_secure_attributes', async () => {
       const state = createValidState();
       const res = await request(getTestApp())
-        .get('/auth/feishu/callback')
+        .get('/api/v1/auth/feishu/callback')
         .query({ code: 'auth-code-cookie', state })
         .set('X-Client-Context', buildClientContextHeader())
         .set('User-Agent', TEST_USER_AGENT)
@@ -246,7 +246,7 @@ describe('auth.controller (P0 接口集成测试)', () => {
     it('should_return_400_when_code_missing', async () => {
       const state = createValidState();
       const res = await request(getTestApp())
-        .get('/auth/feishu/callback')
+        .get('/api/v1/auth/feishu/callback')
         .query({ state })
         .set('X-Client-Context', buildClientContextHeader())
         .set('User-Agent', TEST_USER_AGENT)
@@ -257,7 +257,7 @@ describe('auth.controller (P0 接口集成测试)', () => {
 
     it('should_return_400_when_state_missing', async () => {
       const res = await request(getTestApp())
-        .get('/auth/feishu/callback')
+        .get('/api/v1/auth/feishu/callback')
         .query({ code: 'auth-code' })
         .set('X-Client-Context', buildClientContextHeader())
         .set('User-Agent', TEST_USER_AGENT)
@@ -268,7 +268,7 @@ describe('auth.controller (P0 接口集成测试)', () => {
 
     it('should_return_400_when_state_format_invalid', async () => {
       const res = await request(getTestApp())
-        .get('/auth/feishu/callback')
+        .get('/api/v1/auth/feishu/callback')
         .query({ code: 'auth-code', state: createInvalidFormatState() })
         .set('X-Client-Context', buildClientContextHeader())
         .set('User-Agent', TEST_USER_AGENT)
@@ -281,7 +281,7 @@ describe('auth.controller (P0 接口集成测试)', () => {
       // 不写入 Redis 的 state(64 字符 hex,但不存在)
       const fakeState = 'a'.repeat(64);
       const res = await request(getTestApp())
-        .get('/auth/feishu/callback')
+        .get('/api/v1/auth/feishu/callback')
         .query({ code: 'auth-code', state: fakeState })
         .set('X-Client-Context', buildClientContextHeader())
         .set('User-Agent', TEST_USER_AGENT)
@@ -294,7 +294,7 @@ describe('auth.controller (P0 接口集成测试)', () => {
       // 用 IP A 创建 state,用 IP B 回调
       const state = createValidState({ clientIp: '1.1.1.1' });
       const res = await request(getTestApp())
-        .get('/auth/feishu/callback')
+        .get('/api/v1/auth/feishu/callback')
         .query({ code: 'auth-code', state })
         .set('X-Client-Context', buildClientContextHeader())
         .set('User-Agent', TEST_USER_AGENT)
@@ -307,7 +307,7 @@ describe('auth.controller (P0 接口集成测试)', () => {
     it('should_return_400_when_state_user_agent_mismatch', async () => {
       const state = createValidState({ userAgent: 'Original-UA' });
       const res = await request(getTestApp())
-        .get('/auth/feishu/callback')
+        .get('/api/v1/auth/feishu/callback')
         .query({ code: 'auth-code', state })
         .set('X-Client-Context', buildClientContextHeader())
         .set('User-Agent', 'Different-UA')
@@ -320,7 +320,7 @@ describe('auth.controller (P0 接口集成测试)', () => {
     it('should_return_400_when_state_device_id_mismatch', async () => {
       const state = createValidState({ deviceId: 'device-A' });
       const res = await request(getTestApp())
-        .get('/auth/feishu/callback')
+        .get('/api/v1/auth/feishu/callback')
         .query({ code: 'auth-code', state })
         .set('X-Client-Context', buildClientContextHeader('device-B'))
         .set('User-Agent', TEST_USER_AGENT)
@@ -336,7 +336,7 @@ describe('auth.controller (P0 接口集成测试)', () => {
 
       // 第一次:成功
       await request(app)
-        .get('/auth/feishu/callback')
+        .get('/api/v1/auth/feishu/callback')
         .query({ code: 'auth-code-1', state })
         .set('X-Client-Context', buildClientContextHeader())
         .set('User-Agent', TEST_USER_AGENT)
@@ -345,7 +345,7 @@ describe('auth.controller (P0 接口集成测试)', () => {
 
       // 第二次:state 已被消费,应失败
       const res2 = await request(app)
-        .get('/auth/feishu/callback')
+        .get('/api/v1/auth/feishu/callback')
         .query({ code: 'auth-code-2', state })
         .set('X-Client-Context', buildClientContextHeader())
         .set('User-Agent', TEST_USER_AGENT)
@@ -360,7 +360,7 @@ describe('auth.controller (P0 接口集成测试)', () => {
       feishuMockState.tokenMode = 'feishuError';
 
       const res = await request(getTestApp())
-        .get('/auth/feishu/callback')
+        .get('/api/v1/auth/feishu/callback')
         .query({ code: 'bad-code', state })
         .set('X-Client-Context', buildClientContextHeader())
         .set('User-Agent', TEST_USER_AGENT)
@@ -375,7 +375,7 @@ describe('auth.controller (P0 接口集成测试)', () => {
       feishuMockState.tokenMode = 'httpError';
 
       const res = await request(getTestApp())
-        .get('/auth/feishu/callback')
+        .get('/api/v1/auth/feishu/callback')
         .query({ code: 'any-code', state })
         .set('X-Client-Context', buildClientContextHeader())
         .set('User-Agent', TEST_USER_AGENT)
@@ -390,7 +390,7 @@ describe('auth.controller (P0 接口集成测试)', () => {
       feishuMockState.userInfoMode = 'feishuError';
 
       const res = await request(getTestApp())
-        .get('/auth/feishu/callback')
+        .get('/api/v1/auth/feishu/callback')
         .query({ code: 'auth-code', state })
         .set('X-Client-Context', buildClientContextHeader())
         .set('User-Agent', TEST_USER_AGENT)
@@ -405,7 +405,7 @@ describe('auth.controller (P0 接口集成测试)', () => {
       feishuMockState.userInfoResponse.unionId = '';
 
       const res = await request(getTestApp())
-        .get('/auth/feishu/callback')
+        .get('/api/v1/auth/feishu/callback')
         .query({ code: 'auth-code', state })
         .set('X-Client-Context', buildClientContextHeader())
         .set('User-Agent', TEST_USER_AGENT)
@@ -428,7 +428,7 @@ describe('auth.controller (P0 接口集成测试)', () => {
 
       const state = createValidState();
       const res = await request(getTestApp())
-        .get('/auth/feishu/callback')
+        .get('/api/v1/auth/feishu/callback')
         .query({ code: 'auth-code', state })
         .set('X-Client-Context', buildClientContextHeader())
         .set('User-Agent', TEST_USER_AGENT)
@@ -443,7 +443,7 @@ describe('auth.controller (P0 接口集成测试)', () => {
       const state = createValidState();
       // feishuMockState 默认 tenantKey=null
       const res = await request(getTestApp())
-        .get('/auth/feishu/callback')
+        .get('/api/v1/auth/feishu/callback')
         .query({ code: 'auth-code', state })
         .set('X-Client-Context', buildClientContextHeader())
         .set('User-Agent', TEST_USER_AGENT)
@@ -469,7 +469,7 @@ describe('auth.controller (P0 接口集成测试)', () => {
       feishuMockState.userInfoResponse.tenantKey = 'school_key_001';
 
       const res = await request(getTestApp())
-        .get('/auth/feishu/callback')
+        .get('/api/v1/auth/feishu/callback')
         .query({ code: 'auth-code', state })
         .set('X-Client-Context', buildClientContextHeader())
         .set('User-Agent', TEST_USER_AGENT)
@@ -485,7 +485,7 @@ describe('auth.controller (P0 接口集成测试)', () => {
       const app = getTestApp();
       for (let i = 0; i < 5; i++) {
         await request(app)
-          .get('/auth/feishu/callback')
+          .get('/api/v1/auth/feishu/callback')
           .query({ code: `code-${i}`, state: 'a'.repeat(64) })
           .set('X-Client-Context', buildClientContextHeader())
           .set('User-Agent', TEST_USER_AGENT)
@@ -494,7 +494,7 @@ describe('auth.controller (P0 接口集成测试)', () => {
       }
       // 第 6 次:限流
       const res = await request(app)
-        .get('/auth/feishu/callback')
+        .get('/api/v1/auth/feishu/callback')
         .query({ code: 'code-6', state: 'b'.repeat(64) })
         .set('X-Client-Context', buildClientContextHeader())
         .set('User-Agent', TEST_USER_AGENT)
@@ -524,7 +524,7 @@ describe('auth.controller (P0 接口集成测试)', () => {
       });
 
       const res = await request(getTestApp())
-        .post('/auth/refresh')
+        .post('/api/v1/auth/refresh')
         .set('Cookie', [`refresh_token=${tokens.refreshToken}`])
         .expect(200);
 
@@ -549,7 +549,7 @@ describe('auth.controller (P0 接口集成测试)', () => {
       });
 
       await request(getTestApp())
-        .post('/auth/refresh')
+        .post('/api/v1/auth/refresh')
         .set('Cookie', [`refresh_token=${tokens.refreshToken}`])
         .expect(200);
 
@@ -565,7 +565,7 @@ describe('auth.controller (P0 接口集成测试)', () => {
 
     it('should_return_401_when_refresh_token_cookie_missing', async () => {
       const res = await request(getTestApp())
-        .post('/auth/refresh')
+        .post('/api/v1/auth/refresh')
         .expect(401);
 
       assertApiError(res, ErrorCode.REFRESH_TOKEN_INVALID, 401);
@@ -573,7 +573,7 @@ describe('auth.controller (P0 接口集成测试)', () => {
 
     it('should_return_401_when_refresh_token_jwt_invalid', async () => {
       const res = await request(getTestApp())
-        .post('/auth/refresh')
+        .post('/api/v1/auth/refresh')
         .set('Cookie', ['refresh_token=invalid.jwt.token'])
         .expect(401);
 
@@ -596,7 +596,7 @@ describe('auth.controller (P0 接口集成测试)', () => {
       redisMock.__rawSet(`blacklist:refresh:${tokens.refreshJti}`, '1', 3600);
 
       const res = await request(getTestApp())
-        .post('/auth/refresh')
+        .post('/api/v1/auth/refresh')
         .set('Cookie', [`refresh_token=${tokens.refreshToken}`])
         .expect(401);
 
@@ -618,7 +618,7 @@ describe('auth.controller (P0 接口集成测试)', () => {
       });
 
       const res = await request(getTestApp())
-        .post('/auth/refresh')
+        .post('/api/v1/auth/refresh')
         .set('Cookie', [`refresh_token=${tokens.refreshToken}`])
         .expect(401);
 
@@ -635,7 +635,7 @@ describe('auth.controller (P0 接口集成测试)', () => {
       // 不创建 session → DB 中找不到 refresh_token_hash
 
       const res = await request(getTestApp())
-        .post('/auth/refresh')
+        .post('/api/v1/auth/refresh')
         .set('Cookie', [`refresh_token=${tokens.refreshToken}`])
         .expect(401);
 
@@ -656,7 +656,7 @@ describe('auth.controller (P0 接口集成测试)', () => {
       });
 
       const res = await request(getTestApp())
-        .post('/auth/refresh')
+        .post('/api/v1/auth/refresh')
         .set('Cookie', [`refresh_token=${tokens.refreshToken}`])
         .expect(403);
 
@@ -671,7 +671,7 @@ describe('auth.controller (P0 接口集成测试)', () => {
       });
 
       const res = await request(getTestApp())
-        .post('/auth/refresh')
+        .post('/api/v1/auth/refresh')
         .set('Cookie', [`refresh_token=${tokens.refreshToken}`])
         .expect(401);
 
@@ -705,7 +705,7 @@ describe('auth.controller (P0 接口集成测试)', () => {
       });
 
       const res = await request(getTestApp())
-        .post('/auth/logout')
+        .post('/api/v1/auth/logout')
         .set('Authorization', `Bearer ${tokens.accessToken}`)
         .set('Cookie', [`refresh_token=${tokens.refreshToken}`])
         .expect(200);
@@ -746,7 +746,7 @@ describe('auth.controller (P0 接口集成测试)', () => {
       });
 
       const res = await request(getTestApp())
-        .post('/auth/logout')
+        .post('/api/v1/auth/logout')
         .set('Authorization', `Bearer ${tokens.accessToken}`)
         .set('Cookie', [`refresh_token=${tokens.refreshToken}`])
         .send({ revokeAll: true })
@@ -777,7 +777,7 @@ describe('auth.controller (P0 接口集成测试)', () => {
       });
 
       await request(getTestApp())
-        .post('/auth/logout')
+        .post('/api/v1/auth/logout')
         .set('Authorization', `Bearer ${tokens.accessToken}`)
         .set('Cookie', [`refresh_token=${tokens.refreshToken}`])
         .expect(200);
@@ -790,7 +790,7 @@ describe('auth.controller (P0 接口集成测试)', () => {
 
     it('should_return_401_when_logout_without_auth', async () => {
       const res = await request(getTestApp())
-        .post('/auth/logout')
+        .post('/api/v1/auth/logout')
         .expect(401);
 
       assertApiError(res, ErrorCode.UNAUTHORIZED, 401);
@@ -805,7 +805,7 @@ describe('auth.controller (P0 接口集成测试)', () => {
       });
 
       const res = await request(getTestApp())
-        .post('/auth/logout')
+        .post('/api/v1/auth/logout')
         .set('Authorization', `Bearer ${tokens.accessToken}`)
         // 不带 refresh_token Cookie
         .expect(200);
@@ -830,7 +830,7 @@ describe('auth.controller (P0 接口集成测试)', () => {
       });
 
       const res = await request(getTestApp())
-        .get('/auth/me')
+        .get('/api/v1/auth/me')
         .set('Authorization', `Bearer ${tokens.accessToken}`)
         .expect(200);
 
@@ -853,7 +853,7 @@ describe('auth.controller (P0 接口集成测试)', () => {
 
     it('should_return_401_when_me_without_auth', async () => {
       const res = await request(getTestApp())
-        .get('/auth/me')
+        .get('/api/v1/auth/me')
         .expect(401);
 
       assertApiError(res, ErrorCode.UNAUTHORIZED, 401);
@@ -882,7 +882,7 @@ describe('auth.controller (P0 接口集成测试)', () => {
       });
 
       const res = await request(getTestApp())
-        .get('/auth/me')
+        .get('/api/v1/auth/me')
         .set('Authorization', `Bearer ${expiredToken}`)
         .expect(401);
 
@@ -912,7 +912,7 @@ describe('auth.controller (P0 接口集成测试)', () => {
       });
 
       const res = await request(getTestApp())
-        .get('/auth/me')
+        .get('/api/v1/auth/me')
         .set('Authorization', `Bearer ${badToken}`)
         .expect(401);
 
@@ -930,7 +930,7 @@ describe('auth.controller (P0 接口集成测试)', () => {
       redisMock.__rawSet(`blacklist:access:${tokens.accessJti}`, '1', 900);
 
       const res = await request(getTestApp())
-        .get('/auth/me')
+        .get('/api/v1/auth/me')
         .set('Authorization', `Bearer ${tokens.accessToken}`)
         .expect(401);
 
@@ -957,7 +957,7 @@ describe('auth.controller (P0 接口集成测试)', () => {
       });
 
       const res = await request(getTestApp())
-        .get('/auth/me')
+        .get('/api/v1/auth/me')
         .set('Authorization', `Bearer ${hs256Token}`)
         .expect(401);
 
@@ -973,7 +973,7 @@ describe('auth.controller (P0 接口集成测试)', () => {
       });
 
       const res = await request(getTestApp())
-        .get('/auth/me')
+        .get('/api/v1/auth/me')
         .set('Authorization', `Bearer ${tokens.accessToken}`)
         .expect(401);
 

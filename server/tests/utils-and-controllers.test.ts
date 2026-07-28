@@ -207,7 +207,7 @@ describe('user.controller (用户接口分支补充)', () => {
   describe('GET /users/profile', () => {
     it('should_return_401_when_userId_missing_in_request', async () => {
       // 构造一个无 userId 的请求:不带 Authorization 头
-      const res = await request(getTestApp()).get('/users/profile').expect(401);
+      const res = await request(getTestApp()).get('/api/v1/users/profile').expect(401);
 
       assertApiError(res, ErrorCode.UNAUTHORIZED, 401);
     });
@@ -217,7 +217,7 @@ describe('user.controller (用户接口分支补充)', () => {
     it('should_return_401_when_not_authenticated', async () => {
       // 不带 Authorization 头:authMiddleware 会拦截,但补充测试 user.controller 的 401 分支
       const res = await request(getTestApp())
-        .patch('/users/profile')
+        .patch('/api/v1/users/profile')
         .send({ displayName: 'test' })
         .expect(401);
 
@@ -231,7 +231,7 @@ describe('user.controller (用户接口分支补充)', () => {
       });
 
       const res = await request(getTestApp())
-        .patch('/users/profile')
+        .patch('/api/v1/users/profile')
         .set('Authorization', `Bearer ${tokens.accessToken}`)
         .send({ displayName: '新名称', avatarUrl: 'https://example.com/avatar.png' })
         .expect(200);
@@ -249,7 +249,7 @@ describe('user.controller (用户接口分支补充)', () => {
 describe('auth.controller (redirect_uri 与异常分支补充)', () => {
   it('should_use_query_redirect_uri_when_provided_as_string', async () => {
     const res = await request(getTestApp())
-      .get('/auth/feishu/authorize')
+      .get('/api/v1/auth/feishu/authorize')
       .query({ redirect_uri: 'https://custom.example.com/callback' })
       .set('X-Client-Context', buildClientContextHeader(TEST_DEVICE_ID, 'web'))
       .set('User-Agent', TEST_USER_AGENT)
@@ -263,7 +263,7 @@ describe('auth.controller (redirect_uri 与异常分支补充)', () => {
   it('should_ignore_redirect_uri_when_not_string', async () => {
     // redirect_uri 为数组(异常输入)
     const res = await request(getTestApp())
-      .get('/auth/feishu/authorize')
+      .get('/api/v1/auth/feishu/authorize')
       .query({ redirect_uri: ['not-a-string'] })
       .set('X-Client-Context', buildClientContextHeader(TEST_DEVICE_ID, 'web'))
       .set('User-Agent', TEST_USER_AGENT)
@@ -275,7 +275,7 @@ describe('auth.controller (redirect_uri 与异常分支补充)', () => {
   it('should_return_400_when_callback_code_missing', async () => {
     // 完全不传 code:code 为 undefined → '' → 触发 PARAM_MISSING
     const res = await request(getTestApp())
-      .get('/auth/feishu/callback')
+      .get('/api/v1/auth/feishu/callback')
       .query({ state: 'a'.repeat(64) })
       .set('X-Client-Context', buildClientContextHeader())
       .set('User-Agent', TEST_USER_AGENT)
@@ -287,7 +287,7 @@ describe('auth.controller (redirect_uri 与异常分支补充)', () => {
   it('should_return_400_when_callback_state_missing', async () => {
     // 完全不传 state:state 为 undefined → '' → 触发 PARAM_MISSING
     const res = await request(getTestApp())
-      .get('/auth/feishu/callback')
+      .get('/api/v1/auth/feishu/callback')
       .query({ code: 'valid-code' })
       .set('X-Client-Context', buildClientContextHeader())
       .set('User-Agent', TEST_USER_AGENT)

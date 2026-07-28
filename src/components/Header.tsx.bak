@@ -4,14 +4,12 @@ import {
   ChevronRight, ChevronDown, Home, Command, X, ArrowRight,
   User, Image as ImageIcon, LogOut, Check, Sparkles,
   CheckCircle2, TrendingUp, RefreshCw, Trash2, Clock,
-  Brush, PenTool, Box, Layers, type LucideIcon,
+  Brush, PenTool, Box, Layers, Building2, type LucideIcon,
 } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import LogoMark from './LogoMark';
 import { useToast } from './ToastProvider';
 import { useAuth } from '../hooks/useAuth';
-import TenantSwitcher, { RoleBadge } from './auth/TenantSwitcher';
-import { getAnalysisHistory, clearAnalysisHistory } from '../services/data-service';
 import type { HistoryRecord, ArtType } from '../types';
 
 /* 路由 → 页面标题映射 */
@@ -139,7 +137,7 @@ const artTypeMeta: Record<ArtType, { label: string; icon: LucideIcon }> = {
 export default function Header() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, tenant, isAuthenticated, logout } = useAuth();
+  const { user, tenant, memberships, isAuthenticated, logout, switchTenant } = useAuth();
   const [cmdOpen, setCmdOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -182,24 +180,25 @@ export default function Header() {
     };
   }, [cmdOpen]);
 
-  /* 命令面板打开时聚焦输入框、重置状态、异步读取历史作品 */
+  /* 命令面板打开时聚焦输入框、重置状态、读取历史作品 */
   useEffect(() => {
-    if (!cmdOpen) return;
-    setTimeout(() => cmdInputRef.current?.focus(), 50);
-    setQuery('');
-    setSelectedIndex(0);
-    setActiveCategory('all');
-    let cancelled = false;
-    (async () => {
+    if (cmdOpen) {
+      setTimeout(() => cmdInputRef.current?.focus(), 50);
+      setQuery('');
+      setSelectedIndex(0);
+      setActiveCategory('all');
       try {
-        const records = await getAnalysisHistory();
-        if (!cancelled) setHistoryWorks(records);
-      } catch (err) {
-        console.error('命令面板加载历史失败:', err);
-        if (!cancelled) setHistoryWorks([]);
+        const stored = localStorage.getItem('danqing-ai-history');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          setHistoryWorks(Array.isArray(parsed) ? parsed : []);
+        } else {
+          setHistoryWorks([]);
+        }
+      } catch {
+        setHistoryWorks([]);
       }
-    })();
-    return () => { cancelled = true; };
+    }
   }, [cmdOpen]);
 
   /* 记录最近访问页面（最多5个，去重） */
@@ -286,17 +285,14 @@ export default function Header() {
       icon: Trash2,
       iconClass: 'bg-cinnabar/10 text-cinnabar',
       action: () => {
-        /* 异步清空历史：通过 data-service 清空本地缓存(API 模式下也清本地兜底) */
-        (async () => {
-          try {
-            await clearAnalysisHistory();
-            setHistoryWorks([]);
-            toast.success('缓存已清除', '历史记录已清空');
-          } catch {
-            toast.error('清除失败', '请稍后重试');
-          }
-          setCmdOpen(false);
-        })();
+        try {
+          localStorage.removeItem('danqing-ai-history');
+          setHistoryWorks([]);
+          toast.success('缓存已清除', '历史记录已清空');
+        } catch {
+          toast.error('清除失败', '请稍后重试');
+        }
+        setCmdOpen(false);
       },
     },
     {
@@ -597,12 +593,9 @@ export default function Header() {
             <Settings className="w-4 h-4" />
           </Link>
 
-          {/* 租户切换(已登录 + 多租户时显示;单租户时组件内部返回 null) */}
-          {isAuthenticated && <TenantSwitcher />}
-
           <div className="w-px h-5 bg-ink-900/10 mx-1" />
 
-          {/* 用户区域:未登录显示登录按钮,已登录显示头像+下拉菜单(含角色 badge/登出) */}
+          {/* 用户区域:未登录显示登录按钮,已登录显示头像+下拉菜单(含切换租户/登出) */}
           {!isAuthenticated ? (
             <Link
               to="/login"
@@ -659,13 +652,9 @@ export default function Header() {
                         </div>
                       )}
                       <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5">
-                          <p className="text-sm font-medium text-ink-900 truncate">
-                            {user?.name ?? '用户'}
-                          </p>
-                          {/* 角色 badge:管理员/教师/学生 */}
-                          {user?.role && <RoleBadge role={user.role} size="xs" />}
-                        </div>
+                        <p className="text-sm font-medium text-ink-900 truncate">
+                          {user?.name ?? '用户'}
+                        </p>
                         <p className="text-2xs text-ink-400 truncate">
                           {user?.email ?? user?.phone ?? '—'}
                         </p>
@@ -696,7 +685,42 @@ export default function Header() {
                     })}
                   </div>
 
-                  {/* 分隔线(切换租户已移至顶部 TenantSwitcher 组件) */}
+                  {/* 切换租户(仅当用户属于多个租户时显示) */}
+                  {memberships.length > 1 && (
+                    <>
+                      <div className="border-t border-ink-900/8" />
+                      <div className="px-3 pt-2 pb-1">
+                        <p className="text-2xs font-semibold text-ink-400 uppercase tracking-wider">
+                          切换租户
+                        </p>
+                      </div>
+                      <div className="p-1 max-h-40 overflow-y-auto scrollbar-thin">
+                        {memberships.map((m) => {
+                          const active = m.tenantId === tenant?.id;
+                          return (
+                            <button
+                              key={m.tenantId}
+                              onClick={() => {
+                                void switchTenant(m.tenantId);
+                                setUserOpen(false);
+                              }}
+                              className={`w-full flex items-center gap-2.5 h-10 px-2 rounded-md text-sm transition-colors ${
+                                active
+                                  ? 'bg-cinnabar/5 text-cinnabar font-medium'
+                                  : 'text-ink-700 hover:bg-ink-900/5'
+                              }`}
+                            >
+                              <Building2 className="w-4 h-4 text-ink-500 flex-shrink-0" />
+                              <span className="truncate flex-1 text-left">{m.tenantName}</span>
+                              {active && <Check className="w-3.5 h-3.5 flex-shrink-0" />}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
+
+                  {/* 分隔线 */}
                   <div className="border-t border-ink-900/8" />
 
                   {/* 退出登录 */}

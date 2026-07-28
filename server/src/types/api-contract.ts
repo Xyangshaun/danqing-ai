@@ -635,3 +635,64 @@ export interface AIEnhancedAnalysisDetail extends AnalysisDetail {
   /** 是否经过 AI 增强 */
   aiEnhanced: boolean;
 }
+
+// ============ 3.9 成长曲线相关类型(Phase 2,对应 GET /growth) ============
+
+/** 成长维度 */
+export type GrowthDimension = 'composition' | 'color' | 'originality' | 'overall';
+
+/** 成长时间范围 */
+export type GrowthTimeRange = '7d' | '30d' | '90d' | 'all';
+
+/** 成长趋势 */
+export type GrowthTrend = 'up' | 'down' | 'stable';
+
+/** 成长曲线数据点 */
+export interface GrowthDataPoint {
+  /** ISO 8601 日期(对应分析记录的 createdAt) */
+  date: ISODateString;
+  /** 分数(0-100) */
+  score: number;
+  /** 关联的分析记录 ID */
+  analysisId: string;
+  /** 作品类型(painting/design/product/sculpture) */
+  artType: string;
+}
+
+/** 成长曲线汇总统计 */
+export interface GrowthSummary {
+  /** 当前最新分数(0-100) */
+  current: number;
+  /** 平均分(四舍五入取整) */
+  average: number;
+  /** 趋势:相比第一个数据点上升/下降/持平 */
+  trend: GrowthTrend;
+  /** 相比第一个数据点的变化量(当前 - 首个) */
+  change: number;
+  /** 总分析次数(有效数据点数) */
+  totalAnalyses: number;
+}
+
+/** GET /growth 查询参数 */
+export interface GrowthQuery {
+  /** 成长维度,默认 overall */
+  dimension?: GrowthDimension;
+  /** 时间范围,默认 30d */
+  timeRange?: GrowthTimeRange;
+  /** 作品类型过滤(可选) */
+  artType?: ArtType;
+  /** TEACHER/ADMIN 查看指定学生的成长(可选;STUDENT 传此参数将被忽略) */
+  userId?: string;
+}
+
+/** GET /growth 响应 */
+export interface GrowthResponse {
+  /** 查询的维度 */
+  dimension: string;
+  /** 查询的时间范围 */
+  timeRange: string;
+  /** 数据点列表(按时间升序) */
+  dataPoints: GrowthDataPoint[];
+  /** 汇总统计 */
+  summary: GrowthSummary;
+}

@@ -17,7 +17,7 @@
 //   - 所有错误统一走 errorHandler,禁止裸 res.json
 // ============================================================
 
-import express, { type Express } from 'express';
+import express, { Router, type Express } from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
@@ -31,6 +31,7 @@ import { userRouter } from './routes/user.routes.js';
 import { tenantRouter } from './routes/tenant.routes.js';
 import { analysisRouter } from './routes/analysis.routes.js';
 import { artworkRouter } from './routes/artwork.routes.js';
+import { growthRouter } from './routes/growth.routes.js';
 import { ErrorCode } from './types/api-contract.js';
 
 /**
@@ -116,7 +117,8 @@ export function createApp(): Express {
 
   // ---------- 健康检查(无需鉴权,供探针)----------
   // 返回轻量结构,不查 DB/Redis(避免雪崩);如需深度检查走 /health/ready
-  app.get('/health', (_req, res) => {
+  // /health 供 LB/K8s 探针(render.yaml),/api/v1/health 供 API 契约一致性检查
+  const healthHandler = (_req: express.Request, res: express.Response) => {
     res.status(200).json({
       code: ErrorCode.SUCCESS,
       message: 'ok',
@@ -129,14 +131,19 @@ export function createApp(): Express {
       },
       traceId: res.req.traceId,
     });
-  });
+  };
+  app.get('/health', healthHandler);
+  app.get('/api/v1/health', healthHandler);
 
-  // ---------- 业务路由 ----------
-  app.use('/auth', authRouter);
-  app.use('/users', userRouter);
-  app.use('/tenants', tenantRouter);
-  app.use('/analyses', analysisRouter);
-  app.use('/artworks', artworkRouter);
+  // ---------- 业务路由(统一挂载在 /api/v1 下,与 API 契约一致)----------
+  const apiV1 = Router();
+  apiV1.use('/auth', authRouter);
+  apiV1.use('/users', userRouter);
+  apiV1.use('/tenants', tenantRouter);
+  apiV1.use('/analyses', analysisRouter);
+  apiV1.use('/artworks', artworkRouter);
+  apiV1.use('/growth', growthRouter);
+  app.use('/api/v1', apiV1);
 
   // ---------- 404 兜底 ----------
   app.use(notFoundHandler);

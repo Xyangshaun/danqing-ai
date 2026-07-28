@@ -110,6 +110,40 @@ export class AnalysisRepository {
   }
 
   /**
+   * 成长曲线查询(无分页,按时间升序)
+   * 强制 tenant_id 过滤;仅查询 status=success 的记录(成长曲线仅统计成功分析)
+   * 支持 userId / artType / 时间范围筛选
+   *
+   * 安全策略:
+   *   - tenantId 必填,防止跨租户读取
+   *   - userId 可选(teacher/admin 查看租户全量时不传)
+   *   - 仅返回 success 状态记录(失败/处理中的记录不计入成长曲线)
+   */
+  async listForGrowth(filter: {
+    tenantId: string;
+    userId?: string;
+    artType?: ArtType;
+    startDate?: Date;
+    endDate?: Date;
+  }): Promise<Analysis[]> {
+    const where: Prisma.AnalysisWhereInput = {
+      tenantId: filter.tenantId,
+      status: 'success',
+    };
+    if (filter.userId) where.userId = filter.userId;
+    if (filter.artType) where.workType = filter.artType;
+    if (filter.startDate || filter.endDate) {
+      where.createdAt = {};
+      if (filter.startDate) where.createdAt.gte = filter.startDate;
+      if (filter.endDate) where.createdAt.lte = filter.endDate;
+    }
+    return prisma().analysis.findMany({
+      where,
+      orderBy: { createdAt: 'asc' },
+    });
+  }
+
+  /**
    * 当月分析次数(用于配额校验)
    */
   async countMonthlyUsage(tenantId: string, year: number, month: number): Promise<number> {

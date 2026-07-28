@@ -70,9 +70,12 @@ export class ApiError extends Error {
 type ToastType = 'success' | 'error' | 'warning' | 'info';
 type ToastHandler = (type: ToastType, title: string, desc?: string) => void;
 type AuthFailedHandler = () => void;
+/** 权限不足回调(用户仍登录,仅无权限访问某资源) */
+type PermissionDeniedCallback = (message: string) => void;
 
 let toastHandler: ToastHandler | null = null;
 let authFailedHandler: AuthFailedHandler | null = null;
+let permissionDeniedHandler: PermissionDeniedCallback | null = null;
 
 /** 注入 Toast 回调(由 AuthProvider 在 mount 时调用) */
 export function setToastHandler(fn: ToastHandler | null): void {
@@ -84,6 +87,18 @@ export function setAuthFailedHandler(fn: AuthFailedHandler | null): void {
   authFailedHandler = fn;
 }
 
+/**
+ * 注入权限不足回调(由 PermissionToast 组件订阅)
+ *
+ * 与 authFailedHandler 的区别:
+ *   - authFailedHandler:登录态失效(401),清 token + 跳登录页
+ *   - permissionDeniedHandler:权限不足(403/FORBIDDEN),用户仍登录,
+ *     仅提示无权限,不跳转,不破坏当前页面状态
+ */
+export function setPermissionDeniedHandler(fn: PermissionDeniedCallback | null): void {
+  permissionDeniedHandler = fn;
+}
+
 function notifyError(title: string, desc?: string): void {
   toastHandler?.('error', title, desc);
 }
@@ -91,6 +106,16 @@ function notifyError(title: string, desc?: string): void {
 function triggerAuthFailed(): void {
   clearAccessToken();
   authFailedHandler?.();
+}
+
+/** 触发权限不足提示(由 PermissionToast 接收,若未注册则降级到普通 Toast) */
+function notifyPermissionDenied(message: string): void {
+  if (permissionDeniedHandler) {
+    permissionDeniedHandler(message);
+  } else {
+    // 降级:未注册权限 Toast 时,走普通错误 Toast
+    notifyError('权限不足', message);
+  }
 }
 
 /* ============================================================
@@ -340,7 +365,9 @@ function handleBusinessError(err: ApiError, silent?: boolean): void {
       notifyError('分析超时', 'AI 分析超过 3 秒,请重试');
       break;
     case ErrorCode.FORBIDDEN:
-      notifyError('权限不足', err.message);
+      // 权限不足:不跳登录页(用户仍登录),触发 PermissionToast 专属提示
+      // 返回 rejected promise 让调用方可差异化处理(如隐藏按钮/跳转)
+      notifyPermissionDenied(err.message);
       break;
     case ErrorCode.TENANT_DISABLED:
       notifyError('租户已禁用', '请联系管理员');

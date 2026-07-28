@@ -43,6 +43,6 @@ export function resetTestApp(): void {
 
 /**
  * 默认导出 app 实例(supertest(request) 直接使用)
- * 用法: import { request } from 'supertest'; await request(app).get('/auth/me')
+ * 用法: import { request } from 'supertest'; await request(app).get('/api/v1/auth/me')
  */
 export const testApp: Express = getTestApp();

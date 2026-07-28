@@ -185,7 +185,7 @@ describe('tenant-isolation (多租户数据隔离)', () => {
       });
 
       const res = await request(getTestApp())
-        .get(`/analyses/${ANALYSIS_ID_B1}`)
+        .get(`/api/v1/analyses/${ANALYSIS_ID_B1}`)
         .set(authHeaders(tokens.accessToken))
         .expect(404);
 
@@ -206,7 +206,7 @@ describe('tenant-isolation (多租户数据隔离)', () => {
       });
 
       const res = await request(getTestApp())
-        .get(`/analyses/${ANALYSIS_ID_A1}`)
+        .get(`/api/v1/analyses/${ANALYSIS_ID_A1}`)
         .set(authHeaders(tokens.accessToken))
         .expect(200);
 
@@ -231,7 +231,7 @@ describe('tenant-isolation (多租户数据隔离)', () => {
       });
 
       const res = await request(getTestApp())
-        .get('/analyses')
+        .get('/api/v1/analyses')
         .set(authHeaders(tokens.accessToken))
         .expect(200);
 
@@ -255,7 +255,7 @@ describe('tenant-isolation (多租户数据隔离)', () => {
       });
 
       const res = await request(getTestApp())
-        .get('/analyses')
+        .get('/api/v1/analyses')
         .set(authHeaders(tokens.accessToken))
         .expect(200);
 
@@ -284,7 +284,7 @@ describe('tenant-isolation (多租户数据隔离)', () => {
 
       // 攻击尝试:请求体中注入 tenantId 字段(应被忽略)
       const res = await request(getTestApp())
-        .post('/analyses')
+        .post('/api/v1/analyses')
         .set(authHeaders(tokens.accessToken))
         .send({
           artType: 'painting',
@@ -321,7 +321,7 @@ describe('tenant-isolation (多租户数据隔离)', () => {
       });
 
       const res = await request(getTestApp())
-        .get('/analyses')
+        .get('/api/v1/analyses')
         .set(authHeaders(tokens.accessToken))
         .expect(200);
 
@@ -344,7 +344,7 @@ describe('tenant-isolation (多租户数据隔离)', () => {
       });
 
       const res = await request(getTestApp())
-        .get('/analyses')
+        .get('/api/v1/analyses')
         .query({ userId: STUDENT_USER_ID_A2 }) // 试图查 A2 的记录
         .set(authHeaders(tokens.accessToken))
         .expect(200);
@@ -370,7 +370,7 @@ describe('tenant-isolation (多租户数据隔离)', () => {
       });
 
       const res = await request(getTestApp())
-        .get('/analyses')
+        .get('/api/v1/analyses')
         .set(authHeaders(tokens.accessToken))
         .expect(200);
 
@@ -393,7 +393,7 @@ describe('tenant-isolation (多租户数据隔离)', () => {
       });
 
       const res = await request(getTestApp())
-        .get('/analyses')
+        .get('/api/v1/analyses')
         .query({ userId: STUDENT_USER_ID_A2 })
         .set(authHeaders(tokens.accessToken))
         .expect(200);
@@ -413,7 +413,7 @@ describe('tenant-isolation (多租户数据隔离)', () => {
       });
 
       const res = await request(getTestApp())
-        .get('/analyses')
+        .get('/api/v1/analyses')
         .set(authHeaders(tokens.accessToken))
         .expect(200);
 
@@ -437,7 +437,7 @@ describe('tenant-isolation (多租户数据隔离)', () => {
       });
 
       const res = await request(getTestApp())
-        .post('/tenants/switch')
+        .post('/api/v1/tenants/switch')
         .set(authHeaders(tokens.accessToken))
         .send({ tenantId: TEST_TENANT_ID_B })
         .expect(403);
@@ -461,7 +461,7 @@ describe('tenant-isolation (多租户数据隔离)', () => {
       });
 
       const res = await request(getTestApp())
-        .post('/tenants/switch')
+        .post('/api/v1/tenants/switch')
         .set(authHeaders(tokens.accessToken))
         .send({ tenantId: 't-nonexistent-tenant-9999' })
         .expect(404);
@@ -501,7 +501,7 @@ describe('tenant-isolation (多租户数据隔离)', () => {
       });
 
       const res = await request(getTestApp())
-        .post('/tenants/switch')
+        .post('/api/v1/tenants/switch')
         .set(authHeaders(tokens.accessToken))
         .send({ tenantId: disabledTenantId })
         .expect(403);
@@ -531,7 +531,7 @@ describe('tenant-isolation (多租户数据隔离)', () => {
       });
 
       const res = await request(getTestApp())
-        .post('/tenants/switch')
+        .post('/api/v1/tenants/switch')
         .set(authHeaders(tokens.accessToken))
         .send({ tenantId: TEST_TENANT_ID_B })
         .expect(200);
@@ -557,7 +557,7 @@ describe('tenant-isolation (多租户数据隔离)', () => {
 
       // 新 token 可访问租户 B 的资源
       const res2 = await request(getTestApp())
-        .get('/analyses')
+        .get('/api/v1/analyses')
         .set(authHeaders(data.accessToken))
         .expect(200);
       const body2 = res2.body as { data: { items: Array<{ id: string }>; total: number } };
@@ -579,7 +579,7 @@ describe('tenant-isolation (多租户数据隔离)', () => {
       });
 
       const res = await request(getTestApp())
-        .get('/tenants/current')
+        .get('/api/v1/tenants/current')
         .set(authHeaders(tokens.accessToken))
         .expect(200);
 
@@ -615,7 +615,7 @@ describe('tenant-isolation (多租户数据隔离)', () => {
       });
 
       const res = await request(getTestApp())
-        .get('/tenants/current')
+        .get('/api/v1/tenants/current')
         .set(authHeaders(tokens.accessToken))
         .expect(404);
 
@@ -634,7 +634,7 @@ describe('tenant-isolation (多租户数据隔离)', () => {
       });
 
       const res = await request(getTestApp())
-        .get('/tenants/current')
+        .get('/api/v1/tenants/current')
         .set(authHeaders(tokens.accessToken))
         .expect(403);
 
@@ -658,7 +658,7 @@ describe('tenant-isolation (多租户数据隔离)', () => {
       });
 
       const res = await request(getTestApp())
-        .patch('/users/profile')
+        .patch('/api/v1/users/profile')
         .set(authHeaders(tokens.accessToken))
         .send({ name: '被篡改的名字' })
         .expect(401);
@@ -679,7 +679,7 @@ describe('tenant-isolation (多租户数据隔离)', () => {
       });
 
       const res = await request(getTestApp())
-        .patch('/users/profile')
+        .patch('/api/v1/users/profile')
         .set(authHeaders(tokens.accessToken))
         .send({ name: '新名字A' })
         .expect(200);
@@ -721,7 +721,7 @@ describe('tenant-isolation (多租户数据隔离)', () => {
       // 不传 refresh_token Cookie,仅用 revokeAll=true
       // 这样 revokedSessions 计数 = revokeAllByUser 返回值(仅租户 A 的未撤销 session 数)
       const res = await request(getTestApp())
-        .post('/auth/logout')
+        .post('/api/v1/auth/logout')
         .set('Authorization', `Bearer ${tokensA.accessToken}`)
         .send({ revokeAll: true })
         .expect(200);
@@ -766,7 +766,7 @@ describe('tenant-isolation (多租户数据隔离)', () => {
       });
 
       const res = await request(getTestApp())
-        .get('/analyses')
+        .get('/api/v1/analyses')
         .set('Authorization', `Bearer ${tokenWithoutTenant}`)
         .expect(401);
 
@@ -775,7 +775,7 @@ describe('tenant-isolation (多租户数据隔离)', () => {
 
     it('should_reject_request_without_authorization_header', async () => {
       const res = await request(getTestApp())
-        .get('/analyses')
+        .get('/api/v1/analyses')
         .expect(401);
 
       assertApiError(res, ErrorCode.UNAUTHORIZED, 401);
@@ -876,14 +876,14 @@ describe('tenant-isolation (多租户数据隔离)', () => {
 
       // 2. 用户 B 试图访问租户 A 的分析详情 → 404
       const res1 = await request(getTestApp())
-        .get(`/analyses/${ANALYSIS_ID_A1}`)
+        .get(`/api/v1/analyses/${ANALYSIS_ID_A1}`)
         .set(authHeaders(tokensB.accessToken))
         .expect(404);
       assertApiError(res1, ErrorCode.ANALYSIS_NOT_FOUND, 404);
 
       // 3. 用户 B 查询列表,不应出现租户 A 的记录
       const res2 = await request(getTestApp())
-        .get('/analyses')
+        .get('/api/v1/analyses')
         .set(authHeaders(tokensB.accessToken))
         .expect(200);
       const listData = res2.body.data as { items: Array<{ id: string }>; total: number };
@@ -894,7 +894,7 @@ describe('tenant-isolation (多租户数据隔离)', () => {
 
       // 4. 用户 B 试图通过创建分析注入 tenantId=A → 数据应落在 B
       const res3 = await request(getTestApp())
-        .post('/analyses')
+        .post('/api/v1/analyses')
         .set(authHeaders(tokensB.accessToken))
         .send({
           artType: 'design',
@@ -909,7 +909,7 @@ describe('tenant-isolation (多租户数据隔离)', () => {
 
       // 5. 用户 B 试图切换到租户 A(非成员)→ 403
       const res4 = await request(getTestApp())
-        .post('/tenants/switch')
+        .post('/api/v1/tenants/switch')
         .set(authHeaders(tokensB.accessToken))
         .send({ tenantId: TEST_TENANT_ID_A })
         .expect(403);
@@ -928,7 +928,7 @@ describe('tenant-isolation (多租户数据隔离)', () => {
       });
 
       const res = await request(getTestApp())
-        .get('/users/profile')
+        .get('/api/v1/users/profile')
         .set(authHeaders(tokensA.accessToken))
         .expect(200);
 
@@ -971,7 +971,7 @@ describe('tenant-isolation (多租户数据隔离)', () => {
 
       // 租户 A 用户创建分析 → 应触发配额超限(50/50)
       const resA = await request(getTestApp())
-        .post('/analyses')
+        .post('/api/v1/analyses')
         .set(authHeaders(tokensA.accessToken))
         .send({
           artType: 'painting',
@@ -992,7 +992,7 @@ describe('tenant-isolation (多租户数据隔离)', () => {
       prismaMock.tenantStore.get(TEST_TENANT_ID_B)!.plan = 'free';
 
       const resB = await request(getTestApp())
-        .post('/analyses')
+        .post('/api/v1/analyses')
         .set(authHeaders(tokensB.accessToken))
         .send({
           artType: 'painting',

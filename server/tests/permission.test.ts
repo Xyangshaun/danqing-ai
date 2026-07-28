@@ -432,7 +432,7 @@ describe('RBAC permission middleware (unit)', () => {
         role: 'student',
         userId: 'u1',
         tenantId: 't1',
-        url: '/analyses',
+        url: '/api/v1/analyses',
         method: 'GET',
       });
       const res = createMockRes(req);
@@ -547,7 +547,7 @@ describe('RBAC permission middleware (unit)', () => {
         role: 'student',
         userId: 'u1',
         tenantId: 't1',
-        url: '/tenants/t1/members',
+        url: '/api/v1/tenants/t1/members',
         method: 'POST',
       });
       const res = createMockRes(req);
@@ -576,7 +576,7 @@ describe('RBAC analysis API (integration)', () => {
   describe('P12: POST /analyses 创建分析(所有角色可创建)', () => {
     it('should_allow_student_to_create_analysis', async () => {
       const res = await request(getTestApp())
-        .post('/analyses')
+        .post('/api/v1/analyses')
         .set(authHeaders(tokenFor(STUDENT_ID, 'student', STUDENT_OPEN_ID)))
         .send({ artType: 'painting', imageUrl: 'https://example.com/new.jpg' })
         .expect(200);
@@ -585,7 +585,7 @@ describe('RBAC analysis API (integration)', () => {
 
     it('should_allow_teacher_to_create_analysis', async () => {
       const res = await request(getTestApp())
-        .post('/analyses')
+        .post('/api/v1/analyses')
         .set(authHeaders(tokenFor(TEACHER_ID, 'teacher', TEACHER_OPEN_ID)))
         .send({ artType: 'design', imageUrl: 'https://example.com/new-t.jpg' })
         .expect(200);
@@ -594,7 +594,7 @@ describe('RBAC analysis API (integration)', () => {
 
     it('should_allow_admin_to_create_analysis', async () => {
       const res = await request(getTestApp())
-        .post('/analyses')
+        .post('/api/v1/analyses')
         .set(authHeaders(tokenFor(ADMIN_ID, 'admin', ADMIN_OPEN_ID)))
         .send({ artType: 'sculpture', imageUrl: 'https://example.com/new-a.jpg' })
         .expect(200);
@@ -605,7 +605,7 @@ describe('RBAC analysis API (integration)', () => {
   describe('P13: GET /analyses 列表数据范围过滤', () => {
     it('should_return_only_own_analyses_for_student', async () => {
       const res = await request(getTestApp())
-        .get('/analyses')
+        .get('/api/v1/analyses')
         .set(authHeaders(tokenFor(STUDENT_ID, 'student', STUDENT_OPEN_ID)))
         .expect(200);
       const body = assertApiResponse(res);
@@ -617,7 +617,7 @@ describe('RBAC analysis API (integration)', () => {
 
     it('should_return_all_tenant_analyses_for_teacher', async () => {
       const res = await request(getTestApp())
-        .get('/analyses')
+        .get('/api/v1/analyses')
         .set(authHeaders(tokenFor(TEACHER_ID, 'teacher', TEACHER_OPEN_ID)))
         .expect(200);
       const body = assertApiResponse(res);
@@ -628,7 +628,7 @@ describe('RBAC analysis API (integration)', () => {
 
     it('should_return_all_tenant_analyses_for_admin', async () => {
       const res = await request(getTestApp())
-        .get('/analyses')
+        .get('/api/v1/analyses')
         .set(authHeaders(tokenFor(ADMIN_ID, 'admin', ADMIN_OPEN_ID)))
         .expect(200);
       const body = assertApiResponse(res);
@@ -638,7 +638,7 @@ describe('RBAC analysis API (integration)', () => {
 
     it('should_return_all_tenant_analyses_for_owner', async () => {
       const res = await request(getTestApp())
-        .get('/analyses')
+        .get('/api/v1/analyses')
         .set(authHeaders(tokenFor(OWNER_ID, 'owner', OWNER_OPEN_ID)))
         .expect(200);
       const body = assertApiResponse(res);
@@ -650,7 +650,7 @@ describe('RBAC analysis API (integration)', () => {
   describe('P14: GET /analyses/:id 详情数据范围过滤', () => {
     it('should_allow_student_to_view_own_analysis', async () => {
       const res = await request(getTestApp())
-        .get(`/analyses/${ANALYSIS_OWN_STUDENT}`)
+        .get(`/api/v1/analyses/${ANALYSIS_OWN_STUDENT}`)
         .set(authHeaders(tokenFor(STUDENT_ID, 'student', STUDENT_OPEN_ID)))
         .expect(200);
       const body = assertApiResponse(res);
@@ -662,7 +662,7 @@ describe('RBAC analysis API (integration)', () => {
     it('should_deny_student_viewing_other_student_analysis_with_404', async () => {
       // 学生1 试图查看学生2 的分析 → 404(不泄露存在性)
       const res = await request(getTestApp())
-        .get(`/analyses/${ANALYSIS_OWN_STUDENT_2}`)
+        .get(`/api/v1/analyses/${ANALYSIS_OWN_STUDENT_2}`)
         .set(authHeaders(tokenFor(STUDENT_ID, 'student', STUDENT_OPEN_ID)))
         .expect(404);
       assertApiError(res, ErrorCode.ANALYSIS_NOT_FOUND, 404);
@@ -670,7 +670,7 @@ describe('RBAC analysis API (integration)', () => {
 
     it('should_allow_teacher_to_view_any_tenant_analysis', async () => {
       const res = await request(getTestApp())
-        .get(`/analyses/${ANALYSIS_OWN_STUDENT}`)
+        .get(`/api/v1/analyses/${ANALYSIS_OWN_STUDENT}`)
         .set(authHeaders(tokenFor(TEACHER_ID, 'teacher', TEACHER_OPEN_ID)))
         .expect(200);
       const body = assertApiResponse(res);
@@ -680,7 +680,7 @@ describe('RBAC analysis API (integration)', () => {
 
     it('should_allow_admin_to_view_any_tenant_analysis', async () => {
       const res = await request(getTestApp())
-        .get(`/analyses/${ANALYSIS_OWN_TEACHER}`)
+        .get(`/api/v1/analyses/${ANALYSIS_OWN_TEACHER}`)
         .set(authHeaders(tokenFor(ADMIN_ID, 'admin', ADMIN_OPEN_ID)))
         .expect(200);
       const body = assertApiResponse(res);
@@ -692,7 +692,7 @@ describe('RBAC analysis API (integration)', () => {
   describe('P15: DELETE /analyses/:id 删除自己的记录(所有角色)', () => {
     it('should_allow_student_to_delete_own_analysis', async () => {
       const res = await request(getTestApp())
-        .delete(`/analyses/${ANALYSIS_OWN_STUDENT}`)
+        .delete(`/api/v1/analyses/${ANALYSIS_OWN_STUDENT}`)
         .set(authHeaders(tokenFor(STUDENT_ID, 'student', STUDENT_OPEN_ID)))
         .expect(200);
       const body = assertApiResponse(res);
@@ -705,7 +705,7 @@ describe('RBAC analysis API (integration)', () => {
 
     it('should_allow_teacher_to_delete_own_analysis', async () => {
       const res = await request(getTestApp())
-        .delete(`/analyses/${ANALYSIS_OWN_TEACHER}`)
+        .delete(`/api/v1/analyses/${ANALYSIS_OWN_TEACHER}`)
         .set(authHeaders(tokenFor(TEACHER_ID, 'teacher', TEACHER_OPEN_ID)))
         .expect(200);
       const body = assertApiResponse(res);
@@ -716,7 +716,7 @@ describe('RBAC analysis API (integration)', () => {
     it('should_deny_student_deleting_others_analysis_with_404', async () => {
       // 学生1 试图删学生2 的记录 → 404(不泄露存在性)
       const res = await request(getTestApp())
-        .delete(`/analyses/${ANALYSIS_OWN_STUDENT_2}`)
+        .delete(`/api/v1/analyses/${ANALYSIS_OWN_STUDENT_2}`)
         .set(authHeaders(tokenFor(STUDENT_ID, 'student', STUDENT_OPEN_ID)))
         .expect(404);
       assertApiError(res, ErrorCode.ANALYSIS_NOT_FOUND, 404);
@@ -727,7 +727,7 @@ describe('RBAC analysis API (integration)', () => {
     it('should_deny_teacher_deleting_others_analysis_with_404', async () => {
       // 教师 试图删学生的记录 → 404(teacher 仅拥有 analysis:delete:own)
       const res = await request(getTestApp())
-        .delete(`/analyses/${ANALYSIS_OWN_STUDENT}`)
+        .delete(`/api/v1/analyses/${ANALYSIS_OWN_STUDENT}`)
         .set(authHeaders(tokenFor(TEACHER_ID, 'teacher', TEACHER_OPEN_ID)))
         .expect(404);
       assertApiError(res, ErrorCode.ANALYSIS_NOT_FOUND, 404);
@@ -738,7 +738,7 @@ describe('RBAC analysis API (integration)', () => {
   describe('P16: DELETE /analyses/:id 删除租户内任意记录(仅 admin/owner)', () => {
     it('should_allow_admin_to_delete_any_tenant_analysis', async () => {
       const res = await request(getTestApp())
-        .delete(`/analyses/${ANALYSIS_OWN_STUDENT}`)
+        .delete(`/api/v1/analyses/${ANALYSIS_OWN_STUDENT}`)
         .set(authHeaders(tokenFor(ADMIN_ID, 'admin', ADMIN_OPEN_ID)))
         .expect(200);
       const body = assertApiResponse(res);
@@ -749,7 +749,7 @@ describe('RBAC analysis API (integration)', () => {
 
     it('should_allow_owner_to_delete_any_tenant_analysis', async () => {
       const res = await request(getTestApp())
-        .delete(`/analyses/${ANALYSIS_OWN_TEACHER}`)
+        .delete(`/api/v1/analyses/${ANALYSIS_OWN_TEACHER}`)
         .set(authHeaders(tokenFor(OWNER_ID, 'owner', OWNER_OPEN_ID)))
         .expect(200);
       const body = assertApiResponse(res);
@@ -774,7 +774,7 @@ describe('RBAC analysis API (integration)', () => {
 
       // 管理员(admin)在 TENANT_ID 中试图删除 TEST_TENANT_ID_A 的记录 → 404
       const res = await request(getTestApp())
-        .delete(`/analyses/${otherTenantAnalysisId}`)
+        .delete(`/api/v1/analyses/${otherTenantAnalysisId}`)
         .set(authHeaders(tokenFor(ADMIN_ID, 'admin', ADMIN_OPEN_ID)))
         .expect(404);
       assertApiError(res, ErrorCode.ANALYSIS_NOT_FOUND, 404);
@@ -796,7 +796,7 @@ describe('RBAC tenant member management (integration)', () => {
   describe('P18: GET /tenants/:id/members 列出成员(需 user:read)', () => {
     it('should_allow_admin_to_list_members', async () => {
       const res = await request(getTestApp())
-        .get(`/tenants/${TENANT_ID}/members`)
+        .get(`/api/v1/tenants/${TENANT_ID}/members`)
         .set(authHeaders(tokenFor(ADMIN_ID, 'admin', ADMIN_OPEN_ID)))
         .expect(200);
       const body = assertApiResponse(res);
@@ -806,7 +806,7 @@ describe('RBAC tenant member management (integration)', () => {
 
     it('should_allow_teacher_to_list_members', async () => {
       const res = await request(getTestApp())
-        .get(`/tenants/${TENANT_ID}/members`)
+        .get(`/api/v1/tenants/${TENANT_ID}/members`)
         .set(authHeaders(tokenFor(TEACHER_ID, 'teacher', TEACHER_OPEN_ID)))
         .expect(200);
       assertApiResponse(res);
@@ -815,7 +815,7 @@ describe('RBAC tenant member management (integration)', () => {
     it('should_deny_student_to_list_members_with_403', async () => {
       // student 无 user:read 权限
       const res = await request(getTestApp())
-        .get(`/tenants/${TENANT_ID}/members`)
+        .get(`/api/v1/tenants/${TENANT_ID}/members`)
         .set(authHeaders(tokenFor(STUDENT_ID, 'student', STUDENT_OPEN_ID)))
         .expect(403);
       assertApiError(res, ErrorCode.FORBIDDEN, 403);
@@ -836,7 +836,7 @@ describe('RBAC tenant member management (integration)', () => {
       });
 
       const res = await request(getTestApp())
-        .post(`/tenants/${TENANT_ID}/members`)
+        .post(`/api/v1/tenants/${TENANT_ID}/members`)
         .set(authHeaders(tokenFor(ADMIN_ID, 'admin', ADMIN_OPEN_ID)))
         .send({ userId: newUserId, role: 'student' })
         .expect(200);
@@ -858,7 +858,7 @@ describe('RBAC tenant member management (integration)', () => {
       });
 
       const res = await request(getTestApp())
-        .post(`/tenants/${TENANT_ID}/members`)
+        .post(`/api/v1/tenants/${TENANT_ID}/members`)
         .set(authHeaders(tokenFor(TEACHER_ID, 'teacher', TEACHER_OPEN_ID)))
         .send({ userId: newUserId, role: 'student' })
         .expect(200);
@@ -867,7 +867,7 @@ describe('RBAC tenant member management (integration)', () => {
 
     it('should_deny_student_to_invite_member_with_403', async () => {
       const res = await request(getTestApp())
-        .post(`/tenants/${TENANT_ID}/members`)
+        .post(`/api/v1/tenants/${TENANT_ID}/members`)
         .set(authHeaders(tokenFor(STUDENT_ID, 'student', STUDENT_OPEN_ID)))
         .send({ userId: 'any-user', role: 'student' })
         .expect(403);
@@ -887,7 +887,7 @@ describe('RBAC tenant member management (integration)', () => {
       });
 
       const res = await request(getTestApp())
-        .delete(`/tenants/${TENANT_ID}/members/${STUDENT_ID_2}`)
+        .delete(`/api/v1/tenants/${TENANT_ID}/members/${STUDENT_ID_2}`)
         .set(authHeaders(tokenFor(ADMIN_ID, 'admin', ADMIN_OPEN_ID)))
         .expect(200);
       const body = assertApiResponse(res);
@@ -899,7 +899,7 @@ describe('RBAC tenant member management (integration)', () => {
     it('should_deny_teacher_to_remove_member_with_403', async () => {
       // teacher 无 user:remove 权限
       const res = await request(getTestApp())
-        .delete(`/tenants/${TENANT_ID}/members/${STUDENT_ID_2}`)
+        .delete(`/api/v1/tenants/${TENANT_ID}/members/${STUDENT_ID_2}`)
         .set(authHeaders(tokenFor(TEACHER_ID, 'teacher', TEACHER_OPEN_ID)))
         .expect(403);
       assertApiError(res, ErrorCode.FORBIDDEN, 403);
@@ -907,7 +907,7 @@ describe('RBAC tenant member management (integration)', () => {
 
     it('should_deny_student_to_remove_member_with_403', async () => {
       const res = await request(getTestApp())
-        .delete(`/tenants/${TENANT_ID}/members/${STUDENT_ID_2}`)
+        .delete(`/api/v1/tenants/${TENANT_ID}/members/${STUDENT_ID_2}`)
         .set(authHeaders(tokenFor(STUDENT_ID, 'student', STUDENT_OPEN_ID)))
         .expect(403);
       assertApiError(res, ErrorCode.FORBIDDEN, 403);
@@ -916,7 +916,7 @@ describe('RBAC tenant member management (integration)', () => {
     it('should_prevent_admin_from_removing_self', async () => {
       // 防止误操作:管理员不可移除自己
       const res = await request(getTestApp())
-        .delete(`/tenants/${TENANT_ID}/members/${ADMIN_ID}`)
+        .delete(`/api/v1/tenants/${TENANT_ID}/members/${ADMIN_ID}`)
         .set(authHeaders(tokenFor(ADMIN_ID, 'admin', ADMIN_OPEN_ID)))
         .expect(400);
       assertApiError(res, ErrorCode.PARAM_INVALID, 400);
@@ -926,7 +926,7 @@ describe('RBAC tenant member management (integration)', () => {
   describe('P21: GET /tenants/current / GET /tenants(所有角色可读)', () => {
     it('should_allow_student_to_get_current_tenant', async () => {
       const res = await request(getTestApp())
-        .get('/tenants/current')
+        .get('/api/v1/tenants/current')
         .set(authHeaders(tokenFor(STUDENT_ID, 'student', STUDENT_OPEN_ID)))
         .expect(200);
       const body = assertApiResponse(res);
@@ -936,7 +936,7 @@ describe('RBAC tenant member management (integration)', () => {
 
     it('should_allow_student_to_list_own_tenants', async () => {
       const res = await request(getTestApp())
-        .get('/tenants')
+        .get('/api/v1/tenants')
         .set(authHeaders(tokenFor(STUDENT_ID, 'student', STUDENT_OPEN_ID)))
         .expect(200);
       assertApiResponse(res);
@@ -961,7 +961,7 @@ describe('RBAC tenant member management (integration)', () => {
       });
 
       const res = await request(getTestApp())
-        .post('/tenants/switch')
+        .post('/api/v1/tenants/switch')
         .set(authHeaders(tokenFor(STUDENT_ID, 'student', STUDENT_OPEN_ID)))
         .send({ tenantId: anotherTenantId })
         .expect(200);
@@ -986,7 +986,7 @@ describe('RBAC data scope filtering (integration)', () => {
     it('should_ignore_query_userId_for_student_and_return_only_own', async () => {
       // 学生1 试图通过 ?userId=STUDENT_ID_2 查询学生2 的记录
       const res = await request(getTestApp())
-        .get('/analyses')
+        .get('/api/v1/analyses')
         .query({ userId: STUDENT_ID_2 })
         .set(authHeaders(tokenFor(STUDENT_ID, 'student', STUDENT_OPEN_ID)))
         .expect(200);
@@ -1001,7 +1001,7 @@ describe('RBAC data scope filtering (integration)', () => {
   describe('P24: 教师按 userId 筛选生效', () => {
     it('should_filter_by_userId_for_teacher', async () => {
       const res = await request(getTestApp())
-        .get('/analyses')
+        .get('/api/v1/analyses')
         .query({ userId: STUDENT_ID })
         .set(authHeaders(tokenFor(TEACHER_ID, 'teacher', TEACHER_OPEN_ID)))
         .expect(200);
@@ -1013,7 +1013,7 @@ describe('RBAC data scope filtering (integration)', () => {
 
     it('should_return_all_when_no_userId_for_teacher', async () => {
       const res = await request(getTestApp())
-        .get('/analyses')
+        .get('/api/v1/analyses')
         .set(authHeaders(tokenFor(TEACHER_ID, 'teacher', TEACHER_OPEN_ID)))
         .expect(200);
       const body = assertApiResponse(res);
@@ -1025,11 +1025,11 @@ describe('RBAC data scope filtering (integration)', () => {
   describe('P25: 管理员视图与教师视图一致(全量可见)', () => {
     it('should_return_same_count_for_admin_and_teacher', async () => {
       const resTeacher = await request(getTestApp())
-        .get('/analyses')
+        .get('/api/v1/analyses')
         .set(authHeaders(tokenFor(TEACHER_ID, 'teacher', TEACHER_OPEN_ID)))
         .expect(200);
       const resAdmin = await request(getTestApp())
-        .get('/analyses')
+        .get('/api/v1/analyses')
         .set(authHeaders(tokenFor(ADMIN_ID, 'admin', ADMIN_OPEN_ID)))
         .expect(200);
       const teacherData = resTeacher.body.data as { total: number };
@@ -1052,14 +1052,14 @@ describe('RBAC security policies (integration)', () => {
   describe('P26: 无 Authorization 头默认拒绝', () => {
     it('should_return_401_when_no_authorization_header', async () => {
       const res = await request(getTestApp())
-        .get('/analyses')
+        .get('/api/v1/analyses')
         .expect(401);
       assertApiError(res, ErrorCode.UNAUTHORIZED, 401);
     });
 
     it('should_return_401_when_no_authorization_header_on_delete', async () => {
       const res = await request(getTestApp())
-        .delete(`/analyses/${ANALYSIS_OWN_STUDENT}`)
+        .delete(`/api/v1/analyses/${ANALYSIS_OWN_STUDENT}`)
         .expect(401);
       assertApiError(res, ErrorCode.UNAUTHORIZED, 401);
     });
@@ -1070,7 +1070,7 @@ describe('RBAC security policies (integration)', () => {
       // 学生1 访问学生2 的分析:权限中间件放行(student 有 analysis:read:own),
       // 但 service 层数据范围过滤返回 404(不泄露存在性)
       const res = await request(getTestApp())
-        .get(`/analyses/${ANALYSIS_OWN_STUDENT_2}`)
+        .get(`/api/v1/analyses/${ANALYSIS_OWN_STUDENT_2}`)
         .set(authHeaders(tokenFor(STUDENT_ID, 'student', STUDENT_OPEN_ID)))
         .expect(404);
       assertApiError(res, ErrorCode.ANALYSIS_NOT_FOUND, 404);
@@ -1082,7 +1082,7 @@ describe('RBAC security policies (integration)', () => {
       // 教师删除学生的分析:权限中间件放行(teacher 有 analysis:delete:own),
       // 但 service 层数据范围过滤返回 404(不泄露存在性)
       const res = await request(getTestApp())
-        .delete(`/analyses/${ANALYSIS_OWN_STUDENT}`)
+        .delete(`/api/v1/analyses/${ANALYSIS_OWN_STUDENT}`)
         .set(authHeaders(tokenFor(TEACHER_ID, 'teacher', TEACHER_OPEN_ID)))
         .expect(404);
       assertApiError(res, ErrorCode.ANALYSIS_NOT_FOUND, 404);
@@ -1097,7 +1097,7 @@ describe('RBAC security policies (integration)', () => {
       const infoSpy = vi.spyOn(logger, 'info').mockImplementation(() => undefined);
 
       await request(getTestApp())
-        .delete(`/analyses/${ANALYSIS_OWN_STUDENT}`)
+        .delete(`/api/v1/analyses/${ANALYSIS_OWN_STUDENT}`)
         .set(authHeaders(tokenFor(ADMIN_ID, 'admin', ADMIN_OPEN_ID)))
         .expect(200);
 
@@ -1129,7 +1129,7 @@ describe('RBAC security policies (integration)', () => {
       const infoSpy = vi.spyOn(logger, 'info').mockImplementation(() => undefined);
 
       await request(getTestApp())
-        .delete(`/analyses/${ANALYSIS_OWN_STUDENT}`)
+        .delete(`/api/v1/analyses/${ANALYSIS_OWN_STUDENT}`)
         .set(authHeaders(tokenFor(STUDENT_ID, 'student', STUDENT_OPEN_ID)))
         .expect(200);
 
