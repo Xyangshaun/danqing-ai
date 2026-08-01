@@ -12,10 +12,15 @@
 
 import type { RequestHandler } from 'express';
 import { z } from 'zod';
+import { writeFileSync, mkdirSync } from 'node:fs';
+import { join, resolve, extname } from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { analysisService } from '../services/analysis.service.js';
 import { success, error } from '../utils/response.js';
 import { ErrorCode, type ArtType, type AnalysisStatus } from '../types/api-contract.js';
 import { logger } from '../utils/logger.js';
+import { assertSafeImageUrl } from '../middlewares/url-guard.js';
+import { env } from '../config/env.js';
 
 /** 合法作品类型(四类) */
 const VALID_ART_TYPES: readonly ArtType[] = [
@@ -87,6 +92,14 @@ export const createAnalysis: RequestHandler = async (req, res, next) => {
       return error(res, ErrorCode.PARAM_INVALID, msg, 400);
     }
 
+    // SSRF 防护:校验 imageUrl 主机不指向内网/元数据
+    // refine 已保证 imageUrl 存在,此处显式收窄类型供 TS 严格模式使用
+    const imageUrl = parsed.data.imageUrl;
+    if (!imageUrl) {
+      return error(res, ErrorCode.PARAM_INVALID, '缺少必填参数:imageUrl', 400);
+    }
+    assertSafeImageUrl(imageUrl);
+
     const result = await analysisService.createAnalysis({
       tenantId: req.tenantId,
       userId: req.userId,
@@ -114,7 +127,10 @@ export const createAnalysis: RequestHandler = async (req, res, next) => {
 /**
  * POST /analyses/upload
  * 提交分析任务(文件上传模式,multipart/form-data)
- * multer 中间件已在 routes 层注入,此处从 req.file 读取
+ * multer 中间件已在 routes 层注入,此处从 req.file.buffer 读取
+ *
+ * G4 安全修复:memoryStorage 下 file.path 不存在,需手动将 buffer 写盘
+ * 再传 path 给 service(保持 service 接口不变)
  */
 export const uploadAnalysis: RequestHandler = async (req, res, next) => {
   try {
@@ -122,9 +138,9 @@ export const uploadAnalysis: RequestHandler = async (req, res, next) => {
       return error(res, ErrorCode.UNAUTHORIZED, '未授权,请先登录', 401);
     }
 
-    // multer 单文件字段名:image
-    const file = (req as unknown as { file?: Express.Multer.File }).file;
-    if (!file) {
+    // multer 单文件字段名:image(memoryStorage → file.buffer)
+    const file = (req as unknown as { file?: Express.Multer.File & { buffer?: Buffer } }).file;
+    if (!file || !file.buffer) {
       return error(res, ErrorCode.FILE_EMPTY, '缺少上传文件:image', 400);
     }
 
@@ -136,11 +152,26 @@ export const uploadAnalysis: RequestHandler = async (req, res, next) => {
       return error(res, ErrorCode.PARAM_INVALID, msg, 400);
     }
 
+    // memoryStorage → 写盘生成临时文件路径(routes 层已做魔数校验)
+    const uploadDir = resolve(process.cwd(), env().uploadDir);
+    const ext = extname(file.originalname).toLowerCase() || '.jpg';
+    const uniqueName = `${Date.now()}-${randomUUID().slice(0, 8)}${ext}`;
+    const localImagePath = join(uploadDir, uniqueName);
+    try {
+      // 确保上传目录存在(避免目录不存在导致 writeFileSync 失败)
+      mkdirSync(uploadDir, { recursive: true });
+      writeFileSync(localImagePath, file.buffer);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.error({ err: msg, dir: uploadDir }, '[analysis.controller] write uploaded file failed');
+      return error(res, ErrorCode.FILE_UPLOAD_FAILED, '文件保存失败', 500);
+    }
+
     const result = await analysisService.createAnalysisFromUpload({
       tenantId: req.tenantId,
       userId: req.userId,
       artType: parsed.data.artType,
-      localImagePath: file.path,
+      localImagePath,
       originalFileName: file.originalname,
       title: parsed.data.title,
       remark: parsed.data.remark,

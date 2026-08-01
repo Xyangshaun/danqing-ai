@@ -11,15 +11,22 @@ import type { JwtPayload, SignOptions } from 'jsonwebtoken';
 import { env } from '../config/env.js';
 import { generateJti } from '../utils/crypto.js';
 import type { UserRole } from '../types/api-contract.js';
+import type { AuthType } from '../types/arbitration.js';
 
 /**
  * access_token payload
+ * Phase 5 起新增 auth_type 字段(可选,向后兼容旧 token)
+ *   - feishu:飞书 OAuth 登录
+ *   - phone:手机号 OTP 登录
+ *   - invitation:邀请码兑换登录
+ *   - password:邮箱+密码登录(院校管理员)
  */
 export interface AccessTokenPayload extends JwtPayload {
   sub: string;          // user_id
   tenant_id: string;    // 当前激活租户
   role: UserRole;       // 当前租户内角色
-  feishu_open_id: string; // 仅作审计关联
+  feishu_open_id: string; // 仅作审计关联(非飞书用户为空串)
+  auth_type?: AuthType;   // 认证方式(Phase 5,旧 token 缺省视为 feishu)
   jti: string;          // 唯一 ID,用于 Redis 黑名单
   iss: string;          // 签发方
   aud: string;          // 受众(web/admin/mobile)
@@ -64,6 +71,7 @@ function parseExpiry(exp: string): number {
 class JwtServiceClass {
   /**
    * 签发 access_token(RS256)
+   * Phase 5:authType 可选,缺省时为 'feishu'(向后兼容旧调用方)
    */
   issueAccessToken(params: {
     userId: string;
@@ -71,6 +79,7 @@ class JwtServiceClass {
     role: UserRole;
     feishuOpenId: string;
     client: 'web' | 'admin' | 'mobile';
+    authType?: AuthType;
   }): IssueResult {
     const cfg = env();
     const jti = generateJti();
@@ -81,6 +90,8 @@ class JwtServiceClass {
       tenant_id: params.tenantId,
       role: params.role,
       feishu_open_id: params.feishuOpenId,
+      // Phase 5:写入 auth_type,旧 token 缺省时中间件视为 'feishu'
+      auth_type: params.authType ?? 'feishu',
       jti,
       iss: cfg.jwtIssuer,
       aud:
@@ -140,6 +151,7 @@ class JwtServiceClass {
 
   /**
    * 验证 access_token(RS256 公钥校验)
+   * audience 同时校验 web/admin/mobile 三端,任一匹配即通过
    * @throws jwt.TokenExpiredError / jwt.JsonWebTokenError
    */
   verifyAccessToken(token: string): AccessTokenPayload {
@@ -147,8 +159,7 @@ class JwtServiceClass {
     const decoded = jwt.verify(token, cfg.jwtPublicKey, {
       algorithms: ['RS256'],
       issuer: cfg.jwtIssuer,
-      audience:
-        cfg.jwtAudienceWeb, // 多端校验需扩展此处;Phase 1 简化为只校验 web aud
+      audience: [cfg.jwtAudienceWeb, cfg.jwtAudienceAdmin, cfg.jwtAudienceMobile],
       clockTolerance: 30,
     });
     if (typeof decoded === 'string') {

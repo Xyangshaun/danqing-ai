@@ -165,12 +165,86 @@ export async function checkServerHealth(): Promise<boolean> {
 }
 
 /**
- * 将后端返回的旧版分析结果转换为新版差异化维度结构
+ * 将后端返回的分析结果转换为前端AnalysisResult格式
+ * 支持多种后端格式:
+ *   - 最新版(API v1): data 为 AnalysisRecord { id, status, result: HybridAnalysisResult },实际数据在 data.result 中
+ *   - 新版(Phase B+): data.dimensions 为结构化对象,可能包含 professionalSuggestions/aiVisionResult
+ *   - 旧版(Legacy): data.composition/data.color 平铺结构
  */
 function convertBackendResult(data: any, artType: ArtType): AnalysisResult {
-  const composition = data.composition || {};
-  const color = data.color || {};
-  const originality = data.originality || {};
+  /* 记录顶层id，用于兼容AnalysisRecord格式 */
+  const recordId = data.id;
+
+  /* 检测是否为 AnalysisRecord 包装格式: data.result 存在且包含分析结果字段 */
+  const isRecordFormat = data.result && (data.result.dimensions || typeof data.result.overallScore === 'number');
+
+  /* 解包:如果是AnalysisRecord格式,从result中提取实际分析数据 */
+  const actualData = isRecordFormat ? data.result : data;
+
+  /* 提取 professionalSuggestions: 优先取result层,其次顶层,再从aiVisionResult中取 */
+  const professionalSuggestions =
+    actualData.professionalSuggestions ||
+    data.professionalSuggestions ||
+    (actualData.aiVisionResult && actualData.aiVisionResult.professionalSuggestions) ||
+    (data.aiVisionResult && data.aiVisionResult.professionalSuggestions) ||
+    undefined;
+
+  /* 检测是否为新版结构化格式(dimensions.type 存在) */
+  const isNewFormat = actualData.dimensions && actualData.dimensions.type;
+
+  /* Phase F1:提取可观测性元信息(可能在 AnalysisDetail 顶层或 result 层) */
+  const metaInfo = {
+    aiEnhanced: data.aiEnhanced ?? actualData.aiEnhanced,
+    cacheHit: data.cacheHit ?? actualData.cacheHit,
+    jimpDurationMs: data.jimpDurationMs ?? actualData.jimpDurationMs,
+    aiDurationMs: data.aiDurationMs ?? actualData.aiDurationMs,
+  };
+
+  if (isNewFormat) {
+    /* 新版格式:直接透传 dimensions/originality,附加 professionalSuggestions */
+    /* Phase F1:对 painting 类型,从已有 3 字段聚合 structureTensor */
+    const dims = actualData.dimensions;
+    if (
+      dims &&
+      dims.type === 'painting' &&
+      dims.brushwork &&
+      !dims.brushwork.structureTensor
+    ) {
+      const bw = dims.brushwork;
+      if (
+        typeof bw.directionCoherence === 'number' ||
+        typeof bw.strokeEnergy === 'number' ||
+        typeof bw.dominantBrushDirection === 'number'
+      ) {
+        bw.structureTensor = {
+          coherence: bw.directionCoherence ?? 0,
+          energy: bw.strokeEnergy ?? 0,
+          dominantDirection: bw.dominantBrushDirection ?? 0,
+        };
+      }
+    }
+    return {
+      id: recordId || actualData.id || `analysis-${Date.now()}`,
+      imageUrl: actualData.imageUrl || data.imageUrl || '',
+      createdAt: actualData.createdAt || data.createdAt || new Date().toISOString(),
+      artType: actualData.artType || data.artType || actualData.workType || data.workType || artType,
+      dimensions: dims,
+      originality: actualData.originality || {
+        score: 80,
+        similarity: 0.15,
+        creativityLevel: 'good',
+        suggestion: '原创性良好，继续保持个人风格。',
+      },
+      overallScore: actualData.overallScore ?? 75,
+      professionalSuggestions,
+      ...metaInfo,
+    };
+  }
+
+  /* 旧版格式:转换平铺字段为结构化 dimensions */
+  const composition = actualData.composition || data.composition || {};
+  const color = actualData.color || data.color || {};
+  const originality = actualData.originality || data.originality || {};
 
   const baseComposition = {
     score: composition.score || 75,
@@ -295,10 +369,10 @@ function convertBackendResult(data: any, artType: ArtType): AnalysisResult {
   }
 
   return {
-    id: data.id || `analysis-${Date.now()}`,
-    imageUrl: data.imageUrl || '',
-    createdAt: data.createdAt || new Date().toISOString(),
-    artType: data.artType || artType,
+    id: recordId || actualData.id || data.id || `analysis-${Date.now()}`,
+    imageUrl: actualData.imageUrl || data.imageUrl || '',
+    createdAt: actualData.createdAt || data.createdAt || new Date().toISOString(),
+    artType: actualData.artType || data.artType || artType,
     dimensions,
     originality: {
       score: originality.score || 80,
@@ -306,7 +380,9 @@ function convertBackendResult(data: any, artType: ArtType): AnalysisResult {
       suggestion: originality.suggestion || '原创性良好，继续保持个人风格。',
       creativityLevel: originality.similarity < 0.15 ? 'excellent' : originality.similarity < 0.25 ? 'good' : 'average',
     },
-    overallScore: data.overallScore || 75,
+    overallScore: actualData.overallScore ?? data.overallScore ?? 75,
+    professionalSuggestions,
+    ...metaInfo,
   };
 }
 
@@ -330,18 +406,37 @@ export async function smartAnalyze(
   if (decision.mode === 'server' && file) {
     const formData = new FormData();
     formData.append('image', file);
-    formData.append('art_type', artType);
+    formData.append('artType', artType);
 
-    const response = await fetch(`${getBackendUrl()}/analyses/upload`, {
-      method: 'POST',
-      body: formData, // 不设置 Content-Type，让浏览器自动设置 boundary
-    });
+    let response: Response;
+    try {
+      response = await fetch(`${getBackendUrl()}/api/v1/analyses/upload`, {
+        method: 'POST',
+        body: formData, // 不设置 Content-Type，让浏览器自动设置 boundary
+      });
+    } catch (networkError) {
+      throw new Error('网络连接失败，请检查网络后重试');
+    }
+
+    /* 先检查HTTP状态码 */
+    if (!response.ok) {
+      let errorMessage = `服务器返回错误 (HTTP ${response.status})`;
+      try {
+        const errorData = await response.json();
+        if (errorData.message) {
+          errorMessage = errorData.message;
+        }
+      } catch {
+        /* 解析错误响应失败时，使用默认错误消息 */
+      }
+      throw new Error(errorMessage);
+    }
 
     const data = await response.json();
     if (data.code === 0 && data.data) {
       return convertBackendResult(data.data, artType);
     }
-    throw new Error(data.message || '服务器分析失败');
+    throw new Error(data.message || '服务器分析失败，请稍后重试');
   }
 
   return analyzeImage(imageUrl, artType);

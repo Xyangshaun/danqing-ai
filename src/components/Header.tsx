@@ -4,7 +4,7 @@ import {
   ChevronRight, ChevronDown, Home, Command, X, ArrowRight,
   User, Image as ImageIcon, LogOut, Check, Sparkles,
   CheckCircle2, TrendingUp, RefreshCw, Trash2, Clock,
-  Brush, PenTool, Box, Layers, type LucideIcon,
+  Brush, PenTool, Box, Layers, History, Download, type LucideIcon,
 } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import LogoMark from './LogoMark';
@@ -35,16 +35,16 @@ const categoryRoute: Record<string, string> = {
   '系统': '/settings',
 };
 
-/* 命令面板搜索项 */
+/* 命令面板搜索项（keywords 含中文别名 + 拼音首字母，支持拼音首字母搜索） */
 const searchItems: { path: string; title: string; desc: string; icon: LucideIcon; keywords: string }[] = [
-  { path: '/analyze', title: '新建 AI 诊断', desc: '上传作品进行智能分析', icon: Search, keywords: '诊断 分析 上传 AI' },
-  { path: '/materials', title: '浏览素材库', desc: '中外艺术作品参考', icon: Search, keywords: '素材 作品 参考 灵感' },
-  { path: '/styles', title: '风格库', desc: '中式美学风格转换', icon: Search, keywords: '风格 水墨 青绿 非遗' },
-  { path: '/fuse', title: '灵感嫁接', desc: '融合两张草图生成新作品', icon: Search, keywords: '嫁接 融合 灵感 元素' },
-  { path: '/emotion', title: '情绪画布', desc: '情绪关键词转色调', icon: Search, keywords: '情绪 画布 色调 心情' },
-  { path: '/history', title: '历史记录', desc: '查看所有诊断记录', icon: Search, keywords: '历史 记录 之前' },
-  { path: '/growth', title: '成长曲线', desc: '能力变化趋势', icon: Search, keywords: '成长 曲线 趋势 数据' },
-  { path: '/settings', title: '设置', desc: '系统偏好与配置', icon: Search, keywords: '设置 偏好 配置' },
+  { path: '/analyze', title: '新建 AI 诊断', desc: '上传作品进行智能分析', icon: Search, keywords: '诊断 分析 上传 AI zd fx sc' },
+  { path: '/materials', title: '浏览素材库', desc: '中外艺术作品参考', icon: Search, keywords: '素材 作品 参考 灵感 sc zp ck lg' },
+  { path: '/styles', title: '风格库', desc: '中式美学风格转换', icon: Search, keywords: '风格 水墨 青绿 非遗 fg sm ql fy' },
+  { path: '/fuse', title: '灵感嫁接', desc: '融合两张草图生成新作品', icon: Search, keywords: '嫁接 融合 灵感 元素 jj rh lg ys' },
+  { path: '/emotion', title: '情绪画布', desc: '情绪关键词转色调', icon: Search, keywords: '情绪 画布 色调 心情 qx hb sd xq' },
+  { path: '/history', title: '历史记录', desc: '查看所有诊断记录', icon: Search, keywords: '历史 记录 之前 ls jl zq' },
+  { path: '/growth', title: '成长曲线', desc: '能力变化趋势', icon: Search, keywords: '成长 曲线 趋势 数据 cz qx qs sj' },
+  { path: '/settings', title: '设置', desc: '系统偏好与配置', icon: Search, keywords: '设置 偏好 配置 sz ph pz' },
 ];
 
 /* 模拟通知数据 */
@@ -112,6 +112,10 @@ interface CommandItem {
   icon: LucideIcon;
   iconClass: string;
   action: () => void;
+  /** 拼音/别名关键词，参与搜索过滤（支持拼音首字母匹配） */
+  keywords?: string;
+  /** 快捷键提示（如导航命令 1-8），渲染为右侧 kbd */
+  shortcut?: string;
 }
 
 const commandCategories: { id: CategoryFilter; label: string }[] = [
@@ -239,15 +243,76 @@ export default function Header() {
   }, []);
 
   /* 构建各分类命令项 */
-  const functionItems: CommandItem[] = searchItems.map((it) => ({
-    id: `fn-${it.path}`,
-    category: 'function',
-    title: it.title,
-    desc: it.desc,
-    icon: it.icon,
-    iconClass: 'bg-cinnabar/10 text-cinnabar',
-    action: () => { navigate(it.path); setCmdOpen(false); },
-  }));
+  const functionItems: CommandItem[] = [
+    ...searchItems.map((it, idx) => ({
+      id: `fn-${it.path}`,
+      category: 'function' as const,
+      title: it.title,
+      desc: it.desc,
+      icon: it.icon,
+      iconClass: 'bg-cinnabar/10 text-cinnabar',
+      action: () => { navigate(it.path); setCmdOpen(false); },
+      keywords: it.keywords,
+      shortcut: String(idx + 1),
+    })),
+    /* 新增：切换作品类型命令（dispatch 'switch-art-type' 事件，由分析页等监听） */
+    {
+      id: 'fn-switch-painting',
+      category: 'function',
+      title: '切换作品类型：绘画',
+      desc: '将当前分析类型切换为绘画',
+      icon: Brush,
+      iconClass: 'bg-cinnabar/10 text-cinnabar',
+      action: () => {
+        window.dispatchEvent(new CustomEvent('switch-art-type', { detail: { artType: 'painting' } }));
+        toast.success('已切换为绘画类型');
+        setCmdOpen(false);
+      },
+      keywords: '切换 类型 绘画 painting hh qh lx',
+    },
+    {
+      id: 'fn-switch-design',
+      category: 'function',
+      title: '切换作品类型：设计',
+      desc: '将当前分析类型切换为设计',
+      icon: PenTool,
+      iconClass: 'bg-cinnabar/10 text-cinnabar',
+      action: () => {
+        window.dispatchEvent(new CustomEvent('switch-art-type', { detail: { artType: 'design' } }));
+        toast.success('已切换为设计类型');
+        setCmdOpen(false);
+      },
+      keywords: '切换 类型 设计 design sj qh lx',
+    },
+    {
+      id: 'fn-switch-product',
+      category: 'function',
+      title: '切换作品类型：产品',
+      desc: '将当前分析类型切换为产品设计',
+      icon: Box,
+      iconClass: 'bg-cinnabar/10 text-cinnabar',
+      action: () => {
+        window.dispatchEvent(new CustomEvent('switch-art-type', { detail: { artType: 'product' } }));
+        toast.success('已切换为产品设计类型');
+        setCmdOpen(false);
+      },
+      keywords: '切换 类型 产品 设计 product cp sj qh lx',
+    },
+    {
+      id: 'fn-switch-sculpture',
+      category: 'function',
+      title: '切换作品类型：雕塑',
+      desc: '将当前分析类型切换为雕塑',
+      icon: Layers,
+      iconClass: 'bg-cinnabar/10 text-cinnabar',
+      action: () => {
+        window.dispatchEvent(new CustomEvent('switch-art-type', { detail: { artType: 'sculpture' } }));
+        toast.success('已切换为雕塑类型');
+        setCmdOpen(false);
+      },
+      keywords: '切换 类型 雕塑 sculpture ds qh lx',
+    },
+  ];
 
   const recentItems: CommandItem[] = recentVisits.flatMap((path) => {
     const found = searchItems.find((it) => it.path === path);
@@ -260,6 +325,7 @@ export default function Header() {
       icon: Clock,
       iconClass: 'bg-stone/10 text-stone',
       action: () => { navigate(found.path); setCmdOpen(false); },
+      keywords: found.keywords,
     }];
   });
 
@@ -274,6 +340,7 @@ export default function Header() {
       icon: meta.icon,
       iconClass: 'bg-gold/10 text-gold-dark',
       action: () => { navigate('/history'); setCmdOpen(false); },
+      keywords: `${meta.label} 作品 ${rec.overallScore} 分 zp`,
     };
   });
 
@@ -334,6 +401,32 @@ export default function Header() {
       iconClass: 'bg-rice-200 text-ink-500',
       action: () => { navigate('/settings'); setCmdOpen(false); },
     },
+    /* 新增：导出分析结果（dispatch 'export-analysis' 事件，由分析页等监听） */
+    {
+      id: 'ac-export',
+      category: 'action',
+      title: '导出分析结果',
+      desc: '导出当前分析报告',
+      icon: Download,
+      iconClass: 'bg-jade/10 text-jade',
+      action: () => {
+        window.dispatchEvent(new CustomEvent('export-analysis'));
+        toast.info('正在准备导出分析结果...');
+        setCmdOpen(false);
+      },
+      keywords: '导出 分析 结果 报告 export dc fx jg bg',
+    },
+    /* 新增：查看分析历史（导航到 /history） */
+    {
+      id: 'ac-history',
+      category: 'action',
+      title: '查看分析历史',
+      desc: '前往历史记录页面',
+      icon: History,
+      iconClass: 'bg-rice-200 text-ink-500',
+      action: () => { navigate('/history'); setCmdOpen(false); },
+      keywords: '查看 分析 历史 记录 ck ls jl',
+    },
   ];
 
   /* 按分类与关键词过滤，构建分段结果（每类最多 3 条） */
@@ -349,7 +442,10 @@ export default function Header() {
     .map((sec) => ({
       category: sec.category,
       items: sec.items
-        .filter((it) => !q || it.title.toLowerCase().includes(q) || it.desc.toLowerCase().includes(q))
+        .filter((it) => !q
+          || it.title.toLowerCase().includes(q)
+          || it.desc.toLowerCase().includes(q)
+          || (it.keywords || '').toLowerCase().includes(q))
         .slice(0, 3),
     }))
     .filter((sec) => sec.items.length > 0);
@@ -804,6 +900,11 @@ export default function Header() {
                           <p className="text-sm font-medium text-ink-900">{item.title}</p>
                           <p className="text-xs text-ink-400 truncate">{item.desc}</p>
                         </div>
+                        {item.shortcut && (
+                          <kbd className="px-1.5 py-0.5 bg-rice-200 rounded text-2xs font-mono text-ink-400 flex-shrink-0">
+                            {item.shortcut}
+                          </kbd>
+                        )}
                         {selected && (
                           <ArrowRight className="w-4 h-4 text-cinnabar flex-shrink-0" />
                         )}

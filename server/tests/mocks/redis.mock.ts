@@ -4,13 +4,22 @@
 // 对应文档:auth-design.md §1.2 步骤 3(state 缓存)+ §2.2(黑名单)+ §3.3(限流)
 //
 // 支持方法:get / set(EX 选项) / del / expire / exists / incr / quit
+//          zadd / zremrangebyscore / zcard(滑动窗口限流)
+//          eval / evalsha(Lua 原子脚本,通过 script cache + 模式分派)
 // 支持 TTL 过期语义(惰性删除)
 // 提供 __clear / __dump / __rawSet 供测试控制
 // ============================================================
 
+import crypto from 'node:crypto';
+
 interface RedisEntry {
   value: string;
   expiresAt: number | null; // 绝对时间戳(ms),null 表示永不过期
+}
+
+interface SortedSetEntry {
+  members: Array<{ score: number; member: string }>;
+  expiresAt: number | null;
 }
 
 /**
@@ -19,14 +28,21 @@ interface RedisEntry {
  */
 class RedisMock {
   private readonly store = new Map<string, RedisEntry>();
+  private readonly sortedSets = new Map<string, SortedSetEntry>();
+  /** Lua 脚本缓存:sha1 → 脚本源码(对应 Redis SCRIPT LOAD) */
+  private readonly scriptCache = new Map<string, string>();
 
   /**
-   * 惰性过期检查:访问时删除已过期 key
+   * 惰性过期检查:访问时删除已过期 key(字符串 + 有序集)
    */
   private refresh(key: string): void {
     const entry = this.store.get(key);
     if (entry && entry.expiresAt !== null && entry.expiresAt <= Date.now()) {
       this.store.delete(key);
+    }
+    const zset = this.sortedSets.get(key);
+    if (zset && zset.expiresAt !== null && zset.expiresAt <= Date.now()) {
+      this.sortedSets.delete(key);
     }
   }
 
@@ -62,23 +78,35 @@ class RedisMock {
   async del(...keys: string[]): Promise<number> {
     let deleted = 0;
     for (const key of keys) {
-      if (this.store.delete(key)) deleted += 1;
+      // Redis 中一个 key 只属于一种类型,del 对存在的 key 返回 1
+      let removed = false;
+      if (this.store.delete(key)) removed = true;
+      if (this.sortedSets.delete(key)) removed = true;
+      if (removed) deleted += 1;
     }
     return deleted;
   }
 
   async expire(key: string, seconds: number): Promise<number> {
+    this.refresh(key);
     const entry = this.store.get(key);
-    if (!entry) return 0;
-    entry.expiresAt = Date.now() + seconds * 1000;
-    return 1;
+    if (entry) {
+      entry.expiresAt = Date.now() + seconds * 1000;
+      return 1;
+    }
+    const zset = this.sortedSets.get(key);
+    if (zset) {
+      zset.expiresAt = Date.now() + seconds * 1000;
+      return 1;
+    }
+    return 0;
   }
 
   async exists(...keys: string[]): Promise<number> {
     let count = 0;
     for (const key of keys) {
       this.refresh(key);
-      if (this.store.has(key)) count += 1;
+      if (this.store.has(key) || this.sortedSets.has(key)) count += 1;
     }
     return count;
   }
@@ -98,6 +126,224 @@ class RedisMock {
     return next;
   }
 
+  // ============================================================
+  // 有序集(Sorted Set)操作 —— 支持滑动窗口限流
+  // ============================================================
+
+  /**
+   * ZADD key score member [score member ...]
+   * 仅支持 NX 默认语义(member 已存在则更新 score)
+   */
+  async zadd(key: string, ...scoreMemberPairs: (string | number)[]): Promise<number> {
+    this.refresh(key);
+    if (scoreMemberPairs.length % 2 !== 0) {
+      throw new Error('ZADD requires pairs of score/member');
+    }
+    let zset = this.sortedSets.get(key);
+    if (!zset) {
+      zset = { members: [], expiresAt: null };
+      this.sortedSets.set(key, zset);
+    }
+    let added = 0;
+    for (let i = 0; i < scoreMemberPairs.length; i += 2) {
+      const score = Number(scoreMemberPairs[i]);
+      const member = String(scoreMemberPairs[i + 1]);
+      const existing = zset.members.find((m) => m.member === member);
+      if (existing) {
+        existing.score = score;
+      } else {
+        zset.members.push({ score, member });
+        added += 1;
+      }
+    }
+    return added;
+  }
+
+  /**
+   * ZREMRANGEBYSCORE key min max
+   * 删除 score 在 [min, max] 范围内的 member
+   * 支持负无穷/正无穷(-inf / +inf)
+   */
+  async zremrangebyscore(key: string, min: string | number, max: string | number): Promise<number> {
+    this.refresh(key);
+    const zset = this.sortedSets.get(key);
+    if (!zset) return 0;
+    const minScore = min === '-inf' ? -Infinity : Number(min);
+    const maxScore = max === '+inf' ? Infinity : Number(max);
+    const before = zset.members.length;
+    zset.members = zset.members.filter((m) => !(m.score >= minScore && m.score <= maxScore));
+    return before - zset.members.length;
+  }
+
+  /**
+   * ZCARD key —— 返回有序集成员数
+   */
+  async zcard(key: string): Promise<number> {
+    this.refresh(key);
+    const zset = this.sortedSets.get(key);
+    return zset?.members.length ?? 0;
+  }
+
+  // ============================================================
+  // Lua 脚本:EVAL / EVALSHA
+  // ============================================================
+
+  /**
+   * EVAL script numkeys key [key ...] arg [arg ...]
+   * 简化实现:缓存脚本 sha1,按脚本内容分派到内置 JS 处理函数
+   */
+  async eval(
+    script: string,
+    numkeys: number,
+    ...rest: (string | number | Buffer)[]
+  ): Promise<unknown> {
+    const sha = crypto.createHash('sha1').update(script).digest('hex');
+    this.scriptCache.set(sha, script);
+    return this.runScript(script, numkeys, rest);
+  }
+
+  /**
+   * EVALSHA sha1 numkeys key [key ...] arg [arg ...]
+   * 脚本未缓存时抛 NOSCRIPT 错误(对齐 ioredis 真实行为)
+   */
+  async evalsha(
+    sha1: string,
+    numkeys: number,
+    ...rest: (string | number | Buffer)[]
+  ): Promise<unknown> {
+    const script = this.scriptCache.get(sha1);
+    if (!script) {
+      const err = new Error('NOSCRIPT No matching script. Please use EVAL.');
+      (err as Error & { code?: string }).code = 'NOSCRIPT';
+      throw err;
+    }
+    return this.runScript(script, numkeys, rest);
+  }
+
+  /**
+   * 脚本分派:基于脚本内容识别已知 Lua 脚本
+   * 当前支持:
+   *   - rate-limit 滑动窗口脚本(ZADD + ZREMRANGEBYSCORE + ZCARD + EXPIRE)
+   *   - session-rotate 会话轮转脚本(SET blacklist + DEL session + SET session)
+   */
+  private runScript(script: string, numkeys: number, rest: (string | number | Buffer)[]): unknown {
+    const keys = rest.slice(0, numkeys).map((v) => v.toString());
+    const args = rest.slice(numkeys).map((v) => v.toString());
+    if (
+      script.includes("'ZADD'") &&
+      script.includes("'ZREMRANGEBYSCORE'") &&
+      script.includes("'ZCARD'")
+    ) {
+      return this.runRateLimitScript(keys, args);
+    }
+    // 会话轮转脚本:KEYS = [blacklistKey, oldSessionKey, newSessionKey]
+    // ARGV = [blacklistValue, blacklistTtl, sessionValue, sessionTtl]
+    // 识别特征:同时含 'SET' + 'DEL' 且 KEYS 数为 3
+    if (
+      script.includes("'SET'") &&
+      script.includes("'DEL'") &&
+      numkeys === 3
+    ) {
+      return this.runSessionRotateScript(keys, args);
+    }
+    throw new Error(`mock: unsupported Lua script (len=${script.length})`);
+  }
+
+  /**
+   * 会话轮转脚本 JS 实现(对应 src/services/session.service.ts rotateRefreshToken 中的 Lua 脚本)
+   * 原子执行:1. SET blacklistKey blacklistValue EX blacklistTtl
+   *          2. DEL oldSessionKey
+   *          3. SET newSessionKey sessionValue EX sessionTtl
+   * KEYS[1] = blacklist:refresh:{oldJti}
+   * KEYS[2] = session:{userId}:{oldJti}
+   * KEYS[3] = session:{userId}:{newJti}
+   * ARGV[1]  = blacklistValue('1')
+   * ARGV[2]  = blacklistTtl(秒)
+   * ARGV[3]  = newSessionValue(JSON)
+   * ARGV[4]  = sessionTtl(秒)
+   * 返回:'OK'
+   */
+  private runSessionRotateScript(keys: string[], args: string[]): 'OK' {
+    const [blacklistKey, oldSessionKey, newSessionKey] = keys;
+    const blacklistValue = args[0] ?? '1';
+    const blacklistTtl = Number(args[1] ?? 0);
+    const sessionValue = args[2] ?? '';
+    const sessionTtl = Number(args[3] ?? 0);
+    if (blacklistTtl > 0) {
+      this.store.set(blacklistKey, {
+        value: blacklistValue,
+        expiresAt: Date.now() + blacklistTtl * 1000,
+      });
+    }
+    this.store.delete(oldSessionKey);
+    if (sessionTtl > 0) {
+      this.store.set(newSessionKey, {
+        value: sessionValue,
+        expiresAt: Date.now() + sessionTtl * 1000,
+      });
+    }
+    return 'OK';
+  }
+
+  /**
+   * 滑动窗口限流脚本 JS 实现(对应 src/middlewares/rate-limit.ts 中的 Lua 脚本)
+   * ARGV:[now, member, windowMs, ttlSec]
+   */
+  private runRateLimitScript(keys: string[], args: string[]): number {
+    const key = keys[0];
+    const now = Number(args[0]);
+    const member = args[1];
+    const windowMs = Number(args[2]);
+    const ttlSec = Number(args[3]);
+    void this.zaddInternal(key, now, member);
+    void this.zremrangebyscoreInternal(key, 0, now - windowMs);
+    const count = this.zcardInternal(key);
+    void this.expireInternal(key, ttlSec);
+    return count;
+  }
+
+  private zaddInternal(key: string, score: number, member: string): number {
+    let zset = this.sortedSets.get(key);
+    if (!zset) {
+      zset = { members: [], expiresAt: null };
+      this.sortedSets.set(key, zset);
+    }
+    const existing = zset.members.find((m) => m.member === member);
+    if (existing) {
+      existing.score = score;
+      return 0;
+    }
+    zset.members.push({ score, member });
+    return 1;
+  }
+
+  private zremrangebyscoreInternal(key: string, min: number, max: number): number {
+    const zset = this.sortedSets.get(key);
+    if (!zset) return 0;
+    const before = zset.members.length;
+    zset.members = zset.members.filter((m) => !(m.score >= min && m.score <= max));
+    return before - zset.members.length;
+  }
+
+  private zcardInternal(key: string): number {
+    const zset = this.sortedSets.get(key);
+    return zset?.members.length ?? 0;
+  }
+
+  private expireInternal(key: string, seconds: number): number {
+    const entry = this.store.get(key);
+    if (entry) {
+      entry.expiresAt = Date.now() + seconds * 1000;
+      return 1;
+    }
+    const zset = this.sortedSets.get(key);
+    if (zset) {
+      zset.expiresAt = Date.now() + seconds * 1000;
+      return 1;
+    }
+    return 0;
+  }
+
   async quit(): Promise<void> {
     // no-op
   }
@@ -109,6 +355,8 @@ class RedisMock {
   /** 清空所有 key(每个测试 beforeEach 调用) */
   __clear(): void {
     this.store.clear();
+    this.sortedSets.clear();
+    this.scriptCache.clear();
   }
 
   /**
@@ -121,7 +369,7 @@ class RedisMock {
 
   /** 返回当前所有 key(用于断言黑名单写入) */
   __keys(): string[] {
-    return Array.from(this.store.keys());
+    return [...Array.from(this.store.keys()), ...Array.from(this.sortedSets.keys())];
   }
 
   /** 直接设置 key(带可选 TTL),用于预置测试数据 */

@@ -301,6 +301,8 @@ describe('config/env (环境变量加载与启动自检)', () => {
 
     it('should_accept_production', () => {
       process.env.NODE_ENV = 'production';
+      // G7:生产环境强制要求 COOKIE_SECURE=true
+      process.env.COOKIE_SECURE = 'true';
       expect(loadEnv().nodeEnv).toBe('production');
     });
 
@@ -374,6 +376,17 @@ describe('config/env (环境变量加载与启动自检)', () => {
   // assertRequired 分支
   // ============================================================
   describe('assertRequired (必填校验)', () => {
+    // 注意:开发/测试模式下 FEISHU_APP_ID/SECRET 和 JWT 密钥可为空(自动填充占位值/临时密钥)
+    // 以下测试设置 NODE_ENV=production 验证生产环境的严格校验
+    const originalNodeEnv = process.env.NODE_ENV;
+
+    beforeEach(() => {
+      process.env.NODE_ENV = 'production';
+    });
+    afterEach(() => {
+      process.env.NODE_ENV = originalNodeEnv;
+    });
+
     it('should_throw_when_FEISHU_APP_ID_missing', () => {
       delete process.env.FEISHU_APP_ID;
       expect(() => loadEnv()).toThrow(/missing required/);
@@ -393,7 +406,29 @@ describe('config/env (环境变量加载与启动自检)', () => {
       delete process.env.FEISHU_APP_ID;
       delete process.env.DATABASE_URL;
       delete process.env.REDIS_URL;
-      expect(() => loadEnv()).toThrow(/FEISHU_APP_ID, DATABASE_URL, REDIS_URL/);
+      expect(() => loadEnv()).toThrow(/DATABASE_URL.*REDIS_URL/);
+    });
+
+    it('dev_mode_should_auto_fill_placeholders_when_FEISHU_keys_missing', () => {
+      process.env.NODE_ENV = 'development';
+      delete process.env.FEISHU_APP_ID;
+      process.env.FEISHU_APP_SECRET = '';
+      // 开发模式下不应抛错,而是自动填充占位值
+      const cfg = loadEnv();
+      expect(cfg.feishuAppId).toBe('dev-cli-placeholder');
+      expect(cfg.feishuAppSecret).toBe('dev-secret-placeholder');
+    });
+
+    it('dev_mode_should_generate_ephemeral_keys_when_JWT_keys_missing', () => {
+      process.env.NODE_ENV = 'development';
+      delete process.env.JWT_PRIVATE_KEY;
+      delete process.env.JWT_PUBLIC_KEY;
+      delete process.env.JWT_KEY_ID;
+      // 开发模式下不应抛错,而是自动生成临时 RSA 密钥对
+      const cfg = loadEnv();
+      expect(cfg.jwtPrivateKey).toContain('BEGIN PRIVATE KEY');
+      expect(cfg.jwtPublicKey).toContain('BEGIN PUBLIC KEY');
+      expect(cfg.jwtKeyId).toMatch(/^dev-kid-/);
     });
   });
 

@@ -9,10 +9,21 @@ import type { RequestHandler } from 'express';
 import type { JwtPayload } from 'jsonwebtoken';
 import type { ClientType, UserRole } from '../types/api-contract.js';
 import { ErrorCode } from '../types/api-contract.js';
+import type { AuthType } from '../types/arbitration.js';
 import { error } from '../utils/response.js';
 import { logger } from '../utils/logger.js';
 import { jwtService } from '../services/jwt.service.js';
 import { redis } from '../config/redis.js';
+import { env } from '../config/env.js';
+
+/**
+ * 开发模式常量 - 当 DEV_SKIP_AUTH=true 时注入的虚拟用户
+ * 对应前端 skipLogin() 中设置的 dev-user / dev-tenant
+ */
+const DEV_USER_ID = 'dev-user';
+const DEV_TENANT_ID = 'dev-tenant';
+const DEV_ROLE: UserRole = 'teacher';
+const DEV_OPEN_ID = 'dev-open-id';
 
 /**
  * 已认证的 Request 类型守卫
@@ -23,6 +34,8 @@ export interface AuthedRequest {
   tenantId: string;
   role: UserRole;
   feishuOpenId: string;
+  /** Phase 5:认证方式(feishu/phone/invitation/password),旧 token 缺省为 'feishu' */
+  authType: AuthType;
   jti: string;
   client?: ClientType;
   deviceId?: string;
@@ -31,15 +44,33 @@ export interface AuthedRequest {
 /**
  * JWT 认证中间件
  * 校验顺序:
- * 1. Authorization 头存在,且为 Bearer schema
- * 2. JWT 签名有效(RS256 公钥校验)
- * 3. JWT 未过期(exp)
- * 4. JWT iss / aud 匹配
- * 5. jti 不在 Redis 黑名单
+ * 1. DEV_SKIP_AUTH 模式下无 token 时注入 dev 用户(仅开发环境)
+ * 2. Authorization 头存在,且为 Bearer schema
+ * 3. JWT 签名有效(RS256 公钥校验)
+ * 4. JWT 未过期(exp)
+ * 5. JWT iss / aud 匹配
+ * 6. jti 不在 Redis 黑名单
  */
 export const authMiddleware: RequestHandler = async (req, res, next) => {
   try {
     const authHeader = req.header('Authorization');
+
+    // DEV_SKIP_AUTH:开发模式跳过认证,注入虚拟用户
+    // 仅在 NODE_ENV=development 且 DEV_SKIP_AUTH=true 时生效
+    if (env().devSkipAuth && (!authHeader || !authHeader.startsWith('Bearer '))) {
+      req.userId = DEV_USER_ID;
+      req.tenantId = DEV_TENANT_ID;
+      req.role = DEV_ROLE;
+      req.feishuOpenId = DEV_OPEN_ID;
+      req.authType = 'feishu';
+      req.jti = 'dev-jti';
+      req.client = 'web';
+      req.deviceId = req.header('X-Device-Id') ?? 'dev-device';
+      // eslint-disable-next-line no-console
+      console.warn('[auth] DEV_SKIP_AUTH enabled - injecting dev user:', DEV_USER_ID);
+      return next();
+    }
+
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return error(res, ErrorCode.UNAUTHORIZED, '未授权,请先登录', 401);
     }
@@ -78,7 +109,29 @@ export const authMiddleware: RequestHandler = async (req, res, next) => {
     req.tenantId = (payload as JwtPayload & { tenant_id?: string }).tenant_id;
     req.role = (payload as JwtPayload & { role?: UserRole }).role;
     req.feishuOpenId = (payload as JwtPayload & { feishu_open_id?: string }).feishu_open_id;
+    // Phase 5:auth_type 可选注入,旧 token 缺省为 'feishu'(向后兼容)
+    const rawAuthType = (payload as JwtPayload & { auth_type?: string }).auth_type;
+    req.authType = (rawAuthType === 'feishu' || rawAuthType === 'phone' || rawAuthType === 'invitation' || rawAuthType === 'password')
+      ? rawAuthType
+      : 'feishu';
     req.jti = payload.jti;
+
+    // Phase 3 多端适配:从 JWT aud 或 X-Client 头解析客户端类型
+    // 优先级:JWT aud > X-Client 头 > 默认 'web'
+    const aud = payload.aud;
+    const xClient = req.header('X-Client');
+    if (aud === 'danqing-ai-web' || xClient === 'web') {
+      req.client = 'web';
+    } else if (aud === 'danqing-ai-admin' || xClient === 'admin') {
+      req.client = 'admin';
+    } else if (aud === 'danqing-ai-mobile' || xClient === 'mobile') {
+      req.client = 'mobile';
+    } else {
+      req.client = 'web'; // 默认 web
+    }
+
+    // 设备指纹(从 X-Device-Id 头解析,用于设备管理与安全审计)
+    req.deviceId = req.header('X-Device-Id');
 
     next();
   } catch (err) {

@@ -1,9 +1,11 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { History, Calendar, Eye, ArrowRight, X, Brush, PenTool, Box, Layers, Palette, Sparkles, Type, Gem, Settings, Move, RefreshCw } from 'lucide-react';
+import { History, Calendar, Eye, ArrowRight, X, Brush, PenTool, Box, Layers, Palette, Sparkles, Type, Gem, Settings, Move, RefreshCw, Loader2, ImageOff } from 'lucide-react';
 import { getAnalysisHistory, getAnalysisDetail } from '../services/data-service';
 import type { HistoryRecord, AnalysisResult, PaintingAnalysis, DesignAnalysis, ProductAnalysis, SculptureAnalysis, ArtType } from '../types';
 import HeatmapCanvas from '../components/HeatmapCanvas';
+import { ListSkeleton, SkeletonBox } from '../components/PageSkeleton';
+import EmptyState from '../components/EmptyState';
 
 type ArtTypeFilter = 'all' | ArtType;
 type ScoreFilter = 'all' | 'excellent' | 'good' | 'pending';
@@ -96,6 +98,8 @@ function ScoreCard({ icon: Icon, label, score, color }: { icon: React.ComponentT
 
 function DetailModal({ result, onClose, onRediagnose }: { result: AnalysisResult; onClose: () => void; onRediagnose?: (artType: string) => void }) {
   const dims = result.dimensions;
+  /* 详情大图加载状态：避免大图加载时空白闪动 */
+  const [detailImgState, setDetailImgState] = useState<'loading' | 'loaded' | 'error'>('loading');
 
   const renderPaintingDetail = (d: PaintingAnalysis) => (
     <>
@@ -237,12 +241,31 @@ function DetailModal({ result, onClose, onRediagnose }: { result: AnalysisResult
         </div>
 
         <div className="p-6 space-y-6">
-          <div className="bg-white rounded-xl overflow-hidden">
-            <img
-              src={result.imageUrl}
-              alt="分析的作品"
-              className="w-full max-h-64 object-contain"
-            />
+          <div className="bg-white rounded-xl overflow-hidden relative min-h-[200px] flex items-center justify-center">
+            {/* 加载中骨架 */}
+            {detailImgState === 'loading' && (
+              <div className="absolute inset-0 flex items-center justify-center">
+                <SkeletonBox className="absolute inset-0" />
+                <Loader2 className="w-8 h-8 text-cinnabar animate-spin relative z-10" />
+              </div>
+            )}
+            {/* 加载失败占位 */}
+            {detailImgState === 'error' ? (
+              <div className="flex flex-col items-center justify-center py-12">
+                <ImageOff className="w-10 h-10 text-ink-300 mb-2" />
+                <p className="text-sm text-ink-400">作品图加载失败</p>
+              </div>
+            ) : (
+              <img
+                src={result.imageUrl}
+                alt="分析的作品"
+                className={`w-full max-h-64 object-contain transition-opacity duration-300 ${
+                  detailImgState === 'loaded' ? 'opacity-100' : 'opacity-0'
+                }`}
+                onLoad={() => setDetailImgState('loaded')}
+                onError={() => setDetailImgState('error')}
+              />
+            )}
           </div>
 
           <div className="flex items-center justify-center gap-4">
@@ -312,6 +335,7 @@ export default function HistoryPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const [history, setHistory] = useState<HistoryRecord[]>([]);
+  const [loading, setLoading] = useState(true);
   const [selectedRecord, setSelectedRecord] = useState<AnalysisResult | null>(null);
 
   // 初始化筛选状态：从 URL 参数读取
@@ -338,6 +362,8 @@ export default function HistoryPage() {
         if (!cancelled) setHistory(records);
       } catch (err) {
         console.error('加载历史记录失败:', err);
+      } finally {
+        if (!cancelled) setLoading(false);
       }
     })();
     return () => { cancelled = true; };
@@ -437,16 +463,19 @@ export default function HistoryPage() {
           <p className="text-ink-600">查看过往的分析报告，追踪你的进步轨迹</p>
         </div>
 
-        {history.length === 0 ? (
-          <div className="text-center py-20">
-            <div className="w-20 h-20 bg-ink-900/5 rounded-full flex items-center justify-center mx-auto mb-6">
-              <History className="w-10 h-10 text-ink-400" />
-            </div>
-            <h3 className="font-serif text-xl font-semibold text-ink-700 mb-2">
-              暂无分析记录
-            </h3>
-            <p className="text-ink-500">上传你的第一幅作品，开始AI诊断之旅</p>
+        {loading ? (
+          /* 加载中：列表骨架占位，避免误显示空状态 */
+          <div className="max-w-4xl mx-auto">
+            <ListSkeleton count={4} />
           </div>
+        ) : history.length === 0 ? (
+          <EmptyState
+            icon={History}
+            title="还没有分析记录"
+            desc="上传第一件作品，开始AI智能诊断"
+            actionLabel="立即上传"
+            to="/analyze"
+          />
         ) : (
           <div className="max-w-4xl mx-auto">
             {/* 筛选功能栏 */}

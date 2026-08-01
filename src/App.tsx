@@ -34,16 +34,37 @@ function AppLayout() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  /* 全局快捷键:1-7 跳转模块、0 跳转设置、N 新建诊断、B 折叠侧栏、/ 打开命令面板 */
+  /* 全局快捷键:
+   *   1-7 跳转模块、0 跳转设置、N 新建诊断、B 折叠侧栏、/ 打开命令面板
+   *   Esc 关闭命令面板与通知面板(任何位置均可触发,不检查输入框)
+   *   r/R 在分析页触发重新分析(analyze-reset)
+   *   Ctrl/Cmd+Z 在分析页撤销到上传前(analyze-reset) */
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
-      if (
+      const isInInput =
         target.tagName === 'INPUT' ||
         target.tagName === 'TEXTAREA' ||
-        target.isContentEditable
-      )
+        target.isContentEditable;
+
+      /* Esc:关闭命令面板与通知面板(不检查输入框状态,任何位置均可关闭弹窗) */
+      if (e.key === 'Escape') {
+        window.dispatchEvent(new CustomEvent('close-command-palette'));
+        window.dispatchEvent(new CustomEvent('close-notification-panel'));
         return;
+      }
+
+      /* Ctrl/Cmd + Z:仅在分析页触发撤销到上传前(需检查修饰键,必须在通用修饰键早退之前处理) */
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'z') {
+        if (location.pathname === '/analyze') {
+          e.preventDefault();
+          window.dispatchEvent(new CustomEvent('analyze-reset'));
+        }
+        return;
+      }
+
+      /* 以下快捷键:输入框中不触发,且忽略单独的修饰键 */
+      if (isInInput) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
 
       const map: Record<string, string> = {
@@ -77,6 +98,15 @@ function AppLayout() {
         return;
       }
 
+      /* R:仅在分析页触发重新分析(通过自定义事件通知 AnalysisPage 重置) */
+      if (e.key === 'r' || e.key === 'R') {
+        if (location.pathname === '/analyze') {
+          e.preventDefault();
+          window.dispatchEvent(new CustomEvent('analyze-reset'));
+        }
+        return;
+      }
+
       /* /:打开命令面板(通过自定义事件触发 Header 中的逻辑) */
       if (e.key === '/') {
         e.preventDefault();
@@ -86,7 +116,7 @@ function AppLayout() {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [navigate]);
+  }, [navigate, location.pathname]);
 
   /* 路由切换时关闭移动端侧栏 */
   useEffect(() => {

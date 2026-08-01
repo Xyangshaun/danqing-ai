@@ -1,9 +1,21 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Filter, Image as ImageIcon, X, ExternalLink, Heart, Download, Grid3X3, List, Globe, RefreshCw, Tag, ChevronDown, Check, Loader2, ImageOff, ChevronUp, Sparkles } from 'lucide-react';
-import { artworksDatabase, getFilterOptions, type ArtworkItem } from '../services/artworksDatabase';
+import { Search, Filter, X, ExternalLink, Heart, Download, Grid3X3, List, Globe, RefreshCw, Tag, ChevronDown, Check, Loader2, ImageOff, ChevronUp, Sparkles, Package, PackagePlus, Trash2 } from 'lucide-react';
+import { getFilterOptions, type ArtworkItem } from '../services/artworksDatabase';
+import { getBuiltinArtworkItems } from '../services/materialService';
 import { useToast } from '../components/ToastProvider';
 import { getFavorites, toggleFavorite as toggleFavoriteService } from '../services/data-service';
+import {
+  getPacks,
+  createPack,
+  deletePack,
+  addToPack,
+  resolvePackMaterials,
+  type MaterialPack,
+  type UnifiedMaterial,
+} from '../services/materialService';
+import { SkeletonBox } from '../components/PageSkeleton';
+import EmptyState from '../components/EmptyState';
 
 const categoryNames: Record<string, string> = {
   painting: '绘画',
@@ -39,6 +51,99 @@ export default function MaterialsPage() {
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [groupBy, setGroupBy] = useState<'none' | 'style' | 'era' | 'region'>('none');
 
+  /* ---------- 素材包状态 ---------- */
+  const [packs, setPacks] = useState<MaterialPack[]>([]);
+  const [activePackId, setActivePackId] = useState<string | null>(null);
+  const [packMaterials, setPackMaterials] = useState<UnifiedMaterial[]>([]);
+  const [showPackPanel, setShowPackPanel] = useState(false);
+  const [newPackName, setNewPackName] = useState('');
+  const [packPickerArtwork, setPackPickerArtwork] = useState<ArtworkItem | null>(null);
+
+  // 加载素材包列表
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const list = await getPacks();
+        if (!cancelled) setPacks(list);
+      } catch (err) {
+        console.error('加载素材包失败:', err);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // 查看某个素材包内容
+  const handleViewPack = useCallback(async (packId: string) => {
+    if (activePackId === packId) {
+      setActivePackId(null);
+      setPackMaterials([]);
+      return;
+    }
+    try {
+      const pack = packs.find((p) => p.id === packId);
+      if (!pack) return;
+      const materials = await resolvePackMaterials(pack);
+      setActivePackId(packId);
+      setPackMaterials(materials);
+    } catch (err) {
+      console.error('解析素材包失败:', err);
+      toast.error('加载失败', '请稍后重试');
+    }
+  }, [activePackId, packs, toast]);
+
+  // 创建素材包
+  const handleCreatePack = useCallback(async () => {
+    const name = newPackName.trim();
+    if (!name) {
+      toast.warning('请输入素材包名称');
+      return;
+    }
+    try {
+      const pack = await createPack({ name });
+      setPacks((prev) => [pack, ...prev]);
+      setNewPackName('');
+      toast.success('素材包已创建', `「${pack.name}」`);
+    } catch (err) {
+      console.error('创建素材包失败:', err);
+      toast.error('创建失败', '请稍后重试');
+    }
+  }, [newPackName, toast]);
+
+  // 删除素材包
+  const handleDeletePack = useCallback(async (packId: string) => {
+    try {
+      await deletePack(packId);
+      setPacks((prev) => prev.filter((p) => p.id !== packId));
+      if (activePackId === packId) {
+        setActivePackId(null);
+        setPackMaterials([]);
+      }
+      toast.success('素材包已删除');
+    } catch (err) {
+      console.error('删除素材包失败:', err);
+      toast.error('删除失败', '请稍后重试');
+    }
+  }, [activePackId, toast]);
+
+  // 将作品加入素材包
+  const handleAddToPack = useCallback(async (packId: string) => {
+    if (!packPickerArtwork) return;
+    try {
+      const updated = await addToPack(packId, packPickerArtwork.id);
+      if (!updated) {
+        toast.error('素材包不存在');
+        return;
+      }
+      setPacks((prev) => prev.map((p) => (p.id === packId ? updated : p)));
+      toast.success('已加入素材包', `「${updated.name}」`);
+      setPackPickerArtwork(null);
+    } catch (err) {
+      console.error('加入素材包失败:', err);
+      toast.error('操作失败', '请稍后重试');
+    }
+  }, [packPickerArtwork, toast]);
+
   // 跳转到灵感嫁接页面，携带素材信息
   const handleSendToFuse = (artwork: ArtworkItem) => {
     toast.info('已选择素材，前往嫁接页面');
@@ -52,7 +157,7 @@ export default function MaterialsPage() {
   // 统计每个标签的作品数量
   const tagCounts = useMemo(() => {
     const counts: Record<string, number> = {};
-    artworksDatabase.forEach((a) => {
+    getBuiltinArtworkItems().forEach((a) => {
       a.tags.forEach((t) => {
         counts[t] = (counts[t] || 0) + 1;
       });
@@ -72,7 +177,7 @@ export default function MaterialsPage() {
 
   // 过滤作品
   const filteredArtworks = useMemo(() => {
-    let results = [...artworksDatabase];
+    let results = [...getBuiltinArtworkItems()];
 
     if (searchQuery) {
       const kw = searchQuery.toLowerCase();
@@ -229,7 +334,7 @@ export default function MaterialsPage() {
             海内外名作 · 实时获取
           </h1>
           <p className="text-ink-600 max-w-2xl mx-auto">
-            整合Wikimedia Commons等公开数据源，收录{artworksDatabase.length}+件中外艺术杰作
+            整合Wikimedia Commons等公开数据源，收录{getBuiltinArtworkItems().length}+件中外艺术杰作
             <br />
             <span className="text-sm text-ink-500">涵盖绘画、设计、雕塑、书法等多种创作形式</span>
           </p>
@@ -238,7 +343,7 @@ export default function MaterialsPage() {
         {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
           <div className="bg-rice-50 rounded-xl p-4 shadow-card text-center">
-            <p className="text-2xl font-bold text-ink-900">{artworksDatabase.length}</p>
+            <p className="text-2xl font-bold text-ink-900">{getBuiltinArtworkItems().length}</p>
             <p className="text-sm text-ink-500">总作品数</p>
           </div>
           <div className="bg-rice-50 rounded-xl p-4 shadow-card text-center">
@@ -257,6 +362,105 @@ export default function MaterialsPage() {
             <p className="text-2xl font-bold text-ink-900">{sortedTags.length}</p>
             <p className="text-sm text-ink-500">标签数量</p>
           </div>
+        </div>
+
+        {/* 素材包面板 */}
+        <div className="bg-rice-50 rounded-2xl p-4 shadow-card mb-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Package className="w-4 h-4 text-cinnabar" />
+              <span className="text-sm font-medium text-ink-700">我的素材包</span>
+              {packs.length > 0 && (
+                <span className="text-xs text-ink-400">{packs.length} 个</span>
+              )}
+            </div>
+            <button
+              onClick={() => setShowPackPanel(!showPackPanel)}
+              className="text-xs text-cinnabar hover:underline flex items-center gap-1"
+            >
+              {showPackPanel ? '收起' : '管理素材包'}
+              <ChevronDown className={`w-3 h-3 transition-transform ${showPackPanel ? 'rotate-180' : ''}`} />
+            </button>
+          </div>
+          {showPackPanel && (
+            <div className="mt-4 space-y-3">
+              {/* 创建新素材包 */}
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={newPackName}
+                  onChange={(e) => setNewPackName(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleCreatePack(); }}
+                  placeholder="新建素材包名称，如「宋代山水参考」..."
+                  className="flex-1 px-3 py-2 border border-ink-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-cinnabar/30 focus:border-cinnabar"
+                />
+                <button
+                  onClick={handleCreatePack}
+                  className="flex items-center gap-1 px-4 py-2 bg-ink-900 text-white text-sm rounded-lg hover:bg-cinnabar transition-all"
+                >
+                  <PackagePlus className="w-4 h-4" />
+                  创建
+                </button>
+              </div>
+              {/* 素材包列表 */}
+              {packs.length === 0 ? (
+                <p className="text-xs text-ink-400 text-center py-3">
+                  暂无素材包，创建后可将作品按主题打包管理
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {packs.map((pack) => (
+                    <div key={pack.id}>
+                      <div className="flex items-center justify-between px-3 py-2 bg-rice-100 rounded-lg hover:bg-rice-200/60 transition-all">
+                        <button
+                          onClick={() => handleViewPack(pack.id)}
+                          className="flex items-center gap-2 flex-1 text-left"
+                        >
+                          <Package className={`w-4 h-4 ${activePackId === pack.id ? 'text-cinnabar' : 'text-ink-400'}`} />
+                          <span className={`text-sm font-medium ${activePackId === pack.id ? 'text-cinnabar' : 'text-ink-700'}`}>
+                            {pack.name}
+                          </span>
+                          <span className="text-xs text-ink-400">{pack.materialIds.length} 件</span>
+                        </button>
+                        <button
+                          onClick={() => handleDeletePack(pack.id)}
+                          className="p-1.5 text-ink-400 hover:text-cinnabar rounded transition-all"
+                          title="删除素材包"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                      {/* 展开的包内容 */}
+                      {activePackId === pack.id && (
+                        <div className="mt-2 px-3 pb-2">
+                          {packMaterials.length === 0 ? (
+                            <p className="text-xs text-ink-400 py-2">包内暂无素材，点击作品卡片上的「入包」按钮添加</p>
+                          ) : (
+                            <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2">
+                              {packMaterials.map((m) => (
+                                <div key={m.id} className="relative group/pack-item aspect-square rounded-lg overflow-hidden bg-ink-100">
+                                  <img
+                                    src={m.imageUrl}
+                                    alt={m.title}
+                                    className="w-full h-full object-cover"
+                                    loading="lazy"
+                                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                                  />
+                                  <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-ink-900/80 to-transparent px-1.5 py-1 opacity-0 group-hover/pack-item:opacity-100 transition-opacity">
+                                    <p className="text-[10px] text-white truncate">{m.title}</p>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Search */}
@@ -289,7 +493,7 @@ export default function MaterialsPage() {
             </div>
             <div className="flex flex-wrap gap-2">
               {Object.entries(categoryNames).map(([key, name]) => {
-                const count = artworksDatabase.filter(a => a.category === key).length;
+                const count = getBuiltinArtworkItems().filter(a => a.category === key).length;
                 if (count === 0) return null;
                 return (
                   <TagButton
@@ -313,7 +517,7 @@ export default function MaterialsPage() {
             </div>
             <div className="flex flex-wrap gap-2">
               {Object.entries(regionNames).map(([key, name]) => {
-                const count = artworksDatabase.filter(a => a.region === key).length;
+                const count = getBuiltinArtworkItems().filter(a => a.region === key).length;
                 if (count === 0) return null;
                 return (
                   <TagButton
@@ -337,7 +541,7 @@ export default function MaterialsPage() {
             </div>
             <div className="flex flex-wrap gap-2">
               {filterOptions.styles.map((style) => {
-                const count = artworksDatabase.filter(a => a.style === style).length;
+                const count = getBuiltinArtworkItems().filter(a => a.style === style).length;
                 if (count === 0) return null;
                 return (
                   <TagButton
@@ -361,7 +565,7 @@ export default function MaterialsPage() {
             </div>
             <div className="flex flex-wrap gap-2">
               {filterOptions.eras.map((era) => {
-                const count = artworksDatabase.filter(a => a.era === era).length;
+                const count = getBuiltinArtworkItems().filter(a => a.era === era).length;
                 if (count === 0) return null;
                 return (
                   <TagButton
@@ -465,15 +669,12 @@ export default function MaterialsPage() {
 
         {/* Artworks */}
         {filteredArtworks.length === 0 ? (
-          <div className="bg-rice-50 rounded-2xl p-12 text-center shadow-card">
-            <ImageIcon className="w-16 h-16 text-ink-300 mx-auto mb-4" />
-            <h3 className="font-serif text-xl font-semibold text-ink-700 mb-2">未找到匹配作品</h3>
-            <p className="text-ink-500 mb-4">尝试调整筛选条件或搜索关键词</p>
-            {activeFilterCount > 0 && (
-              <button onClick={resetFilters} className="px-4 py-2 bg-cinnabar text-white rounded-lg hover:bg-stone transition-all">
-                清除所有筛选
-              </button>
-            )}
+          <div className="bg-rice-50 rounded-2xl shadow-card">
+            <EmptyState
+              icon={Search}
+              title="没有找到匹配的作品"
+              desc="试试其他关键词或筛选条件"
+            />
           </div>
         ) : (
           <div className="space-y-8">
@@ -510,9 +711,7 @@ export default function MaterialsPage() {
                             >
                               <div className="aspect-[4/3] overflow-hidden relative bg-ink-100">
                                 {imageLoadStates[artwork.id] === 'loading' && (
-                                  <div className="absolute inset-0 flex items-center justify-center bg-ink-100 z-10">
-                                    <Loader2 className="w-8 h-8 text-ink-300 animate-spin" />
-                                  </div>
+                                  <SkeletonBox className="absolute inset-0 z-10" />
                                 )}
                                 {imageLoadStates[artwork.id] === 'error' ? (
                                   <div className="absolute inset-0 flex flex-col items-center justify-center bg-rice-100">
@@ -565,6 +764,13 @@ export default function MaterialsPage() {
                                       <Sparkles className="w-4 h-4" />
                                     </button>
                                     <button
+                                      onClick={(e) => { e.stopPropagation(); setPackPickerArtwork(artwork); }}
+                                      className="p-1.5 rounded-full hover:bg-cinnabar/10 hover:text-cinnabar text-ink-400 transition-all"
+                                      title="加入素材包"
+                                    >
+                                      <PackagePlus className="w-4 h-4" />
+                                    </button>
+                                    <button
                                       onClick={(e) => { e.stopPropagation(); toggleFavorite(artwork.id); }}
                                       className="p-1.5 rounded-full hover:bg-rice-100 transition-all"
                                     >
@@ -591,9 +797,7 @@ export default function MaterialsPage() {
                             >
                               <div className="w-48 h-36 flex-shrink-0 overflow-hidden bg-ink-100 relative">
                                 {imageLoadStates[artwork.id] === 'loading' && (
-                                  <div className="absolute inset-0 flex items-center justify-center z-10">
-                                    <Loader2 className="w-6 h-6 text-ink-300 animate-spin" />
-                                  </div>
+                                  <SkeletonBox className="absolute inset-0 z-10" />
                                 )}
                                 {imageLoadStates[artwork.id] === 'error' ? (
                                   <div className="w-full h-full flex flex-col items-center justify-center">
@@ -626,6 +830,13 @@ export default function MaterialsPage() {
                                       title="用于嫁接"
                                     >
                                       <Sparkles className="w-4 h-4" />
+                                    </button>
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); setPackPickerArtwork(artwork); }}
+                                      className="p-1.5 rounded-full hover:bg-cinnabar/10 hover:text-cinnabar text-ink-400 transition-all"
+                                      title="加入素材包"
+                                    >
+                                      <PackagePlus className="w-4 h-4" />
                                     </button>
                                     <button
                                       onClick={(e) => { e.stopPropagation(); toggleFavorite(artwork.id); }}
@@ -736,6 +947,12 @@ export default function MaterialsPage() {
                     <Heart className={`w-4 h-4 ${favorites.has(selectedArtwork.id) ? 'fill-white' : ''}`} />
                     <span className="text-sm font-medium">{favorites.has(selectedArtwork.id) ? '已收藏' : '收藏'}</span>
                   </button>
+                  <button
+                    onClick={() => { setPackPickerArtwork(selectedArtwork); }}
+                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 border-2 border-ink-200 text-ink-700 rounded-lg hover:border-cinnabar hover:text-cinnabar transition-all"
+                  >
+                    <PackagePlus className="w-4 h-4" /><span className="text-sm font-medium">入包</span>
+                  </button>
                   {selectedArtwork.sourceUrl && (
                     <a href={selectedArtwork.sourceUrl} target="_blank" rel="noopener noreferrer" className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 border-2 border-ink-200 text-ink-700 rounded-lg hover:border-ink-900 transition-all">
                       <ExternalLink className="w-4 h-4" /><span className="text-sm font-medium">查看原图</span>
@@ -749,6 +966,85 @@ export default function MaterialsPage() {
                   </button>
                 </div>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* 素材包选择弹窗 */}
+        {packPickerArtwork && (
+          <div
+            className="fixed inset-0 bg-ink-900/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4"
+            onClick={() => setPackPickerArtwork(null)}
+          >
+            <div
+              className="bg-rice-50 rounded-2xl p-6 max-w-sm w-full shadow-card"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-serif text-lg font-bold text-ink-900 flex items-center gap-2">
+                  <Package className="w-5 h-5 text-cinnabar" />
+                  加入素材包
+                </h3>
+                <button
+                  onClick={() => setPackPickerArtwork(null)}
+                  className="p-1.5 hover:bg-rice-100 rounded-full transition-all"
+                >
+                  <X className="w-4 h-4 text-ink-700" />
+                </button>
+              </div>
+              <p className="text-sm text-ink-500 mb-4">
+                将「{packPickerArtwork.title}」加入：
+              </p>
+              {packs.length === 0 ? (
+                <div className="text-center py-6">
+                  <p className="text-sm text-ink-400 mb-3">暂无素材包</p>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={newPackName}
+                      onChange={(e) => setNewPackName(e.target.value)}
+                      placeholder="输入名称创建素材包"
+                      className="flex-1 px-3 py-2 border border-ink-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-cinnabar/30"
+                    />
+                    <button
+                      onClick={handleCreatePack}
+                      className="px-3 py-2 bg-ink-900 text-white text-sm rounded-lg hover:bg-cinnabar transition-all"
+                    >
+                      创建
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-64 overflow-y-auto">
+                  {packs.map((pack) => {
+                    const alreadyIn = pack.materialIds.includes(packPickerArtwork.id);
+                    return (
+                      <button
+                        key={pack.id}
+                        onClick={() => !alreadyIn && handleAddToPack(pack.id)}
+                        disabled={alreadyIn}
+                        className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border-2 text-left transition-all ${
+                          alreadyIn
+                            ? 'border-jade/40 bg-jade/5 cursor-default'
+                            : 'border-ink-200 hover:border-cinnabar hover:bg-cinnabar/5'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <Package className={`w-4 h-4 ${alreadyIn ? 'text-jade' : 'text-ink-400'}`} />
+                          <span className="text-sm font-medium text-ink-700">{pack.name}</span>
+                          <span className="text-xs text-ink-400">{pack.materialIds.length} 件</span>
+                        </div>
+                        {alreadyIn && (
+                          <span className="text-xs text-jade flex items-center gap-1">
+                            <Check className="w-3 h-3" />
+                            已加入
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         )}

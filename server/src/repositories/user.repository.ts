@@ -38,6 +38,26 @@ export class UserRepository {
   }
 
   /**
+   * 按手机号查询用户(Phase 5 手机认证)
+   * 手机号全局唯一,无需 tenant_id 过滤
+   */
+  async findByPhone(phone: string): Promise<User | null> {
+    return prisma().user.findUnique({
+      where: { phone },
+    });
+  }
+
+  /**
+   * 按邮箱查询用户(Phase 5 院校管理员认证)
+   * 邮箱全局唯一,无需 tenant_id 过滤
+   */
+  async findByEmail(email: string): Promise<User | null> {
+    return prisma().user.findUnique({
+      where: { email },
+    });
+  }
+
+  /**
    * 按 ID 查询用户(强制带 tenant_id 校验)
    * 用于:验证当前用户属于某租户的场景
    */

@@ -24,47 +24,159 @@ datasource db {
 
 /// 用户角色(租户内角色)
 enum UserRole {
-  admin      // 管理员(school/college)
-  teacher    // 教师(college/class)
-  student    // 学生(class/individual)
-  owner      // 所有者(individual,等同 admin)
+  admin // 管理员(school/college)
+  teacher // 教师(college/class)
+  student // 学生(class/individual)
+  owner // 所有者(individual,等同 admin)
 }
 
 /// 租户类型
 enum TenantType {
-  school       // 学校级
-  college      // 学院级
-  class        // 班级级
-  individual   // 个人
+  school // 学校级
+  college // 学院级
+  class // 班级级
+  individual // 个人
 }
 
 /// 订阅计划
 enum TenantPlan {
-  free        // 免费版(50 次/月,1 席位)
-  standard    // 标准版(2000 次/月,50 席位)
-  enterprise  // 院校版(无限,500 席位)
+  free // 免费版(50 次/月,1 席位)
+  standard // 标准版(2000 次/月,50 席位)
+  enterprise // 院校版(无限,500 席位)
 }
 
 /// 租户状态
 enum TenantStatus {
-  active     // 启用
-  disabled   // 禁用
+  active // 启用
+  disabled // 禁用
 }
 
 /// 艺术作品类型(四类)
 enum ArtType {
-  painting    // 绘画
-  design      // 设计
-  product     // 产品设计
-  sculpture   // 雕塑
+  painting // 绘画
+  design // 设计
+  product // 产品设计
+  sculpture // 雕塑
 }
 
 /// 分析任务状态
 enum AnalysisStatus {
-  pending      // 待处理(已入队)
-  processing   // 处理中(Worker 已取走)
-  success      // 成功
-  failed       // 失败
+  pending // 待处理(已入队)
+  processing // 处理中(Worker 已取走)
+  success // 成功
+  failed // 失败
+}
+
+/// 订阅状态(Phase 3)
+enum SubscriptionStatus {
+  active // 活跃(当前有效)
+  past_due // 逾期(宽限期内,仍可用)
+  canceled // 已取消(用户主动取消,周期结束后失效)
+  expired // 已过期(周期结束且未续费)
+}
+
+/// 发票状态(Phase 3)
+enum InvoiceStatus {
+  pending // 待支付
+  paid // 已支付
+  failed // 支付失败
+  refunded // 已退款
+}
+
+/// 用户状态(管理后台 Phase 4 追加)
+enum UserStatus {
+  active // 正常
+  locked // 已锁定(管理员锁定,禁止登录)
+  deleted // 已软删除(DELETE /api/admin/users/:id)
+}
+
+/// 作品审核状态(管理后台 Phase 4 追加,内容审核工作流)
+enum ReviewStatus {
+  pending // 待审核(默认)
+  approved // 审核通过
+  rejected // 审核拒绝(违规内容)
+  flagged // 标记存疑(需人工复审)
+}
+
+/// API 密钥状态(管理后台 Phase 4 追加)
+enum ApiKeyStatus {
+  active // 启用
+  revoked // 已吊销
+}
+
+/// 审计日志操作类型(管理后台 Phase 4 追加)
+enum AuditAction {
+  create // 创建
+  update // 更新
+  delete // 删除
+  lock // 锁定/解锁
+  batch // 批量操作
+  review // 审核
+  cancel // 取消
+  refund // 退款
+  revoke // 吊销
+  login // 登录
+  logout // 登出
+}
+
+// ============================================================
+// Phase 5 追加枚举(评分预设 + 多评委争议仲裁 + 认证扩展)
+// 对应文档:.trae/documents/new-features-design.md §1.1
+// ============================================================
+
+/// 用户认证方式(Phase 5 追加)
+enum AuthType {
+  feishu // 飞书 OAuth(默认,现有)
+  phone // 手机号 OTP(无飞书用户)
+  invitation // 邀请码加入(院校批量导入)
+  password // 院校管理员(邮箱+密码,独立账号)
+}
+
+/// 评分预设风格(Phase 5 追加)
+enum PresetStyle {
+  academic // 名教授风格(学术严谨)
+  artist // 知名艺术家风格(创意表达)
+  academy // 顶级美院风格(综合均衡,系统默认)
+  applied // 设计取向风格(应用导向)
+  custom // 用户自定义
+}
+
+/// 预设适用阶段(Phase 5 追加)
+enum PresetStage {
+  basic // 基础训练
+  foundation // 专业基础
+  advanced // 专业深化
+  creative // 创作实践
+}
+
+/// 评委类型(仲裁权重依据,Phase 5 追加)
+enum ReviewerType {
+  professor // 教授(权重 0.5/0.3/0.3)
+  lecturer // 讲师(权重 0.3)
+  ai // AI(权重 0.2/0.1)
+}
+
+/// 评审记录状态(Phase 5 追加)
+enum ReviewRecordStatus {
+  draft // 草稿(评委暂存)
+  submitted // 已提交(纳入仲裁)
+  superseded // 已被仲裁结果取代
+}
+
+/// 争议触发级别(Phase 5 追加)
+enum DisputeLevel {
+  consistent // 一致(无需仲裁)
+  general // 一般争议(单人复核)
+  high // 高争议(委员会复议)
+  veto // 否决触发(必入委员会)
+}
+
+/// 争议案件状态(Phase 5 追加)
+enum DisputeStatus {
+  open // 待处理
+  reviewing // 仲裁中
+  resolved // 已裁定
+  closed // 已归档
 }
 
 // ============================================================
@@ -84,14 +196,20 @@ model Tenant {
   updatedAt       DateTime     @updatedAt @map("updated_at")
 
   // 关系:租户层级(自引用)
-  parent          Tenant?      @relation("TenantHierarchy", fields: [parentId], references: [id])
-  children        Tenant[]     @relation("TenantHierarchy")
+  parent   Tenant?  @relation("TenantHierarchy", fields: [parentId], references: [id])
+  children Tenant[] @relation("TenantHierarchy")
 
-  // 关系:租户内的成员、用户、分析、会话
-  members         TenantMember[]
-  users           User[]       // 当前激活租户为该租户的用户
-  analyses        Analysis[]
-  sessions        Session[]
+  // 关系:租户内的成员、用户、分析、会话、订阅、发票
+  members       TenantMember[]
+  users         User[] // 当前激活租户为该租户的用户
+  analyses      Analysis[]
+  sessions      Session[]
+  subscriptions Subscription[]
+  invoices      Invoice[]
+  // ---- Phase 5 新增关系 ----
+  invitations   InvitationCode[]
+  presets       EvaluationPreset[] // 租户私有预设(tenantId 非空)
+  disputeCases  DisputeCase[]
 
   @@index([parentId], map: "tenants_parent_id_idx")
   @@index([feishuTenantKey], map: "tenants_feishu_tenant_key_idx")
@@ -103,27 +221,45 @@ model Tenant {
 // ============================================================
 
 model User {
-  id              String       @id @default(uuid()) @map("id")
-  tenantId        String       @map("tenant_id") // 当前激活租户(可切换)
-  feishuOpenId    String       @unique @map("feishu_open_id")
-  feishuUnionId   String       @unique @map("feishu_union_id")
-  name            String       @map("name")
-  avatar          String       @default("") @map("avatar")
-  email           String?      @unique @map("email")
-  phone           String?      @unique @map("phone")
-  role            UserRole     @default(student) @map("role") // 当前激活租户内的角色(冗余,与 TenantMember.role 一致)
-  createdAt       DateTime     @default(now()) @map("created_at")
-  updatedAt       DateTime     @updatedAt @map("updated_at")
-  lastLoginAt     DateTime?    @map("last_login_at")
+  id            String     @id @default(uuid()) @map("id")
+  tenantId      String     @map("tenant_id") // 当前激活租户(可切换)
+  // ---- 认证方式(Phase 5 追加)----
+  authType      AuthType   @default(feishu) @map("auth_type")
+  // ---- 飞书字段(Phase 5 改为可选,非飞书用户为 null)----
+  feishuOpenId  String?    @unique @map("feishu_open_id")
+  feishuUnionId String?    @unique @map("feishu_union_id")
+  // ---- 密码认证(院校管理员,Phase 5 追加)----
+  passwordHash  String?    @map("password_hash") // argon2id 哈希
+  // ---- 手机认证(Phase 5 追加)----
+  phone         String?    @unique @map("phone")
+  phoneVerified Boolean    @default(false) @map("phone_verified")
+  name          String     @map("name")
+  avatar        String     @default("") @map("avatar")
+  email         String?    @unique @map("email")
+  role          UserRole   @default(student) @map("role") // 当前激活租户内的角色(冗余,与 TenantMember.role 一致)
+  status        UserStatus @default(active) @map("status") // 用户状态(active/locked/deleted),管理后台 Phase 4
+  createdAt     DateTime   @default(now()) @map("created_at")
+  updatedAt     DateTime   @updatedAt @map("updated_at")
+  lastLoginAt   DateTime?  @map("last_login_at")
+  lockedAt      DateTime?  @map("locked_at") // 锁定时间(管理后台 Phase 4)
+  lockedBy      String?    @map("locked_by") // 锁定操作者 user_id(管理后台 Phase 4)
 
   // 关系
-  tenant          Tenant       @relation(fields: [tenantId], references: [id])
-  sessions        Session[]
-  memberships     TenantMember[]
-  analyses        Analysis[]
+  tenant             Tenant              @relation(fields: [tenantId], references: [id])
+  sessions           Session[]
+  memberships        TenantMember[]
+  analyses           Analysis[]
+  // ---- Phase 5 新增关系 ----
+  presets            EvaluationPreset[]
+  reviewRecords      ReviewRecord[]
+  invitations        InvitationCode[] // 关系:创建的邀请码
+  phoneVerifications PhoneVerification[]
 
   @@index([tenantId], map: "users_tenant_id_idx")
   @@index([feishuUnionId], map: "users_feishu_union_id_idx")
+  @@index([status], map: "users_status_idx") // 管理后台按状态筛选
+  @@index([authType], map: "users_auth_type_idx") // Phase 5:按认证方式筛选
+  @@index([phone], map: "users_phone_idx") // Phase 5:手机号查询
   @@map("users")
 }
 
@@ -132,19 +268,19 @@ model User {
 // ============================================================
 
 model Session {
-  id                String    @id @default(uuid()) @map("id")
-  userId            String    @map("user_id")
-  tenantId          String    @map("tenant_id") // 会话创建时的租户上下文(多租户强制)
-  refreshTokenHash  String    @unique @map("refresh_token_hash") // SHA-256 哈希,禁止存明文
-  userAgent         String    @map("user_agent") @db.Text
-  ip                String    @map("ip") @db.VarChar(45) // 兼容 IPv6
-  expiresAt         DateTime  @map("expires_at")
-  createdAt         DateTime  @default(now()) @map("created_at")
-  revokedAt         DateTime? @map("revoked_at") // 撤销时间(非空表示已登出/踢出)
+  id               String    @id @default(uuid()) @map("id")
+  userId           String    @map("user_id")
+  tenantId         String    @map("tenant_id") // 会话创建时的租户上下文(多租户强制)
+  refreshTokenHash String    @unique @map("refresh_token_hash") // SHA-256 哈希,禁止存明文
+  userAgent        String    @map("user_agent") @db.Text
+  ip               String    @map("ip") @db.VarChar(45) // 兼容 IPv6
+  expiresAt        DateTime  @map("expires_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  revokedAt        DateTime? @map("revoked_at") // 撤销时间(非空表示已登出/踢出)
 
   // 关系
-  user              User      @relation(fields: [userId], references: [id])
-  tenant            Tenant    @relation(fields: [tenantId], references: [id])
+  user   User   @relation(fields: [userId], references: [id])
+  tenant Tenant @relation(fields: [tenantId], references: [id])
 
   @@index([userId], map: "sessions_user_id_idx")
   @@index([tenantId], map: "sessions_tenant_id_idx")
@@ -158,14 +294,14 @@ model Session {
 // ============================================================
 
 model TenantMember {
-  userId      String    @map("user_id")
-  tenantId    String    @map("tenant_id")
-  role        UserRole  @default(student) @map("role")
-  joinedAt    DateTime  @default(now()) @map("joined_at")
+  userId   String   @map("user_id")
+  tenantId String   @map("tenant_id")
+  role     UserRole @default(student) @map("role")
+  joinedAt DateTime @default(now()) @map("joined_at")
 
   // 关系
-  user        User      @relation(fields: [userId], references: [id])
-  tenant      Tenant    @relation(fields: [tenantId], references: [id])
+  user   User   @relation(fields: [userId], references: [id])
+  tenant Tenant @relation(fields: [tenantId], references: [id])
 
   @@id([userId, tenantId]) // 复合主键
   @@index([tenantId], map: "tenant_members_tenant_id_idx")
@@ -178,29 +314,375 @@ model TenantMember {
 // ============================================================
 
 model Analysis {
-  id              String          @id @default(uuid()) @map("id")
-  tenantId        String          @map("tenant_id") // 多租户隔离核心字段
-  userId          String          @map("user_id")
-  workType        ArtType         @map("work_type")
-  imageUrl        String          @map("image_url") @db.Text
-  title           String?         @map("title") @db.VarChar(64)
-  remark          String?         @map("remark") @db.VarChar(500)
-  status          AnalysisStatus  @default(pending) @map("status")
-  result          Json?           @map("result") // 成功时存 AnalysisResult 结构(见 API 契约 3.6)
-  failureReason   String?         @map("failure_reason") @db.Text
-  overallScore    Int?            @map("overall_score") // 冗余字段,从 result.overallScore 提取,便于列表排序
-  durationMs      Int?            @map("duration_ms") // 分析耗时(毫秒),用于 SLA 监控
-  createdAt       DateTime        @default(now()) @map("created_at")
-  completedAt     DateTime?       @map("completed_at")
+  id            String         @id @default(uuid()) @map("id")
+  tenantId      String         @map("tenant_id") // 多租户隔离核心字段
+  userId        String         @map("user_id")
+  workType      ArtType        @map("work_type")
+  imageUrl      String         @map("image_url") @db.Text
+  title         String?        @map("title") @db.VarChar(64)
+  remark        String?        @map("remark") @db.VarChar(500)
+  status        AnalysisStatus @default(pending) @map("status")
+  result        Json?          @map("result") // 成功时存 AnalysisResult 结构(见 API 契约 3.6)
+  failureReason String?        @map("failure_reason") @db.Text
+  overallScore  Int?           @map("overall_score") // 冗余字段,从 result.overallScore 提取,便于列表排序
+  durationMs    Int?           @map("duration_ms") // 分析耗时(毫秒),用于 SLA 监控
+  reviewStatus  ReviewStatus   @default(pending) @map("review_status") // 内容审核状态(管理后台 Phase 4)
+  reviewedBy    String?        @map("reviewed_by") // 审核人 user_id(管理后台 Phase 4)
+  reviewedAt    DateTime?      @map("reviewed_at") // 审核时间(管理后台 Phase 4)
+  reviewNote    String?        @map("review_note") @db.VarChar(500) // 审核备注(管理后台 Phase 4)
+  createdAt     DateTime       @default(now()) @map("created_at")
+  completedAt   DateTime?      @map("completed_at")
 
   // 关系
-  tenant          Tenant          @relation(fields: [tenantId], references: [id])
-  user            User            @relation(fields: [userId], references: [id])
+  tenant        Tenant         @relation(fields: [tenantId], references: [id])
+  user          User           @relation(fields: [userId], references: [id])
+  // ---- Phase 5 新增关系 ----
+  reviewRecords ReviewRecord[]
+  disputeCases  DisputeCase[]
 
   @@index([tenantId, createdAt], map: "analyses_tenant_id_created_at_idx") // 租户内按时间倒序查询
   @@index([tenantId, userId], map: "analyses_tenant_id_user_id_idx") // 教师查看指定学生
   @@index([tenantId, status], map: "analyses_tenant_id_status_idx") // 按状态筛选
   @@index([tenantId, workType], map: "analyses_tenant_id_work_type_idx") // 按作品类型筛选
+  @@index([tenantId, reviewStatus], map: "analyses_tenant_id_review_status_idx") // 管理后台按审核状态筛选
   @@index([overallScore], map: "analyses_overall_score_idx") // 评分排序
   @@map("analyses")
+}
+
+// ============================================================
+// 6. 订阅表(Subscription,Phase 3)
+// ============================================================
+
+model Subscription {
+  id                String             @id @default(uuid()) @map("id")
+  tenantId          String             @map("tenant_id") // 多租户隔离核心字段
+  plan              TenantPlan         @default(free) @map("plan") // 当前订阅计划
+  status            SubscriptionStatus @default(active) @map("status") // 订阅状态
+  periodStart       DateTime           @map("period_start") // 当前计费周期开始时间
+  periodEnd         DateTime           @map("period_end") // 当前计费周期结束时间
+  cancelAtPeriodEnd Boolean            @default(false) @map("cancel_at_period_end") // 周期结束自动取消
+  // 支付渠道(stripe / alipay / wechat / manual);free 计划为 null
+  paymentProvider   String?            @map("payment_provider") @db.VarChar(32)
+  // 外部订阅 ID(支付渠道返回的订阅标识)
+  externalSubId     String?            @map("external_sub_id") @db.VarChar(128)
+  // 金额(单位:元,Decimal 精确计算;free 为 0)
+  amount            Decimal            @default(0) @map("amount") @db.Decimal(10, 2)
+  currency          String             @default("CNY") @map("currency") @db.VarChar(3)
+  // 席位数(冗余 Tenant.maxSeats,订阅升级时同步更新)
+  seats             Int                @default(1) @map("seats")
+  createdAt         DateTime           @default(now()) @map("created_at")
+  updatedAt         DateTime           @updatedAt @map("updated_at")
+
+  // 关系
+  tenant   Tenant    @relation(fields: [tenantId], references: [id])
+  invoices Invoice[]
+
+  @@index([tenantId], map: "subscriptions_tenant_id_idx")
+  @@index([status], map: "subscriptions_status_idx")
+  @@index([periodEnd], map: "subscriptions_period_end_idx") // 定时任务扫描过期订阅
+  @@map("subscriptions")
+}
+
+// ============================================================
+// 7. 发票表(Invoice,Phase 3)
+// ============================================================
+
+model Invoice {
+  id                String        @id @default(uuid()) @map("id")
+  tenantId          String        @map("tenant_id") // 多租户隔离
+  subscriptionId    String        @map("subscription_id")
+  // 账单金额(单位:元)
+  amount            Decimal       @map("amount") @db.Decimal(10, 2)
+  currency          String        @default("CNY") @map("currency") @db.VarChar(3)
+  status            InvoiceStatus @default(pending) @map("status")
+  // 账单覆盖的计费周期
+  periodStart       DateTime      @map("period_start")
+  periodEnd         DateTime      @map("period_end")
+  paidAt            DateTime?     @map("paid_at")
+  // 支付渠道(冗余 subscription.paymentProvider,便于对账)
+  paymentProvider   String?       @map("payment_provider") @db.VarChar(32)
+  // 外部发票/支付单 ID
+  externalInvoiceId String?       @map("external_invoice_id") @db.VarChar(128)
+  // 发票描述(如"2026年7月标准版订阅")
+  description       String?       @map("description") @db.VarChar(200)
+  createdAt         DateTime      @default(now()) @map("created_at")
+
+  // 关系
+  tenant       Tenant       @relation(fields: [tenantId], references: [id])
+  subscription Subscription @relation(fields: [subscriptionId], references: [id])
+
+  @@index([tenantId], map: "invoices_tenant_id_idx")
+  @@index([subscriptionId], map: "invoices_subscription_id_idx")
+  @@index([status], map: "invoices_status_idx")
+  @@index([periodStart], map: "invoices_period_start_idx")
+  @@map("invoices")
+}
+
+// ============================================================
+// 8. 审计日志表(AuditLog,管理后台 Phase 4)
+// 记录所有写操作的审计轨迹:操作者/动作/资源/前后快照/IP/UA
+// 注意:不含 tenant_id(支持跨租户操作的系统级日志)
+// ============================================================
+
+model AuditLog {
+  id               String      @id @default(uuid()) @map("id")
+  // 操作者信息(从 JWT 注入)
+  operatorId       String      @map("operator_id")
+  operatorRole     String      @map("operator_role") @db.VarChar(16)
+  operatorTenantId String?     @map("operator_tenant_id") // 操作者所属租户(可为空,系统级操作)
+  // 操作目标
+  action           AuditAction @map("action")
+  resource         String      @map("resource") @db.VarChar(64) // 资源类型(如 user/artwork/subscription/tenant/api_key)
+  resourceId       String?     @map("resource_id") @db.VarChar(64)
+  targetTenantId   String?     @map("target_tenant_id") // 被操作资源所属租户(跨租户操作时填)
+  // 操作前后数据快照(JSON,脱敏后存储)
+  beforeData       Json?       @map("before_data")
+  afterData        Json?       @map("after_data")
+  // 请求上下文
+  ip               String      @map("ip") @db.VarChar(45)
+  userAgent        String      @map("user_agent") @db.Text
+  traceId          String?     @map("trace_id") @db.VarChar(64)
+  // 备注(可选,如批量操作的描述)
+  note             String?     @map("note") @db.VarChar(500)
+  createdAt        DateTime    @default(now()) @map("created_at")
+
+  @@index([operatorId], map: "audit_logs_operator_id_idx")
+  @@index([action], map: "audit_logs_action_idx")
+  @@index([resource, resourceId], map: "audit_logs_resource_idx")
+  @@index([targetTenantId], map: "audit_logs_target_tenant_id_idx")
+  @@index([createdAt], map: "audit_logs_created_at_idx")
+  @@map("audit_logs")
+}
+
+// ============================================================
+// 9. API 密钥表(ApiKey,管理后台 Phase 4)
+// 用于第三方系统集成时的 API 鉴权(独立于 JWT 体系)
+// ============================================================
+
+model ApiKey {
+  id          String       @id @default(uuid()) @map("id")
+  name        String       @map("name") @db.VarChar(64) // 密钥名称(便于识别)
+  // 密钥前缀(明文存储前 8 位,用于列表展示与匹配识别)
+  keyPrefix   String       @unique @map("key_prefix") @db.VarChar(16)
+  // SHA-256 哈希(完整密钥仅创建时返回一次)
+  keyHash     String       @unique @map("key_hash")
+  // 关联租户(可选,系统级密钥为 null)
+  tenantId    String?      @map("tenant_id")
+  // 权限范围(JSON 数组,如 ["admin:read","admin:user:read"])
+  scopes      Json         @default("[]") @map("scopes")
+  status      ApiKeyStatus @default(active) @map("status")
+  // 创建者
+  createdById String       @map("created_by")
+  revokedAt   DateTime?    @map("revoked_at")
+  revokedBy   String?      @map("revoked_by") @db.VarChar(64)
+  // 过期时间(null 表示永不过期)
+  expiresAt   DateTime?    @map("expires_at")
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+
+  // 最后使用信息(便于审计)
+  lastUsedAt DateTime? @map("last_used_at")
+  lastUsedIp String?   @map("last_used_ip") @db.VarChar(45)
+
+  @@index([tenantId], map: "api_keys_tenant_id_idx")
+  @@index([status], map: "api_keys_status_idx")
+  @@index([keyHash], map: "api_keys_key_hash_idx")
+  @@map("api_keys")
+}
+
+// ============================================================
+// 10. 创意预设模板表(CreativeTemplate,管理后台 Phase 4)
+// 创意预设模板用于作品分析时的参考标准/风格模板
+// ============================================================
+
+model CreativeTemplate {
+  id           String   @id @default(uuid()) @map("id")
+  name         String   @map("name") @db.VarChar(64)
+  description  String?  @map("description") @db.VarChar(500)
+  // 适用作品类型(painting/design/product/sculpture)
+  artType      ArtType  @map("art_type")
+  // 模板内容(JSON,包含评分标准/参考风格/关键词等)
+  content      Json     @map("content")
+  // 模板标签(JSON 数组,便于检索)
+  tags         Json     @default("[]") @map("tags")
+  // 缩略图 URL(可选)
+  thumbnailUrl String?  @map("thumbnail_url") @db.Text
+  // 启用状态
+  enabled      Boolean  @default(true) @map("enabled")
+  // 排序权重(数字越小越靠前)
+  sortOrder    Int      @default(0) @map("sort_order")
+  // 创建者
+  createdById  String   @map("created_by")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@index([artType], map: "creative_templates_art_type_idx")
+  @@index([enabled], map: "creative_templates_enabled_idx")
+  @@index([sortOrder], map: "creative_templates_sort_order_idx")
+  @@map("creative_templates")
+}
+
+// ============================================================
+// 11. 手机验证码表(PhoneVerification,Phase 5)
+// 6 位数字验证码,5 分钟过期,5 次尝试上限
+// 对应文档:new-features-design.md §1.3
+// ============================================================
+
+model PhoneVerification {
+  id         String    @id @default(uuid()) @map("id")
+  phone      String    @map("phone") @db.VarChar(20)
+  code       String    @map("code") @db.VarChar(6) // 6 位数字
+  purpose    String    @map("purpose") @db.VarChar(20) // register|login|bind|reset
+  tenantId   String?   @map("tenant_id") // bind 场景需关联租户
+  expiresAt  DateTime  @map("expires_at") // 5 分钟过期
+  consumedAt DateTime? @map("consumed_at") // 已使用时间
+  attempts   Int       @default(0) @map("attempts") // 验证尝试次数(上限 5)
+  ip         String    @map("ip") @db.VarChar(45)
+  createdAt  DateTime  @default(now()) @map("created_at")
+  User       User?     @relation(fields: [userId], references: [id])
+  userId     String?
+
+  @@index([phone], map: "phone_verifications_phone_idx")
+  @@index([expiresAt], map: "phone_verifications_expires_at_idx")
+  @@map("phone_verifications")
+}
+
+// ============================================================
+// 12. 邀请码表(InvitationCode,Phase 5)
+// URL-safe 32 位,过期/用尽校验,租户隔离
+// 对应文档:new-features-design.md §1.4
+// ============================================================
+
+model InvitationCode {
+  id        String   @id @default(uuid()) @map("id")
+  code      String   @unique @map("code") @db.VarChar(32) // URL-safe
+  tenantId  String   @map("tenant_id")
+  role      UserRole @default(student) @map("role")
+  maxUses   Int      @default(1) @map("max_uses")
+  usedCount Int      @default(0) @map("used_count")
+  expiresAt DateTime @map("expires_at")
+  createdBy String   @map("created_by")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant  Tenant @relation(fields: [tenantId], references: [id])
+  creator User   @relation(fields: [createdBy], references: [id])
+
+  @@index([tenantId], map: "invitation_codes_tenant_id_idx")
+  @@index([code], map: "invitation_codes_code_idx")
+  @@map("invitation_codes")
+}
+
+// ============================================================
+// 13. 评分预设表(EvaluationPreset,Phase 5 核心)
+// 内置 seed(isBuiltIn=true,不可改不可删)+ 用户/管理预设(可 fork 派生)
+// 对应文档:new-features-design.md §1.5
+// ============================================================
+
+model EvaluationPreset {
+  id              String             @id @default(uuid()) @map("id")
+  name            String             @map("name") @db.VarChar(64)
+  description     String?            @map("description") @db.VarChar(500)
+  styleType       PresetStyle        @map("style_type")
+  artType         ArtType            @map("art_type")
+  // 维度权重 JSON:[{key,label,labelEn,weight}],weight 总和=100
+  // key 须与 AnalysisResult.dimensions 维度名严格对应
+  dimensions      Json               @map("dimensions")
+  applicableStage PresetStage        @map("applicable_stage")
+  // ---- 分层标识 ----
+  isBuiltIn       Boolean            @default(false) @map("is_built_in") // seed=true,不可改不可删
+  isPrivate       Boolean            @default(false) @map("is_private") // 用户私有 vs 租户共享
+  // ---- 派生关系 ----
+  forkedFromId    String?            @map("forked_from_id") // fork 源预设 ID
+  forkedFrom      EvaluationPreset?  @relation("PresetFork", fields: [forkedFromId], references: [id])
+  forks           EvaluationPreset[] @relation("PresetFork")
+  // ---- 归属 ----
+  creatorId       String?            @map("creator_id") // null=系统 seed
+  tenantId        String?            @map("tenant_id") // null=全局 seed;非 null=租户私有
+  creator         User?              @relation(fields: [creatorId], references: [id])
+  tenant          Tenant?            @relation(fields: [tenantId], references: [id])
+  // ---- 状态 ----
+  enabled         Boolean            @default(true) @map("enabled")
+  sortOrder       Int                @default(0) @map("sort_order")
+  createdAt       DateTime           @default(now()) @map("created_at")
+  updatedAt       DateTime           @updatedAt @map("updated_at")
+  ReviewRecord    ReviewRecord[]
+
+  @@index([artType], map: "evaluation_presets_art_type_idx")
+  @@index([styleType], map: "evaluation_presets_style_type_idx")
+  @@index([isBuiltIn], map: "evaluation_presets_is_built_in_idx")
+  @@index([tenantId], map: "evaluation_presets_tenant_id_idx")
+  @@index([creatorId], map: "evaluation_presets_creator_id_idx")
+  @@index([enabled], map: "evaluation_presets_enabled_idx")
+  @@map("evaluation_presets")
+}
+
+// ============================================================
+// 14. 评委评分记录表(ReviewRecord,Phase 5)
+// 单个评委对单个 Analysis 的评分;reviewerId=null 表示 AI 评审
+// 对应文档:new-features-design.md §1.6
+// ============================================================
+
+model ReviewRecord {
+  id           String             @id @default(uuid()) @map("id")
+  analysisId   String             @map("analysis_id")
+  reviewerId   String?            @map("reviewer_id") // null=AI 评审
+  reviewerType ReviewerType       @map("reviewer_type")
+  presetId     String?            @map("preset_id") // 使用的评分预设
+  // 评分快照:{dimensions:{key:score}, overallScore, comment}
+  scores       Json               @map("scores")
+  // AI 置信度(0-1),仅 reviewerType=ai 时有意义
+  confidence   Float?             @map("confidence")
+  comment      String?            @map("comment") @db.Text
+  status       ReviewRecordStatus @default(draft) @map("status")
+  createdAt    DateTime           @default(now()) @map("created_at")
+  updatedAt    DateTime           @updatedAt @map("updated_at")
+
+  analysis     Analysis          @relation(fields: [analysisId], references: [id])
+  reviewer     User?             @relation(fields: [reviewerId], references: [id])
+  preset       EvaluationPreset? @relation(fields: [presetId], references: [id])
+  disputeCases DisputeCase[]     @relation("DisputeReviews")
+
+  @@index([analysisId], map: "review_records_analysis_id_idx")
+  @@index([reviewerId], map: "review_records_reviewer_id_idx")
+  @@index([status], map: "review_records_status_idx")
+  @@map("review_records")
+}
+
+// ============================================================
+// 15. 争议仲裁案件表(DisputeCase,Phase 5)
+// 多评委评分不一致时触发,按预设权重加权裁定
+// 对应文档:new-features-design.md §1.7
+// ============================================================
+
+model DisputeCase {
+  id                String         @id @default(uuid()) @map("id")
+  analysisId        String         @map("analysis_id")
+  tenantId          String         @map("tenant_id")
+  // 触发信息
+  triggerLevel      DisputeLevel   @map("trigger_level")
+  triggerReason     Json           @map("trigger_reason")
+  // {totalRange, dimDiffs:{key:diff}, gradeCrossCount, vetoDetail}
+  // 仲裁配置快照(用于可追溯)
+  arbitrationConfig Json           @map("arbitration_config")
+  // 状态
+  status            DisputeStatus  @default(open) @map("status")
+  // 关联评审记录
+  reviews           ReviewRecord[] @relation("DisputeReviews")
+  // 仲裁结果
+  finalScore        Json?          @map("final_score")
+  // {overallScore, dimensions:{key:score}, rule, weightsUsed}
+  finalRule         String?        @map("final_rule") // weighted|majority|unanimous
+  resolvedBy        String?        @map("resolved_by")
+  resolvedAt        DateTime?      @map("resolved_at")
+  resolutionNote    String?        @map("resolution_note") @db.Text
+  createdAt         DateTime       @default(now()) @map("created_at")
+  updatedAt         DateTime       @updatedAt @map("updated_at")
+
+  analysis Analysis @relation(fields: [analysisId], references: [id])
+  tenant   Tenant   @relation(fields: [tenantId], references: [id])
+
+  @@index([analysisId], map: "dispute_cases_analysis_id_idx")
+  @@index([tenantId, status], map: "dispute_cases_tenant_id_status_idx")
+  @@index([status], map: "dispute_cases_status_idx")
+  @@map("dispute_cases")
 }

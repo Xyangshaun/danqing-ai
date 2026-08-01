@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="丹青有AI 新建诊断 - 上传作品获取 AI 专业诊断">
+  <title>新建诊断 | Danqing AI 丹青有AI</title>
+  <link rel="stylesheet" href="styles/main.css">
+  <link rel="stylesheet" href="styles/console.css">
+</head>
+<body>
+  <!-- 加载动画 -->
+  <div class="loader">
+    <div class="loader-content">
+      <div class="loader-ink"></div>
+      <p style="font-family: var(--font-serif); color: var(--ink-400); font-size: 0.875rem;">丹青有AI</p>
+    </div>
+  </div>
+
+  <div class="console-layout">
+    <!-- 侧边栏 -->
+    <aside class="console-sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <a href="index.html" class="sidebar-logo">
+          <span class="logo-mark">DQ</span>
+          <span class="sidebar-logo-text">
+            <span class="sidebar-logo-en">Danqing AI</span>
+            <span class="sidebar-logo-cn">丹青有AI</span>
+          </span>
+        </a>
+      </div>
+
+      <nav class="sidebar-nav">
+        <div class="sidebar-section">
+          <div class="sidebar-section-title">诊断</div>
+          <a href="console.html" class="sidebar-link" data-view="dashboard">
+            <svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="3" width="7" height="7"></rect>
+              <rect x="14" y="3" width="7" height="7"></rect>
+              <rect x="14" y="14" width="7" height="7"></rect>
+              <rect x="3" y="14" width="7" height="7"></rect>
+            </svg>
+            工作台
+          </a>
+          <a href="diagnose.html" class="sidebar-link active" data-view="diagnose">
+            <svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="17 8 12 3 7 8"></polyline>
+              <line x1="12" y1="3" x2="12" y2="15"></line>
+            </svg>
+            新建诊断
+          </a>
+          <a href="report.html" class="sidebar-link" data-view="report">
+            <svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+              <polyline points="14 2 14 8 20 8"></polyline>
+              <line x1="16" y1="13" x2="8" y2="13"></line>
+              <line x1="16" y1="17" x2="8" y2="17"></line>
+            </svg>
+            诊断报告
+          </a>
+        </div>
+
+        <div class="sidebar-section">
+          <div class="sidebar-section-title">成长</div>
+          <a href="history.html" class="sidebar-link" data-view="history">
+            <svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <polyline points="12 6 12 12 16 14"></polyline>
+            </svg>
+            历史记录
+          </a>
+          <a href="growth.html" class="sidebar-link" data-view="growth">
+            <svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+            </svg>
+            成长曲线
+          </a>
+        </div>
+
+        <div class="sidebar-section">
+          <div class="sidebar-section-title">教学</div>
+          <a href="console.html#classes" class="sidebar-link" data-view="classes">
+            <svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+              <circle cx="9" cy="7" r="4"></circle>
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+              <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+            </svg>
+            班级管理
+          </a>
+        </div>
+
+        <div class="sidebar-section">
+          <div class="sidebar-section-title">系统</div>
+          <a href="console.html#settings" class="sidebar-link" data-view="settings">
+            <svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+            </svg>
+            设置
+          </a>
+        </div>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="user-card">
+          <div class="user-avatar">林</div>
+          <div class="user-info">
+            <div class="user-name">林小雅</div>
+            <div class="user-role">学生 · 视觉传达</div>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- 移动端遮罩 -->
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+    <!-- 主内容 -->
+    <div class="console-main">
+      <header class="console-header">
+        <div class="header-left">
+          <button class="sidebar-toggle" id="sidebarToggle" aria-label="切换侧边栏">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="3" y1="12" x2="21" y2="12"></line>
+              <line x1="3" y1="6" x2="21" y2="6"></line>
+              <line x1="3" y1="18" x2="21" y2="18"></line>
+            </svg>
+          </button>
+          <h1 class="page-title" id="pageTitle">新建诊断</h1>
+        </div>
+        <div class="header-right">
+          <button class="header-action" aria-label="通知">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+              <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+            </svg>
+            <span class="header-badge"></span>
+          </button>
+          <button class="header-action" aria-label="帮助">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+              <line x1="12" y1="17" x2="12.01" y2="17"></line>
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <main class="console-content">
+        <!-- 新建诊断 -->
+        <section class="console-view active">
+          <div class="panel">
+            <div class="panel-header">
+              <h2 class="panel-title">选择创作形式</h2>
+            </div>
+            <div class="panel-body">
+              <div class="form-type-grid">
+                <div class="form-type-option selected" data-type="painting">
+                  <span class="icon" style="background: rgba(196,30,58,0.1); color: var(--cinnabar);">画</span>
+                  <span style="font-weight: 600;">绘画</span>
+                </div>
+                <div class="form-type-option" data-type="design">
+                  <span class="icon" style="background: rgba(46,95,161,0.1); color: var(--stone);">设</span>
+                  <span style="font-weight: 600;">设计</span>
+                </div>
+                <div class="form-type-option" data-type="product">
+                  <span class="icon" style="background: rgba(212,175,55,0.1); color: var(--gold-dark);">产</span>
+                  <span style="font-weight: 600;">产品设计</span>
+                </div>
+                <div class="form-type-option" data-type="sculpture">
+                  <span class="icon" style="background: rgba(91,140,90,0.1); color: var(--jade);">塑</span>
+                  <span style="font-weight: 600;">雕塑</span>
+                </div>
+              </div>
+
+              <div class="upload-zone" id="uploadZone">
+                <div class="upload-icon">
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="17 8 12 3 7 8"></polyline>
+                    <line x1="12" y1="3" x2="12" y2="15"></line>
+                  </svg>
+                </div>
+                <h3 class="upload-title">拖拽作品到这里，或点击上传</h3>
+                <p class="upload-desc">支持 JPG、PNG、WEBP 格式，单张不超过 20MB</p>
+                <p class="upload-formats">建议使用高清原图以获得更精准诊断</p>
+              </div>
+
+              <div class="btn-group" style="margin-top: var(--space-xl); justify-content: center;">
+                <button class="btn btn-primary" id="startAnalysisBtn">开始诊断</button>
+                <a href="console.html" class="btn btn-secondary">返回工作台</a>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel" id="analysisProgressPanel" style="display: none;">
+            <div class="panel-header">
+              <h2 class="panel-title">AI 分析中</h2>
+            </div>
+            <div class="panel-body">
+              <div class="analysis-progress">
+                <div class="progress-ring">
+                  <svg width="120" height="120" viewBox="0 0 120 120">
+                    <circle class="progress-ring-bg" cx="60" cy="60" r="54"></circle>
+                    <circle class="progress-ring-bar" id="progressBar" cx="60" cy="60" r="54"></circle>
+                  </svg>
+                  <div class="progress-text" id="progressText">0%</div>
+                </div>
+                <h3 id="progressStatus">正在上传作品...</h3>
+                <div class="progress-steps">
+                  <div class="progress-step-item active" id="step1">
+                    <span class="dot"></span>
+                    <span>上传</span>
+                  </div>
+                  <div class="progress-step-item" id="step2">
+                    <span class="dot"></span>
+                    <span>识别</span>
+                  </div>
+                  <div class="progress-step-item" id="step3">
+                    <span class="dot"></span>
+                    <span>分析</span>
+                  </div>
+                  <div class="progress-step-item" id="step4">
+                    <span class="dot"></span>
+                    <span>生成报告</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <script src="scripts/main.js"></script>
+  <script>
+    (function() {
+      'use strict';
+
+      document.addEventListener('DOMContentLoaded', init);
+
+      function init() {
+        initSidebar();
+        initFormTypeSelect();
+        initUploadZone();
+        document.getElementById('startAnalysisBtn').addEventListener('click', startAnalysis);
+        applyTypeFromQuery();
+      }
+
+      function applyTypeFromQuery() {
+        const params = new URLSearchParams(window.location.search);
+        const type = params.get('type');
+        if (!type) return;
+        const options = document.querySelectorAll('.form-type-option');
+        options.forEach(o => {
+          if (o.dataset.type === type) {
+            options.forEach(x => x.classList.remove('selected'));
+            o.classList.add('selected');
+          }
+        });
+      }
+
+      function initSidebar() {
+        const toggle = document.getElementById('sidebarToggle');
+        const sidebar = document.getElementById('sidebar');
+        const overlay = document.getElementById('sidebarOverlay');
+        if (!toggle || !sidebar) return;
+
+        function open() {
+          sidebar.classList.add('open');
+          if (overlay) overlay.classList.add('active');
+          document.body.style.overflow = 'hidden';
+        }
+
+        function close() {
+          sidebar.classList.remove('open');
+          if (overlay) overlay.classList.remove('active');
+          document.body.style.overflow = '';
+        }
+
+        toggle.addEventListener('click', () => {
+          sidebar.classList.contains('open') ? close() : open();
+        });
+
+        if (overlay) overlay.addEventListener('click', close);
+
+        window.addEventListener('resize', () => {
+          if (window.innerWidth >= 1024) close();
+        });
+      }
+
+      function initFormTypeSelect() {
+        const options = document.querySelectorAll('.form-type-option');
+        options.forEach(option => {
+          option.addEventListener('click', () => {
+            options.forEach(o => o.classList.remove('selected'));
+            option.classList.add('selected');
+          });
+        });
+      }
+
+      function initUploadZone() {
+        const zone = document.getElementById('uploadZone');
+        if (!zone) return;
+
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+          zone.addEventListener(eventName, (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+          });
+        });
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+          zone.addEventListener(eventName, () => zone.classList.add('dragover'));
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+          zone.addEventListener(eventName, () => zone.classList.remove('dragover'));
+        });
+      }
+
+      function startAnalysis() {
+        const panel = document.getElementById('analysisProgressPanel');
+        if (!panel) return;
+
+        panel.style.display = 'block';
+        panel.scrollIntoView({ behavior: 'smooth' });
+
+        const bar = document.getElementById('progressBar');
+        const text = document.getElementById('progressText');
+        const status = document.getElementById('progressStatus');
+        const steps = [
+          { id: 'step1', label: '正在上传作品...' },
+          { id: 'step2', label: '正在识别创作形式...' },
+          { id: 'step3', label: 'AI 正在分析视觉特征...' },
+          { id: 'step4', label: '正在生成结构化报告...' }
+        ];
+
+        const circumference = 339.292;
+        let progress = 0;
+        const duration = 3000;
+        const interval = 50;
+        const step = 100 / (duration / interval);
+
+        const timer = setInterval(() => {
+          progress = Math.min(progress + step, 100);
+          const offset = circumference - (progress / 100) * circumference;
+          bar.style.strokeDashoffset = offset;
+          text.textContent = Math.round(progress) + '%';
+
+          const stepIndex = Math.min(Math.floor((progress / 100) * steps.length), steps.length - 1);
+          status.textContent = steps[stepIndex].label;
+
+          steps.forEach((s, i) => {
+            const el = document.getElementById(s.id);
+            if (!el) return;
+            el.classList.remove('active', 'done');
+            if (i < stepIndex) el.classList.add('done');
+            if (i === stepIndex) el.classList.add('active');
+          });
+
+          if (progress >= 100) {
+            clearInterval(timer);
+            setTimeout(() => {
+              window.location.href = 'report.html';
+            }, 400);
+          }
+        }, interval);
+      }
+    })();
+  </script>
+</body>
+</html>

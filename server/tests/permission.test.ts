@@ -366,10 +366,33 @@ describe('RBAC permissions matrix (unit)', () => {
 
     it('should_return_limited_permissions_for_student', () => {
       const perms = getPermissionsByRole('student');
-      // 学生应有 8 个权限(对应 ROLE_PERMISSIONS.student)
-      expect(perms.length).toBe(8);
+      // 学生应有 16 个权限:
+      //   - Phase 3 基础 9 个(含 subscription:read)
+      //   - Phase 5 预留接口追加 4 个读类权限
+      //     (knowledge:read / modules:read / ui:config:read / config:features:read)
+      //   - Phase 5 新功能追加 3 个读类权限
+      //     (preset:read / review:read / dispute:read)
+      expect(perms.length).toBe(16);
       expect(perms).not.toContain('analysis:read:tenant');
       expect(perms).not.toContain('analysis:delete:tenant');
+      expect(perms).not.toContain('subscription:update');
+      // Phase 5 预留接口:学生拥有读类权限,无写/管理类权限
+      expect(perms).toContain('knowledge:read');
+      expect(perms).toContain('modules:read');
+      expect(perms).toContain('ui:config:read');
+      expect(perms).toContain('config:features:read');
+      expect(perms).not.toContain('knowledge:write');
+      expect(perms).not.toContain('modules:manage');
+      expect(perms).not.toContain('ui:config:write');
+      expect(perms).not.toContain('config:features:write');
+      expect(perms).not.toContain('config:workflows:manage');
+      // Phase 5 新功能:学生拥有读类权限,无写/裁定类权限
+      expect(perms).toContain('preset:read');
+      expect(perms).toContain('review:read');
+      expect(perms).toContain('dispute:read');
+      expect(perms).not.toContain('preset:write');
+      expect(perms).not.toContain('review:write');
+      expect(perms).not.toContain('dispute:resolve');
     });
   });
 

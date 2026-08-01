@@ -1,10 +1,11 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { Upload, Eye, Palette, Sparkles, CheckCircle2, Loader2, ArrowRight, PenTool, Layers, Box, Brush, Download, Share2, Cpu, Cloud, Zap, Type, Gem, Settings, Move, Scan, Brain, FileText, Image as ImageIcon } from 'lucide-react';
-import type { AnalysisResult, PaintingAnalysis, DesignAnalysis, ProductAnalysis, SculptureAnalysis } from '../types';
+import { Upload, Eye, Palette, Sparkles, CheckCircle2, Loader2, ArrowRight, PenTool, Layers, Box, Brush, Download, Share2, Cpu, Cloud, Zap, Type, Gem, Settings, Move, Scan, Brain, FileText, Image as ImageIcon, RefreshCw } from 'lucide-react';
+import type { AnalysisResult, PaintingAnalysis, DesignAnalysis, ProductAnalysis, SculptureAnalysis, ProfessionalSuggestion, SuggestionPriority } from '../types';
 import { saveAnalysis } from '../services/data-service';
 import HeatmapCanvas from '../components/HeatmapCanvas';
 import { useToast } from '../components/ToastProvider';
 import { smartAnalyze, type AnalysisDecision } from '../services/smartAnalysisEngine';
+import PresetSelector from '../components/PresetSelector';
 
 type Step = 'upload' | 'analyzing' | 'result';
 type ArtTypeLocal = 'painting' | 'design' | 'product' | 'sculpture';
@@ -174,26 +175,197 @@ function MetricItem({ label, value, className = '' }: { label: string, value: Re
   );
 }
 
-function SuggestionBox({ color, suggestion }: { color: 'cinnabar' | 'stone' | 'gold', suggestion: string }) {
+function SuggestionBox({ color, suggestion, evidence, priority }: {
+  color: 'cinnabar' | 'stone' | 'gold';
+  suggestion: string;
+  evidence?: string;
+  priority?: SuggestionPriority;
+}) {
   const bg = color === 'cinnabar' ? 'bg-cinnabar/5' : color === 'stone' ? 'bg-stone/5' : 'bg-gold/5';
   const border = color === 'cinnabar' ? 'border-cinnabar/20' : color === 'stone' ? 'border-stone/20' : 'border-gold/20';
   const text = color === 'cinnabar' ? 'text-cinnabar' : color === 'stone' ? 'text-stone' : 'text-gold';
+
+  /* priority 颜色标识: high=朱砂红/警告, medium=石青/信息, low=墨灰/普通 */
+  const priorityStyles: Record<SuggestionPriority, { label: string; badge: string }> = {
+    high: { label: '优先改进', badge: 'bg-cinnabar text-white' },
+    medium: { label: '建议提升', badge: 'bg-[#5a8a7a] text-white' },
+    low: { label: '亮点保持', badge: 'bg-ink-500 text-white' },
+  };
+
   return (
     <div className={`${bg} rounded-xl p-4 border ${border}`}>
-      <p className={`text-sm font-medium ${text} mb-1`}>改进建议</p>
+      <div className="flex items-center justify-between mb-1">
+        <p className={`text-sm font-medium ${text}`}>改进建议</p>
+        {priority && (
+          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${priorityStyles[priority].badge}`}>
+            {priorityStyles[priority].label}
+          </span>
+        )}
+      </div>
       <p className="text-sm text-ink-600">{suggestion}</p>
+      {evidence && (
+        <p className="text-xs text-ink-400 mt-2 pl-3 border-l-2 border-ink-200 italic">
+          数据依据: {evidence}
+        </p>
+      )}
     </div>
   );
 }
 
-function HeatmapSection({ data, focusPoint, title = '视觉焦点热力图' }: { data: number[][], focusPoint: {x:number, y:number}, title?: string }) {
+/**
+ * 专业建议卡片(用于AI增强模式下的professionalSuggestions列表)
+ * 按priority排序显示,支持evidence引用、reference参考案例、practice练习路径
+ */
+function ProfessionalSuggestionCard({ sug, index }: { sug: ProfessionalSuggestion; index: number }) {
+  const priority: SuggestionPriority = sug.priority || 'medium';
+
+  const priorityConfig: Record<SuggestionPriority, {
+    label: string;
+    borderColor: string;
+    badgeBg: string;
+    dotColor: string;
+    headerBg: string;
+  }> = {
+    high: {
+      label: '优先改进',
+      borderColor: 'border-cinnabar/30',
+      badgeBg: 'bg-cinnabar text-white',
+      dotColor: 'bg-cinnabar',
+      headerBg: 'bg-cinnabar/5',
+    },
+    medium: {
+      label: '建议提升',
+      borderColor: 'border-[#5a8a7a]/30',
+      badgeBg: 'bg-[#5a8a7a] text-white',
+      dotColor: 'bg-[#5a8a7a]',
+      headerBg: 'bg-[#5a8a7a]/5',
+    },
+    low: {
+      label: '亮点保持',
+      borderColor: 'border-ink-300/30',
+      badgeBg: 'bg-ink-500 text-white',
+      dotColor: 'bg-ink-400',
+      headerBg: 'bg-ink-100/50',
+    },
+  };
+
+  const cfg = priorityConfig[priority];
+
+  return (
+    <div className={`bg-rice-50 rounded-xl border ${cfg.borderColor} overflow-hidden`}>
+      <div className={`px-4 py-2.5 ${cfg.headerBg} flex items-center justify-between`}>
+        <div className="flex items-center gap-2">
+          <span className={`w-2 h-2 rounded-full ${cfg.dotColor}`} />
+          <span className="text-xs font-medium text-ink-700">{index + 1}.</span>
+          <span className="text-sm font-semibold text-ink-900 font-serif">{sug.dimension}</span>
+        </div>
+        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${cfg.badgeBg}`}>
+          {cfg.label}
+        </span>
+      </div>
+      <div className="p-4 space-y-2">
+        {/* 操作建议 */}
+        <p className="text-sm text-ink-700 leading-relaxed">{sug.operation}</p>
+
+        {/* 证据字段:小字、灰色、引用样式 */}
+        {sug.evidence && (
+          <p className="text-xs text-ink-400 pl-3 border-l-2 border-ink-200 italic leading-relaxed">
+            数据依据: {sug.evidence}
+          </p>
+        )}
+
+        {/* 参考案例 */}
+        {sug.reference && (
+          <p className="text-xs text-ink-500">
+            <span className="font-medium text-ink-600">参考:</span> {sug.reference}
+          </p>
+        )}
+
+        {/* 练习路径 */}
+        {sug.practice && (
+          <p className="text-xs text-ink-500">
+            <span className="font-medium text-ink-600">练习:</span> {sug.practice}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * 按优先级排序专业建议: high > medium > low; 同级保持原顺序
+ */
+function sortSuggestionsByPriority(suggestions: ProfessionalSuggestion[]): ProfessionalSuggestion[] {
+  const order: Record<SuggestionPriority, number> = { high: 0, medium: 1, low: 2 };
+  return [...suggestions].sort((a, b) => {
+    const pa = order[a.priority || 'medium'];
+    const pb = order[b.priority || 'medium'];
+    return pa - pb;
+  });
+}
+
+function HeatmapSection({ data, focusPoint, title = '视觉焦点热力图', harmonyData }: { data: number[][], focusPoint?: {x:number, y:number}, title?: string, harmonyData?: { harmonyScore?: number; harmonyType?: string; dominantColor?: string } }) {
   return (
     <div className="bg-rice-100 rounded-xl p-4 mb-4">
       <p className="text-sm font-medium text-ink-700 mb-3">{title}</p>
       <div className="flex justify-center">
-        <HeatmapCanvas heatmapData={data} focusPoint={focusPoint} />
+        <HeatmapCanvas heatmapData={data} focusPoint={focusPoint} harmonyData={harmonyData} />
       </div>
-      <p className="text-xs text-ink-500 text-center mt-2">红色区域为视觉焦点</p>
+      <p className="text-xs text-ink-500 text-center mt-2">{harmonyData ? '可切换查看色彩和谐度环形图' : '红色区域为视觉焦点'}</p>
+    </div>
+  );
+}
+
+/**
+ * 分数圆环动画组件：从 0 滚动到 targetScore，SVG stroke-dashoffset 同步动画
+ * 颜色按分数档位区分：>=85 jade 玉绿、70-84 gold 金、<70 cinnabar 朱砂红
+ * 使用 easeOutQuart 缓动让数字滚动有减速感，持续 1.2s
+ */
+function AnimatedScore({ score, size = 120 }: { score: number; size?: number }) {
+  const [displayScore, setDisplayScore] = useState(0);
+  const radius = (size - 12) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference - (displayScore / 100) * circumference;
+  /* 使用项目 ink 色板的精确色值，保证设计一致性 */
+  const color = score >= 85 ? '#5b8c5a' : score >= 70 ? '#d4af37' : '#c41e3a';
+
+  useEffect(() => {
+    let raf: number;
+    const start = Date.now();
+    const duration = 1200;
+    const animate = () => {
+      const elapsed = Date.now() - start;
+      const progress = Math.min(elapsed / duration, 1);
+      /* easeOutQuart 缓动：前期快速推进，后期减速 */
+      const eased = 1 - Math.pow(1 - progress, 4);
+      setDisplayScore(Math.round(score * eased));
+      if (progress < 1) raf = requestAnimationFrame(animate);
+    };
+    raf = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(raf);
+  }, [score]);
+
+  return (
+    <div className="relative inline-flex items-center justify-center" style={{ width: size, height: size }}>
+      <svg width={size} height={size} className="-rotate-90">
+        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="rgba(15,15,15,0.06)" strokeWidth="6" />
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          stroke={color}
+          strokeWidth="6"
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+          strokeLinecap="round"
+          style={{ transition: 'stroke-dashoffset 0.1s linear' }}
+        />
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <span className="font-serif text-3xl font-bold" style={{ color }}>{displayScore}</span>
+        <span className="text-xs text-ink-400">总分</span>
+      </div>
     </div>
   );
 }
@@ -207,8 +379,11 @@ export default function AnalysisPage() {
   const [detailIndex, setDetailIndex] = useState(0);
   const [selectedArtType, setSelectedArtType] = useState<ArtTypeLocal>('painting');
   const [analysisDecision, setAnalysisDecision] = useState<AnalysisDecision | null>(null);
+  const [analysisDuration, setAnalysisDuration] = useState<number | null>(null);
+  const [showTypeSwitcher, setShowTypeSwitcher] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const fileRef = useRef<File | null>(null);
+  const startTimeRef = useRef<number | null>(null);
 
   /* 根据 progress 计算当前阶段（0-4），每 20% 切换一个阶段 */
   const currentStage = Math.min(4, Math.floor(progress / 20));
@@ -218,9 +393,24 @@ export default function AnalysisPage() {
     setDetailIndex(0);
   }, [currentStage]);
 
+  /* 文件校验：仅允许 JPG/PNG，最大 10MB；失败时通过 Toast 提示并返回 false */
+  const validateFile = useCallback((file: File): boolean => {
+    const allowedTypes = ['image/jpeg', 'image/png'];
+    if (!allowedTypes.includes(file.type)) {
+      toast.error('图片格式不支持', '仅支持 JPG / PNG 格式');
+      return false;
+    }
+    const maxSize = 10 * 1024 * 1024; /* 10MB */
+    if (file.size > maxSize) {
+      toast.error('图片超过 10MB 限制', `当前 ${(file.size / 1024 / 1024).toFixed(1)}MB，请压缩后重试`);
+      return false;
+    }
+    return true;
+  }, [toast]);
+
   const handleFileSelect = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (file) {
+    if (file && validateFile(file)) {
       fileRef.current = file;
       const reader = new FileReader();
       reader.onload = (e) => {
@@ -231,12 +421,14 @@ export default function AnalysisPage() {
       };
       reader.readAsDataURL(file);
     }
-  }, []);
+    /* 重置 input value，允许再次选择同一文件（校验失败后可重选） */
+    event.target.value = '';
+  }, [validateFile]);
 
   const handleDrop = useCallback((event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault();
     const file = event.dataTransfer.files?.[0];
-    if (file && file.type.startsWith('image/')) {
+    if (file && validateFile(file)) {
       fileRef.current = file;
       const reader = new FileReader();
       reader.onload = (e) => {
@@ -247,15 +439,49 @@ export default function AnalysisPage() {
       };
       reader.readAsDataURL(file);
     }
-  }, []);
+  }, [validateFile]);
 
   const handleDragOver = useCallback((event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault();
   }, []);
 
+  /* 粘贴图片支持（Ctrl+V）：仅在 upload 步骤生效，自动校验后进入分析 */
+  useEffect(() => {
+    const handlePaste = (e: ClipboardEvent) => {
+      if (step !== 'upload') return;
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (const item of items) {
+        if (item.type.startsWith('image/')) {
+          const file = item.getAsFile();
+          if (file) {
+            if (!validateFile(file)) return;
+            e.preventDefault();
+            fileRef.current = file;
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+              setImageUrl(ev.target?.result as string);
+              setStep('analyzing');
+              setProgress(0);
+              setDetailIndex(0);
+            };
+            reader.readAsDataURL(file);
+            toast.info('已粘贴图片', '正在准备分析...');
+            return;
+          }
+        }
+      }
+    };
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+  }, [step, toast, validateFile]);
+
   useEffect(() => {
     if (step === 'analyzing') {
       let completed = false;
+      /* 记录分析开始时间，用于结果页展示总耗时 */
+      startTimeRef.current = Date.now();
+      setAnalysisDuration(null);
 
       /* 进度推进定时器：每 60ms 推进 1%，到 95% 后等待真实分析完成再冲到 100%
          总时长约 5.7s（95% × 60ms），与 smartAnalyze 的实际耗时大致匹配 */
@@ -284,11 +510,14 @@ export default function AnalysisPage() {
         clearInterval(detailTimer);
         /* 真实分析完成，进度冲到 100% */
         setProgress(100);
+        /* 计算并保存分析总耗时（毫秒），结果页显示为秒 */
+        setAnalysisDuration(Date.now() - (startTimeRef.current ?? Date.now()));
         /* 异步保存到 data-service(API 优先,失败回退 LocalStorage),不阻塞 UI 切换 */
         try {
           await saveAnalysis(analysisResult);
         } catch (err) {
           console.error('保存分析结果失败:', err);
+          toast.warning('诊断结果已生成,但保存到历史记录失败', '可在本地继续查看,刷新页面后可能丢失');
         }
         /* 短暂展示 100% 完成态，再切换到结果页 */
         setTimeout(() => {
@@ -308,6 +537,8 @@ export default function AnalysisPage() {
           setStep('upload');
           setImageUrl('');
           setAnalysisDecision(null);
+          setAnalysisDuration(null);
+          startTimeRef.current = null;
         }
       };
 
@@ -330,6 +561,9 @@ export default function AnalysisPage() {
     setImageUrl('');
     setResult(null);
     setAnalysisDecision(null);
+    setAnalysisDuration(null);
+    setShowTypeSwitcher(false);
+    startTimeRef.current = null;
   };
 
   return (
@@ -418,7 +652,7 @@ export default function AnalysisPage() {
               <h3 className="font-serif text-xl font-semibold text-ink-900 mb-2">
                 点击或拖拽上传{artTypes.find(a => a.id === selectedArtType)?.name}作品
               </h3>
-              <p className="text-ink-500 mb-4">支持 JPG、PNG 格式</p>
+              <p className="text-ink-500 mb-4">支持 JPG、PNG 格式 · 可拖拽或 Ctrl+V 粘贴</p>
               <div className="inline-flex items-center gap-2 px-4 py-2 bg-ink-900 text-rice-100 rounded-lg">
                 <span className="font-medium">选择文件</span>
               </div>
@@ -435,6 +669,17 @@ export default function AnalysisPage() {
                   src={imageUrl}
                   alt="上传的作品"
                   className="w-full max-h-96 object-contain"
+                  onError={(e) => {
+                    const target = e.currentTarget;
+                    target.style.display = 'none';
+                    const parent = target.parentElement;
+                    if (parent && !parent.querySelector('.img-fallback')) {
+                      const fallback = document.createElement('div');
+                      fallback.className = 'img-fallback w-full h-48 bg-ink-100 flex items-center justify-center text-ink-400 text-sm';
+                      fallback.textContent = '图片加载失败';
+                      parent.insertBefore(fallback, target);
+                    }
+                  }}
                 />
                 {/* 半透明遮罩 + 扫描线（仅分析进行中显示，100% 时隐藏） */}
                 {progress < 100 && (
@@ -599,12 +844,61 @@ export default function AnalysisPage() {
 
         {step === 'result' && result && (
           <div className="space-y-8">
+            {/* 结果页标题 + 分析耗时 */}
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <h2 className="font-serif text-2xl font-bold text-ink-900">诊断报告</h2>
+              <div className="flex flex-wrap items-center gap-2">
+                {analysisDuration !== null && (
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-cinnabar/5 border border-cinnabar/20 rounded-full">
+                    <Zap className="w-3 h-3 text-cinnabar" />
+                    <span className="text-xs font-medium text-cinnabar">
+                      分析耗时 <span className="font-mono tabular-nums">{(analysisDuration / 1000).toFixed(1)}s</span>
+                    </span>
+                  </div>
+                )}
+                {/* Phase F1:可观测性元信息徽章 */}
+                {result.aiEnhanced === true && (
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-[#5a8a7a]/10 border border-[#5a8a7a]/30 rounded-full" title="本次分析经过 AI 视觉模型增强">
+                    <Brain className="w-3 h-3 text-[#5a8a7a]" />
+                    <span className="text-xs font-medium text-[#5a8a7a]">AI 增强</span>
+                  </div>
+                )}
+                {result.cacheHit === true && (
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-gold/10 border border-gold/30 rounded-full" title="相同图片命中缓存,跳过重复计算">
+                    <Cpu className="w-3 h-3 text-gold" />
+                    <span className="text-xs font-medium text-gold">缓存命中</span>
+                  </div>
+                )}
+                {typeof result.jimpDurationMs === 'number' && typeof result.aiDurationMs === 'number' && (result.jimpDurationMs > 0 || result.aiDurationMs > 0) && (
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-ink-900/5 border border-ink-900/15 rounded-full" title="Jimp 本地算法 vs AI 视觉模型耗时分解">
+                    <Cloud className="w-3 h-3 text-ink-600" />
+                    <span className="text-xs font-medium text-ink-600">
+                      Jimp <span className="font-mono tabular-nums">{result.jimpDurationMs}ms</span>
+                      {' / '}
+                      AI <span className="font-mono tabular-nums">{result.aiDurationMs}ms</span>
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
             <div className="bg-rice-50 rounded-2xl overflow-hidden shadow-card">
               <div className="relative">
                 <img
                   src={result.imageUrl}
                   alt="分析的作品"
                   className="w-full max-h-96 object-contain"
+                  onError={(e) => {
+                    /* 图片加载失败时显示占位图,避免空白 */
+                    const target = e.currentTarget;
+                    target.style.display = 'none';
+                    const parent = target.parentElement;
+                    if (parent && !parent.querySelector('.img-fallback')) {
+                      const fallback = document.createElement('div');
+                      fallback.className = 'img-fallback w-full h-48 bg-ink-100 flex items-center justify-center text-ink-400 text-sm';
+                      fallback.textContent = '图片加载失败';
+                      parent.insertBefore(fallback, target);
+                    }
+                  }}
                 />
                 <div className="absolute top-4 right-4 bg-white/90 backdrop-blur-sm px-4 py-2 rounded-xl flex items-center gap-2">
                   <CheckCircle2 className="w-5 h-5 text-jade" />
@@ -638,12 +932,8 @@ export default function AnalysisPage() {
 
             <div className="text-center">
               <p className="text-sm text-ink-500 mb-2">综合评分</p>
-              <div className="inline-flex items-center gap-3">
-                <div className={`w-24 h-24 ${getScoreBg(result.overallScore)} rounded-full flex items-center justify-center`}>
-                  <span className="font-serif text-4xl font-bold text-white">
-                    {result.overallScore}
-                  </span>
-                </div>
+              <div className="inline-flex items-center gap-4">
+                <AnimatedScore score={result.overallScore} size={120} />
                 <div className="text-left">
                   <p className="font-serif text-lg font-semibold text-ink-900">
                     {result.overallScore >= 85 ? '优秀' : result.overallScore >= 70 ? '良好' : '需改进'}
@@ -652,6 +942,41 @@ export default function AnalysisPage() {
                 </div>
               </div>
             </div>
+
+            {/* 评分预设:选择标准+调节权重 */}
+            {(() => {
+              const dims = result.dimensions;
+              const dimScores: Record<string, number> = {};
+              if (isPainting(dims)) {
+                dimScores.composition_form = dims.composition.score;
+                dimScores.color = dims.color.score;
+                dimScores.technique = dims.brushwork.score;
+                dimScores.overall = result.overallScore;
+              } else if (isDesign(dims)) {
+                dimScores.visual_hierarchy = dims.visualHierarchy.score;
+                dimScores.layout = dims.typography.score;
+                dimScores.color_application = dims.colorApplication.score;
+                dimScores.creativity = result.originality.score;
+              } else if (isProduct(dims)) {
+                dimScores.form_semantics = dims.form.score;
+                dimScores.material = dims.materialExpression.score;
+                dimScores.function = dims.functionExpression.score;
+                dimScores.ergonomics = result.overallScore;
+              } else if (isSculpture(dims)) {
+                dimScores.spatial_composition = dims.spatialComposition.score;
+                dimScores.form_language = dims.bodyLanguage.score;
+                dimScores.material_language = dims.materialLanguage.score;
+                dimScores.concept = result.originality.score;
+              }
+              return (
+                <PresetSelector
+                  analysisId={result.id}
+                  artType={result.artType}
+                  dimensionScores={dimScores}
+                  currentScore={result.overallScore}
+                />
+              );
+            })()}
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {isPainting(result.dimensions) && (
@@ -679,6 +1004,18 @@ export default function AnalysisPage() {
 
                   <div className="bg-rice-50 rounded-2xl p-6 shadow-card">
                     <DimensionHeader icon={Palette} title="色彩诊断" score={result.dimensions.color.score} color="stone" />
+                    {/* Phase F1:色彩和谐度环形可视化(有 harmonyType/harmonyScore 时展示) */}
+                    {(result.dimensions.color.harmonyType || typeof result.dimensions.color.harmonyScore === 'number') && (
+                      <HeatmapSection
+                        data={[]}
+                        title="色彩和谐度"
+                        harmonyData={{
+                          harmonyScore: result.dimensions.color.harmonyScore,
+                          harmonyType: result.dimensions.color.harmonyType,
+                          dominantColor: result.dimensions.color.dominantColor,
+                        }}
+                      />
+                    )}
                     <div className="grid grid-cols-2 gap-3 mb-4">
                       <MetricItem label="冷暖比" value={`${result.dimensions.color.warmRatio.toFixed(1)} : ${(1 - result.dimensions.color.warmRatio).toFixed(1)}`} />
                       <MetricItem label="对比度" value={
@@ -926,6 +1263,26 @@ export default function AnalysisPage() {
               )}
             </div>
 
+            {/* 专业改进建议(AI增强模式/Phase B4): 按priority排序显示,旧数据无此字段时不渲染 */}
+            {result.professionalSuggestions && result.professionalSuggestions.length > 0 && (
+              <div className="bg-rice-50 rounded-2xl p-6 shadow-card">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-10 h-10 bg-cinnabar/10 rounded-lg flex items-center justify-center">
+                    <Brain className="w-5 h-5 text-cinnabar" />
+                  </div>
+                  <div>
+                    <h3 className="font-serif text-lg font-bold text-ink-900">AI专业诊断建议</h3>
+                    <p className="text-xs text-ink-500">基于视觉特征数据锚定,按优先级排序</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {sortSuggestionsByPriority(result.professionalSuggestions).map((sug, idx) => (
+                    <ProfessionalSuggestionCard key={idx} sug={sug} index={idx} />
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* 原创性检测 - 全宽卡片 */}
             <div className="bg-rice-50 rounded-2xl p-6 shadow-card">
               <div className="flex items-center justify-between mb-4">
@@ -974,6 +1331,80 @@ export default function AnalysisPage() {
               </div>
             </div>
 
+            {/* Phase F1:算法指标卡片 - 展示 Phase A 新增的客观算法指标 */}
+            {(() => {
+              const dims = result.dimensions;
+              const metrics: Array<{ label: string; value: string; hint?: string }> = [];
+
+              // 构图类指标(painting/design/product/sculpture 共享 composition 系列字段)
+              const comp = isPainting(dims) ? dims.composition :
+                           isDesign(dims) ? dims.visualHierarchy :
+                           isProduct(dims) ? dims.form :
+                           dims.spatialComposition;
+              if (typeof comp.goldenRatioScore === 'number') {
+                metrics.push({ label: '黄金分割评分', value: `${comp.goldenRatioScore.toFixed(1)}`, hint: '0-100,越高越接近黄金分割' });
+              }
+              if (typeof comp.ruleOfThirdsScore === 'number') {
+                metrics.push({ label: '三分法评分', value: `${comp.ruleOfThirdsScore.toFixed(1)}`, hint: '0-100,焦点落在三分线交点' });
+              }
+              if (typeof comp.leadingLineDirection === 'number' && typeof comp.leadingLineStrength === 'number') {
+                metrics.push({
+                  label: '引导线',
+                  value: `${comp.leadingLineStrength.toFixed(2)} @ ${Math.round(comp.leadingLineDirection)}°`,
+                  hint: '强度(0-1)与方向(0-180°)',
+                });
+              }
+
+              // 色彩类指标(仅 painting 有 color 维度)
+              if (isPainting(dims)) {
+                const color = dims.color;
+                if (typeof color.harmonyScore === 'number') {
+                  metrics.push({ label: '色彩和谐度', value: `${color.harmonyScore.toFixed(1)}`, hint: '0-100,越高色彩越和谐' });
+                }
+                if (color.harmonyType) {
+                  metrics.push({ label: '和谐类型', value: color.harmonyType, hint: '色彩和谐方案' });
+                }
+                if (color.saturationDistribution) {
+                  const sd = color.saturationDistribution;
+                  metrics.push({
+                    label: '饱和度分布',
+                    value: `低${Math.round(sd.low * 100)}% / 中${Math.round(sd.mid * 100)}% / 高${Math.round(sd.high * 100)}%`,
+                    hint: '三级饱和度像素占比',
+                  });
+                }
+              }
+
+              // 笔触结构张量(仅 painting)
+              if (isPainting(dims) && dims.brushwork.structureTensor) {
+                const st = dims.brushwork.structureTensor;
+                metrics.push({
+                  label: '结构张量',
+                  value: `一致${st.coherence.toFixed(2)} / 能量${st.energy.toFixed(2)} / ${Math.round(st.dominantDirection)}°`,
+                  hint: '笔触方向一致性、能量与主导方向',
+                });
+              }
+
+              if (metrics.length === 0) return null;
+              return (
+                <div className="bg-rice-50 rounded-2xl p-6 shadow-card">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Cpu className="w-5 h-5 text-ink-700" />
+                    <h3 className="font-serif text-lg font-semibold text-ink-900">算法指标</h3>
+                    <span className="text-xs text-ink-500 ml-1">客观像素级计算结果</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {metrics.map((m) => (
+                      <div key={m.label} className="bg-white/60 rounded-lg p-3 border border-ink-100">
+                        <div className="text-xs text-ink-500 mb-1">{m.label}</div>
+                        <div className="text-sm font-mono tabular-nums font-medium text-ink-800">{m.value}</div>
+                        {m.hint && <div className="text-[10px] text-ink-400 mt-1">{m.hint}</div>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
+
             <div className="flex flex-wrap justify-center gap-4">
               <button
                 onClick={handleRetry}
@@ -981,6 +1412,13 @@ export default function AnalysisPage() {
               >
                 <Upload className="w-5 h-5" />
                 <span className="font-medium">重新上传</span>
+              </button>
+              <button
+                onClick={() => setShowTypeSwitcher((v) => !v)}
+                className="inline-flex items-center gap-2 px-6 py-3 border-2 border-[#5a8a7a] text-[#5a8a7a] rounded-lg hover:bg-[#5a8a7a] hover:text-rice-100 transition-all duration-300"
+              >
+                <RefreshCw className="w-5 h-5" />
+                <span className="font-medium">切换类型重测</span>
               </button>
               <button
                 onClick={() => {
@@ -1033,6 +1471,46 @@ export default function AnalysisPage() {
                 <ArrowRight className="w-4 h-4" />
               </button>
             </div>
+
+            {/* 切换类型重新分析：不重新上传图片，直接用新类型重新触发分析 */}
+            {showTypeSwitcher && (
+              <div className="flex flex-wrap justify-center items-center gap-2">
+                <span className="text-sm text-ink-500 mr-2">选择新类型：</span>
+                {artTypes.map((art) => {
+                  const Icon = art.icon;
+                  const isCurrent = selectedArtType === art.id;
+                  return (
+                    <button
+                      key={art.id}
+                      onClick={() => {
+                        setSelectedArtType(art.id);
+                        setShowTypeSwitcher(false);
+                        setResult(null);
+                        setAnalysisDuration(null);
+                        setProgress(0);
+                        setDetailIndex(0);
+                        setStep('analyzing');
+                      }}
+                      disabled={isCurrent}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-all duration-200 ${
+                        isCurrent
+                          ? 'bg-ink-900/10 text-ink-400 cursor-not-allowed'
+                          : 'bg-rice-50 border border-ink-200 text-ink-700 hover:bg-[#5a8a7a] hover:text-rice-100 hover:border-[#5a8a7a]'
+                      }`}
+                    >
+                      <Icon className="w-4 h-4" />
+                      <span>{art.name}</span>
+                    </button>
+                  );
+                })}
+                <button
+                  onClick={() => setShowTypeSwitcher(false)}
+                  className="inline-flex items-center px-3 py-1.5 rounded-lg text-sm text-ink-500 hover:text-ink-700 transition-colors"
+                >
+                  取消
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>

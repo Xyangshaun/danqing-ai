@@ -26,12 +26,23 @@ import { env } from './config/env.js';
 import { logger } from './utils/logger.js';
 import { traceMiddleware } from './middlewares/trace.js';
 import { errorHandler, notFoundHandler } from './middlewares/error-handler.js';
+import { clientIdentification, responseOptimizer } from './middlewares/client-adapt.js';
 import { authRouter } from './routes/auth.routes.js';
 import { userRouter } from './routes/user.routes.js';
 import { tenantRouter } from './routes/tenant.routes.js';
 import { analysisRouter } from './routes/analysis.routes.js';
 import { artworkRouter } from './routes/artwork.routes.js';
 import { growthRouter } from './routes/growth.routes.js';
+import { subscriptionRouter } from './routes/subscription.routes.js';
+import { adminRouter } from './routes/admin.routes.js';
+// Phase 5 预留接口路由(返回 501 Not Implemented,为 v2.0 扩展做准备)
+import { knowledgeRouter } from './routes/knowledge.routes.js';
+import { modulesRouter } from './routes/modules.routes.js';
+import { uiConfigRouter } from './routes/ui-config.routes.js';
+import { configRouter } from './routes/config.routes.js';
+// Phase 5 业务路由(评分预设 + 争议仲裁,已落地实现)
+import { presetRouter } from './routes/preset.routes.js';
+import { disputeRouter } from './routes/dispute.routes.js';
 import { ErrorCode } from './types/api-contract.js';
 
 /**
@@ -115,18 +126,27 @@ export function createApp(): Express {
   // ---------- traceId 注入(必须在路由前)----------
   app.use(traceMiddleware);
 
+  // ---------- 多端适配中间件(Phase 3)----------
+  // 1. clientIdentification:为未鉴权路由(/auth/feishu/authorize 等)注入 req.client
+  //    已鉴权路由由 authMiddleware 从 JWT aud / X-Client 头解析并覆盖
+  // 2. responseOptimizer:按客户端类型优化响应(mobile 端移除冗余字段)
+  //    必须在路由前挂载,以包装 res.json
+  app.use(clientIdentification());
+  app.use(responseOptimizer());
+
   // ---------- 健康检查(无需鉴权,供探针)----------
   // 返回轻量结构,不查 DB/Redis(避免雪崩);如需深度检查走 /health/ready
   // /health 供 LB/K8s 探针(render.yaml),/api/v1/health 供 API 契约一致性检查
+  //
+  // G8 安全修复:健康检查脱敏
+  //   仅返回 { status: 'up', timestamp },不暴露 service / version / nodeEnv
+  //   防止攻击者通过公开的 /health 端点探测服务类型与运行环境,降低信息收集面
   const healthHandler = (_req: express.Request, res: express.Response) => {
     res.status(200).json({
       code: ErrorCode.SUCCESS,
       message: 'ok',
       data: {
         status: 'up',
-        service: 'danqing-ai-server',
-        version: '3.0.0',
-        nodeEnv: cfg.nodeEnv,
         timestamp: new Date().toISOString(),
       },
       traceId: res.req.traceId,
@@ -143,7 +163,20 @@ export function createApp(): Express {
   apiV1.use('/analyses', analysisRouter);
   apiV1.use('/artworks', artworkRouter);
   apiV1.use('/growth', growthRouter);
+  apiV1.use('/subscriptions', subscriptionRouter);
+  // Phase 5 业务路由:评分预设 + 争议仲裁(已落地实现)
+  apiV1.use('/presets', presetRouter);
+  apiV1.use('/disputes', disputeRouter);
+  // Phase 5 预留接口路由(返回 501 Not Implemented,鉴权与权限校验已就位)
+  apiV1.use('/knowledge', knowledgeRouter);
+  apiV1.use('/modules', modulesRouter);
+  apiV1.use('/ui', uiConfigRouter);
+  apiV1.use('/config', configRouter);
   app.use('/api/v1', apiV1);
+
+  // ---------- 管理后台路由(独立命名空间 /api/admin,供 admin-dashboard 调用)----------
+  // 中间件链路在 adminRouter 内部统一注册:auth → tenant → rateLimiter → permission → handler
+  app.use('/api/admin', adminRouter);
 
   // ---------- 404 兜底 ----------
   app.use(notFoundHandler);

@@ -58,6 +58,19 @@ export const errorHandler: ErrorRequestHandler = (
     return error(res, err.code, err.message, err.httpStatus);
   }
 
+  // 2b. body-parser 错误(express.json/urlencoded 解析层)
+  // - entity.parse.failed:请求体 JSON 语法错误 → 400(否则会被兜底为 500,语义错误)
+  // - entity.too.large:请求体超过 express.json limit → 413
+  const errType = (err as { type?: string } | null)?.type;
+  if (errType === 'entity.parse.failed') {
+    logger.warn({ traceId: req.traceId }, '[error] body parse failed');
+    return error(res, ErrorCode.PARAM_INVALID, '请求体 JSON 格式错误', 400);
+  }
+  if (errType === 'entity.too.large') {
+    logger.warn({ traceId: req.traceId }, '[error] body too large');
+    return error(res, ErrorCode.FILE_TOO_LARGE, '请求体过大', 413);
+  }
+
   // 3. Prisma 错误(简化处理,生产环境应细分 P2002 唯一约束冲突等)
   if (err instanceof Error && err.name.startsWith('PrismaClient')) {
     logger.error({ traceId: req.traceId, err: err.message, name: err.name }, '[error] prisma');

@@ -55,6 +55,8 @@ export interface AuthContextValue {
   switchTenant: (tenantId: string) => Promise<void>;
   /** 刷新用户所有租户成员关系(用于租户列表可能变化场景) */
   loadTenants: () => Promise<void>;
+  /** 跳过登录(开发模式,注入 mock 用户数据) */
+  skipLogin: () => void;
 }
 
 export const AuthContext = createContext<AuthContextValue | null>(null);
@@ -214,6 +216,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  /* ---------- skipLogin:跳过登录(开发模式) ---------- */
+  // 后端服务未启动时,注入 mock 用户数据,直接进入首页
+  const skipLogin = useCallback(() => {
+    const now = new Date().toISOString();
+    setUser({
+      id: 'dev-user',
+      tenantId: 'dev-tenant',
+      feishuOpenId: 'dev-open-id',
+      feishuUnionId: 'dev-union-id',
+      name: '开发者',
+      avatar: '',
+      email: 'dev@danqing.ai',
+      phone: null,
+      role: 'teacher',
+      createdAt: now,
+      updatedAt: now,
+      lastLoginAt: now,
+    });
+    setTenant({
+      id: 'dev-tenant',
+      name: '开发测试租户',
+      plan: 'standard',
+      status: 'active',
+    } as TenantInfo);
+    setMemberships([]);
+    navigate('/', { replace: true });
+  }, [navigate]);
+
   /* ---------- 暴露 Context 值 ---------- */
   const value = useMemo<AuthContextValue>(
     () => ({
@@ -227,8 +257,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       refreshUser,
       switchTenant,
       loadTenants,
+      skipLogin,
     }),
-    [user, tenant, memberships, isLoading, login, logout, refreshUser, switchTenant, loadTenants]
+    [user, tenant, memberships, isLoading, login, logout, refreshUser, switchTenant, loadTenants, skipLogin]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

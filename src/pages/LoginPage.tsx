@@ -7,6 +7,7 @@ import { Link } from 'react-router-dom';
 import { Shield, Zap, BookOpen } from 'lucide-react';
 import LogoMark from '../components/LogoMark';
 import FeishuLoginButton from '../components/auth/FeishuLoginButton';
+import { useAuth } from '../hooks/useAuth';
 
 /** 价值主张小图标列表 */
 const valueProps: { icon: typeof Shield; title: string; desc: string }[] = [
@@ -16,6 +17,7 @@ const valueProps: { icon: typeof Shield; title: string; desc: string }[] = [
 ];
 
 export default function LoginPage() {
+  const { skipLogin } = useAuth();
   return (
     <div className="min-h-screen flex items-center justify-center bg-rice-200 ink-texture px-4 py-8 relative overflow-hidden">
       {/* 装饰:水墨晕染圆(左上 + 右下) */}
@@ -70,6 +72,17 @@ export default function LoginPage() {
             <p className="text-center text-2xs text-ink-400 mt-1">
               登录即代表同意服务协议与隐私政策
             </p>
+          </div>
+
+          {/* 跳过登录(开发模式) */}
+          <div className="mt-3 text-center">
+            <button
+              onClick={skipLogin}
+              className="text-xs text-ink-400 hover:text-cinnabar transition-colors underline decoration-dotted underline-offset-4"
+              title="后端未启动时可跳过登录直接体验"
+            >
+              跳过登录,直接体验
+            </button>
           </div>
 
           {/* 底部:返回首页(已登录用户可直接进入) */}

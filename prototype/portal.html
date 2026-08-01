@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="丹青有AI 产品入口，选择创作形式开始 AI 诊断，查看最近动态与优秀案例。">
+  <title>产品入口 | Danqing AI 丹青有AI</title>
+  <link rel="stylesheet" href="styles/main.css">
+</head>
+<body>
+  <!-- 加载动画 -->
+  <div class="loader">
+    <div class="loader-content">
+      <div class="loader-ink"></div>
+      <p style="font-family: var(--font-serif); color: var(--ink-400); font-size: 0.875rem;">丹青有AI</p>
+    </div>
+  </div>
+
+  <!-- 导航 -->
+  <header class="navbar">
+    <div class="container navbar-inner">
+      <a href="index.html" class="logo" aria-label="Danqing AI 首页">
+        <span class="logo-mark">DQ</span>
+        <span class="logo-text">
+          <span class="logo-en">Danqing AI</span>
+          <span class="logo-cn">丹青有AI</span>
+        </span>
+      </a>
+
+      <nav class="nav-links" aria-label="主导航">
+        <a href="index.html" class="nav-link">官网首页</a>
+        <a href="portal.html" class="nav-link active">产品入口</a>
+        <a href="history.html" class="nav-link">历史记录</a>
+        <a href="growth.html" class="nav-link">成长曲线</a>
+      </nav>
+
+      <div style="display: flex; align-items: center; gap: 1rem;">
+        <a href="console.html" class="nav-cta">进入工作台</a>
+        <button class="mobile-menu-btn" aria-label="打开菜单" aria-expanded="false">
+          <span></span>
+          <span></span>
+          <span></span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- 移动端菜单 -->
+  <div class="mobile-menu" role="dialog" aria-label="移动端菜单">
+    <a href="index.html">官网首页</a>
+    <a href="portal.html">产品入口</a>
+    <a href="history.html">历史记录</a>
+    <a href="growth.html">成长曲线</a>
+    <a href="console.html" class="btn btn-primary" style="margin-top: 1rem;">进入工作台</a>
+  </div>
+
+  <main>
+    <!-- Portal Hero -->
+    <section class="portal-hero">
+      <div class="container">
+        <div class="portal-welcome reveal">
+          <span class="section-eyebrow">Product Portal</span>
+          <h1>选择创作形式，开始诊断</h1>
+          <p>从四种创作形式中选择你的作品类型，AI 将在 3 秒内生成基于美院标准的专业诊断报告。</p>
+        </div>
+
+        <div class="portal-grid">
+          <article class="portal-card reveal reveal-delay-1" onclick="location.href='diagnose.html?type=painting'" style="cursor: pointer;">
+            <div class="portal-card-icon painting">画</div>
+            <h3>绘画诊断</h3>
+            <p>素描、色彩、油画、国画、版画等平面绘画作品的全维度分析。</p>
+            <span class="portal-card-arrow">
+              开始诊断
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+                <polyline points="12 5 19 12 12 19"></polyline>
+              </svg>
+            </span>
+          </article>
+
+          <article class="portal-card reveal reveal-delay-2" onclick="location.href='diagnose.html?type=design'" style="cursor: pointer;">
+            <div class="portal-card-icon design">设</div>
+            <h3>设计诊断</h3>
+            <p>海报、VI、界面、数媒等设计作品的视觉层次与排版分析。</p>
+            <span class="portal-card-arrow">
+              开始诊断
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+                <polyline points="12 5 19 12 12 19"></polyline>
+              </svg>
+            </span>
+          </article>
+
+          <article class="portal-card reveal reveal-delay-3" onclick="location.href='diagnose.html?type=product'" style="cursor: pointer;">
+            <div class="portal-card-icon product">产</div>
+            <h3>产品设计诊断</h3>
+            <p>产品手绘、建模渲染、实物模型的形态、材质与功能表达评估。</p>
+            <span class="portal-card-arrow">
+              开始诊断
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+                <polyline points="12 5 19 12 12 19"></polyline>
+              </svg>
+            </span>
+          </article>
+
+          <article class="portal-card reveal reveal-delay-4" onclick="location.href='diagnose.html?type=sculpture'" style="cursor: pointer;">
+            <div class="portal-card-icon sculpture">塑</div>
+            <h3>雕塑诊断</h3>
+            <p>雕塑、装置、公共艺术的空间构成、形体语言与材料语言分析。</p>
+            <span class="portal-card-arrow">
+              开始诊断
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+                <polyline points="12 5 19 12 12 19"></polyline>
+              </svg>
+            </span>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- 最近动态 -->
+    <section class="section" style="background: var(--rice-100); padding-top: var(--space-3xl);">
+      <div class="container">
+        <div class="section-header reveal">
+          <span class="section-eyebrow">Recent Activity</span>
+          <h2 class="section-title">最近动态</h2>
+          <p class="section-desc">登录后这里将展示你的最近诊断记录、待改进作品与成长提醒。</p>
+        </div>
+
+        <div class="recent-works">
+          <article class="recent-work reveal reveal-delay-1">
+            <div class="recent-work-thumb">
+              <img src="https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=A%20still%20life%20oil%20painting%20study%2C%20Chinese%20art%20academy%20style%2C%20warm%20light%2C%20professional%20photography&image_size=square" alt="静物油画" loading="lazy">
+            </div>
+            <div class="recent-work-info">
+              <h4 class="recent-work-title">静物油画习作</h4>
+              <p class="recent-work-meta">绘画 · 2 小时前</p>
+              <span class="recent-work-score medium">78 分</span>
+            </div>
+          </article>
+
+          <article class="recent-work reveal reveal-delay-2">
+            <div class="recent-work-thumb">
+              <img src="https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=A%20minimalist%20poster%20design%20with%20Chinese%20typography%2C%20grid%20layout%2C%20professional%20mockup&image_size=square" alt="海报设计" loading="lazy">
+            </div>
+            <div class="recent-work-info">
+              <h4 class="recent-work-title">文化节海报设计</h4>
+              <p class="recent-work-meta">设计 · 昨天</p>
+              <span class="recent-work-score high">85 分</span>
+            </div>
+          </article>
+
+          <article class="recent-work reveal reveal-delay-3">
+            <div class="recent-work-thumb">
+              <img src="https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=A%20clay%20sculpture%20study%20of%20human%20figure%2C%20Chinese%20art%20academy%2C%20studio%20light%2C%20professional%20photography&image_size=square" alt="雕塑习作" loading="lazy">
+            </div>
+            <div class="recent-work-info">
+              <h4 class="recent-work-title">人体泥塑速写</h4>
+              <p class="recent-work-meta">雕塑 · 3 天前</p>
+              <span class="recent-work-score low">65 分</span>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- 优秀案例 -->
+    <section class="section">
+      <div class="container">
+        <div class="section-header reveal">
+          <span class="section-eyebrow">Featured Works</span>
+          <h2 class="section-title">优秀案例参考</h2>
+          <p class="section-desc">浏览经过 AI 诊断与教师点评的优秀作品，理解专业标准如何落地到具体创作中。</p>
+        </div>
+
+        <div class="art-types">
+          <article class="art-type-card reveal reveal-delay-1">
+            <div class="art-type-image">
+              <img src="https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=An%20excellent%20Chinese%20ink%20painting%20landscape%2C%20masterpiece%20style%2C%20museum%20quality%2C%20professional%20photography&image_size=landscape_4_3" alt="优秀国画" loading="lazy">
+              <div class="art-type-overlay"></div>
+              <span class="art-type-badge">国画 · 92 分</span>
+            </div>
+            <div class="art-type-content">
+              <h3 class="art-type-title">山水意境</h3>
+              <p class="art-type-desc">构图疏密有致，墨色层次分明，留白处理得当，体现了传统水墨的气韵生动。</p>
+            </div>
+          </article>
+
+          <article class="art-type-card reveal reveal-delay-2">
+            <div class="art-type-image">
+              <img src="https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=A%20professional%20brand%20identity%20design%20presentation%2C%20Chinese%20minimalist%20style%2C%20clean%20mockup&image_size=landscape_4_3" alt="优秀设计" loading="lazy">
+              <div class="art-type-overlay"></div>
+              <span class="art-type-badge">设计 · 90 分</span>
+            </div>
+            <div class="art-type-content">
+              <h3 class="art-type-title">茶品牌视觉识别</h3>
+              <p class="art-type-desc">视觉系统完整，色彩调性统一，信息层级清晰，品牌气质与目标受众高度匹配。</p>
+            </div>
+          </article>
+
+          <article class="art-type-card reveal reveal-delay-3">
+            <div class="art-type-image">
+              <img src="https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=A%20sleek%20ergonomic%20product%20design%20render%2C%20industrial%20design%20portfolio%2C%20white%20background%2C%20professional&image_size=landscape_4_3" alt="优秀产品设计" loading="lazy">
+              <div class="art-type-overlay"></div>
+              <span class="art-type-badge">产品设计 · 88 分</span>
+            </div>
+            <div class="art-type-content">
+              <h3 class="art-type-title">便携式茶具套装</h3>
+              <p class="art-type-desc">形态语义明确，人机交互合理，材质与工艺表达清晰，功能与美学平衡得当。</p>
+            </div>
+          </article>
+
+          <article class="art-type-card reveal reveal-delay-4">
+            <div class="art-type-image">
+              <img src="https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=A%20contemporary%20abstract%20sculpture%20in%20gallery%2C%20bronze%20material%2C%20dramatic%20lighting%2C%20professional%20photography&image_size=landscape_4_3" alt="优秀雕塑" loading="lazy">
+              <div class="art-type-overlay"></div>
+              <span class="art-type-badge">雕塑 · 91 分</span>
+            </div>
+            <div class="art-type-content">
+              <h3 class="art-type-title">时间的痕迹</h3>
+              <p class="art-type-desc">空间张力强烈，形体语言纯粹，材料肌理与主题表达高度统一，具有当代性。</p>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- 资源入口 -->
+    <section class="section" style="background: var(--rice-100);">
+      <div class="container">
+        <div class="section-header reveal">
+          <span class="section-eyebrow">Resources</span>
+          <h2 class="section-title">学习资源</h2>
+          <p class="section-desc">评分标准、优秀案例、教学大纲，帮助你更好地理解诊断逻辑，持续提升创作能力。</p>
+        </div>
+
+        <div class="resources-grid">
+          <a href="#" class="resource-card reveal reveal-delay-1" onclick="alert('资源下载功能将在正式版上线'); return false;">
+            <div class="resource-icon">标</div>
+            <div class="resource-info">
+              <h4>美院评分标准</h4>
+              <p>五维评分体系详细说明</p>
+            </div>
+          </a>
+
+          <a href="#" class="resource-card reveal reveal-delay-2" onclick="alert('资源下载功能将在正式版上线'); return false;">
+            <div class="resource-icon">案</div>
+            <div class="resource-info">
+              <h4>优秀作业案例集</h4>
+              <p>按创作形式分类的高分作品</p>
+            </div>
+          </a>
+
+          <a href="#" class="resource-card reveal reveal-delay-3" onclick="alert('资源下载功能将在正式版上线'); return false;">
+            <div class="resource-icon">教</div>
+            <div class="resource-info">
+              <h4>教学大纲模板</h4>
+              <p>可复用的课程设计框架</p>
+            </div>
+          </a>
+
+          <a href="#" class="resource-card reveal reveal-delay-4" onclick="alert('资源下载功能将在正式版上线'); return false;">
+            <div class="resource-icon">帮</div>
+            <div class="resource-info">
+              <h4>使用帮助中心</h4>
+              <p>常见问题与操作指南</p>
+            </div>
+          </a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- 页脚 -->
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-grid">
+        <div class="footer-brand">
+          <div class="footer-logo">
+            <span class="logo-mark">DQ</span>
+            <span class="logo-text">
+              <span class="logo-en">Danqing AI</span>
+              <span class="logo-cn">丹青有AI</span>
+            </span>
+          </div>
+          <p class="footer-desc">以美院智识为尺，以水墨气韵为魂。让每一次创作都被专业看见。</p>
+        </div>
+
+        <div class="footer-links">
+          <h4>产品</h4>
+          <ul>
+            <li><a href="index.html#art-types">创作形式</a></li>
+            <li><a href="index.html#process">诊断流程</a></li>
+            <li><a href="portal.html">产品入口</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-links">
+          <h4>资源</h4>
+          <ul>
+            <li><a href="#">评分标准</a></li>
+            <li><a href="#">优秀案例</a></li>
+            <li><a href="#">教学大纲</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-links">
+          <h4>支持</h4>
+          <ul>
+            <li><a href="#">帮助中心</a></li>
+            <li><a href="#">联系我们</a></li>
+            <li><a href="#">反馈建议</a></li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="footer-bottom">
+        <p>&copy; 2026 Danqing AI 丹青有AI. 保留所有权利。</p>
+        <p>让艺术教育更智能</p>
+      </div>
+    </div>
+  </footer>
+
+  <script src="scripts/main.js"></script>
+</body>
+</html>

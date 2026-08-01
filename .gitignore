@@ -7,5 +7,6 @@ uploads/
 .env.local
 .DS_Store
 *.log
+logs/
 
 .vercel

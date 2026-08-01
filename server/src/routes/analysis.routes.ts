@@ -18,17 +18,16 @@
 //   - teacher/student 删除:仅自己的记录(canDeleteTenantWide=false)
 //   - admin/owner 删除:租户内任意(canDeleteTenantWide=true)
 //
-// multer 配置:
-//   - storage:磁盘存储到 server/uploads/(env UPLOAD_DIR 可配置)
-//   - fileFilter:仅允许 jpeg/png/webp/bmp
+// multer 配置(G4 安全修复):
+//   - storage:memoryStorage(文件驻留内存,避免落盘后才校验)
+//   - fileFilter:MIME 预检(早筛非图片,节省内存)
+//   - 上传后:uploadMiddleware 校验 buffer 前 12 字节魔数(权威校验,防伪造 MIME)
 //   - limits:fileSize ≤ 10MB(对应技术约束 ≤10MB)
-//   - 分析完成后由 service 层自动清理临时文件
+//   - controller 写盘后由 service 层清理临时文件
 // ============================================================
 
 import { Router } from 'express';
 import multer, { MulterError } from 'multer';
-import { mkdirSync } from 'node:fs';
-import { resolve } from 'node:path';
 import {
   createAnalysis,
   uploadAnalysis,
@@ -47,6 +46,8 @@ import { env } from '../config/env.js';
 import { ErrorCode } from '../types/api-contract.js';
 import { error } from '../utils/response.js';
 import { logger } from '../utils/logger.js';
+// Phase 5:评委评审子路由(嵌套在 /analyses/:id 下,继承父级 auth/tenant/rateLimiter)
+import { reviewRouter } from './review.routes.js';
 
 export const analysisRouter: Router = Router();
 
@@ -55,10 +56,11 @@ analysisRouter.use(authMiddleware);
 analysisRouter.use(tenantMiddleware);
 analysisRouter.use(apiRateLimiter());
 
-// ---------- multer 配置(磁盘存储 + 类型/大小限制) ----------
+// ---------- multer 配置(内存存储 + MIME 预检 + 魔数权威校验) ----------
 
 /**
  * 允许的 MIME 类型(对应技术约束:仅图片)
+ * 仅作为 fileFilter 预筛,权威校验由 detectImageType 魔数检查完成
  */
 const ALLOWED_MIME_TYPES: readonly string[] = [
   'image/jpeg',
@@ -67,43 +69,15 @@ const ALLOWED_MIME_TYPES: readonly string[] = [
   'image/bmp',
 ];
 
-/**
- * 上传目录绝对路径(相对于 server/ 根)
- * 启动时确保目录存在(同步创建,失败则记录日志但不阻塞)
- */
-function ensureUploadDir(): string {
-  const cfg = env();
-  // uploadDir 为相对路径(如 "uploads"),解析为 server/ 下的绝对路径
-  const baseDir = process.cwd();
-  const absDir = resolve(baseDir, cfg.uploadDir);
-  try {
-    mkdirSync(absDir, { recursive: true });
-  } catch (err) {
-    // 目录已存在或无权限:已存在忽略,无权限记录日志(后续 multer 写入时会再次失败)
-    const msg = err instanceof Error ? err.message : String(err);
-    if (!(err instanceof Error && 'code' in err && (err as { code: string }).code === 'EEXIST')) {
-      logger.warn({ err: msg, dir: absDir }, '[analysis.routes] mkdir uploads dir failed');
-    }
-  }
-  return absDir;
-}
+/** 最大文件大小(惰性读取,避免模块加载时 env 尚未初始化) */
+const getMaxFileSize = (): number => env().uploadMaxSize;
 
-const uploadDir = ensureUploadDir();
-const maxFileSize = env().uploadMaxSize;
-
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => {
-    cb(null, uploadDir);
-  },
-  filename: (_req, file, cb) => {
-    // 文件名:时间戳 + 随机串 + 原始扩展名,避免冲突
-    const ext = (file.originalname.split('.').pop() ?? 'jpg').toLowerCase();
-    const uniqueName = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${ext}`;
-    cb(null, uniqueName);
-  },
-});
+// memoryStorage:文件驻留内存,供 uploadMiddleware 读取 buffer 做魔数校验
+const storage = multer.memoryStorage();
 
 const fileFilter = (_req: unknown, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
+  // MIME 预检:早筛非图片类型,节省内存(memoryStorage 会读取整个文件到内存)
+  // 注意:MIME 由客户端提供,可伪造;权威校验在 uploadMiddleware 中读 buffer 魔数
   if (ALLOWED_MIME_TYPES.includes(file.mimetype)) {
     cb(null, true);
   } else {
@@ -119,11 +93,57 @@ const upload = multer({
   storage,
   fileFilter,
   limits: {
-    fileSize: maxFileSize,
+    fileSize: getMaxFileSize(), // 惰性读取,模块加载时 env 可能尚未初始化
     files: 1,
     parts: 10, // 字段数上限(防止恶意构造大量字段)
   },
 });
+
+/**
+ * 通过文件头魔数判断真实图片类型(防伪造 MIME 绕过)
+ * 返回检测到的类型,无法识别返回 null
+ *
+ * 魔数参考:
+ *   JPEG: FF D8 FF(3 字节)
+ *   PNG:  89 50 4E 47 0D 0A 1A 0A(8 字节)
+ *   WebP: 52 49 46 46 ?? ?? ?? ?? 57 45 42 50(12 字节,RIFF....WEBP)
+ *   BMP:  42 4D(2 字节)
+ */
+function detectImageType(buf: Buffer): 'jpeg' | 'png' | 'webp' | 'bmp' | null {
+  if (buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) {
+    return 'jpeg';
+  }
+  if (
+    buf.length >= 8 &&
+    buf[0] === 0x89 &&
+    buf[1] === 0x50 &&
+    buf[2] === 0x4e &&
+    buf[3] === 0x47 &&
+    buf[4] === 0x0d &&
+    buf[5] === 0x0a &&
+    buf[6] === 0x1a &&
+    buf[7] === 0x0a
+  ) {
+    return 'png';
+  }
+  if (
+    buf.length >= 12 &&
+    buf[0] === 0x52 &&
+    buf[1] === 0x49 &&
+    buf[2] === 0x46 &&
+    buf[3] === 0x46 &&
+    buf[8] === 0x57 &&
+    buf[9] === 0x45 &&
+    buf[10] === 0x42 &&
+    buf[11] === 0x50
+  ) {
+    return 'webp';
+  }
+  if (buf.length >= 2 && buf[0] === 0x42 && buf[1] === 0x4d) {
+    return 'bmp';
+  }
+  return null;
+}
 
 /**
  * multer 错误处理包装中间件
@@ -144,7 +164,7 @@ function handleUploadError(err: unknown): { code: ErrorCode; message: string; ht
       case 'LIMIT_FILE_SIZE':
         return {
           code: ErrorCode.FILE_TOO_LARGE,
-          message: `文件大小超过上限(${Math.floor(maxFileSize / 1024 / 1024)}MB)`,
+          message: `文件大小超过上限(${Math.floor(getMaxFileSize() / 1024 / 1024)}MB)`,
           httpStatus: 413,
         };
       case 'LIMIT_FILE_COUNT':
@@ -171,7 +191,12 @@ function handleUploadError(err: unknown): { code: ErrorCode; message: string; ht
 }
 
 /**
- * 包装 multer single('image') 中间件,统一错误处理
+ * 包装 multer single('image') 中间件,统一错误处理 + 魔数权威校验(G4)
+ *
+ * 流程:
+ *   1. multer 解析 multipart → 写入 req.file.buffer(memoryStorage)
+ *   2. 读取 buffer 前 12 字节做魔数匹配,失败返回 FILE_TYPE_UNSUPPORTED
+ *   3. 通过则交给 controller 写盘并调用 service
  */
 const uploadImage = upload.single('image');
 const uploadMiddleware: Router = Router();
@@ -185,6 +210,24 @@ uploadMiddleware.use((req, res, next) => {
       }
       // 非 MulterError,走统一错误处理
       return next(err);
+    }
+    // 魔数权威校验:memoryStorage 下 req.file.buffer 已就绪
+    const file = (req as unknown as { file?: Express.Multer.File & { buffer?: Buffer } }).file;
+    if (!file || !file.buffer) {
+      return error(res, ErrorCode.FILE_EMPTY, '上传文件为空', 400);
+    }
+    const detected = detectImageType(file.buffer);
+    if (!detected) {
+      logger.warn(
+        { mimetype: file.mimetype, size: file.buffer.length, traceId: req.traceId },
+        '[analysis.routes] magic byte mismatch, rejected',
+      );
+      return error(
+        res,
+        ErrorCode.FILE_TYPE_UNSUPPORTED,
+        `文件类型不支持(魔数校验失败),仅允许:${ALLOWED_MIME_TYPES.join('/')}`,
+        400,
+      );
     }
     next();
   });
@@ -211,3 +254,14 @@ analysisRouter.get('/:id', requireAnyPermission('analysis:read:own', 'analysis:r
 // DELETE /analyses/:id - 删除分析记录,需 analysis:delete:own 或 analysis:delete:tenant 权限
 // student/teacher 拥有 analysis:delete:own(仅删自己),admin/owner 拥有两者(删任意)
 analysisRouter.delete('/:id', requireAnyPermission('analysis:delete:own', 'analysis:delete:tenant'), deleteAnalysis);
+
+// ---------- Phase 5:评委评审子路由(嵌套在 /analyses/:id 下)----------
+// reviewRouter 处理以下路径(继承父级 auth/tenant/rateLimiter):
+//   POST /analyses/:id/reviews
+//   GET  /analyses/:id/reviews
+//   GET  /analyses/:id/reviews/:rid
+//   POST /analyses/:id/disputes/check
+//
+// 注意:此挂载点必须在 /:id 的 GET/DELETE 之后,以避免 reviewRouter 拦截单段路径请求
+// reviewRouter 内部所有路由都至少有两段路径(/reviews / /disputes/check),不会与 GET /:id 冲突
+analysisRouter.use('/:id', reviewRouter);

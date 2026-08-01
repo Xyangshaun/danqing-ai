@@ -525,7 +525,8 @@ describe('auth.controller (P0 接口集成测试)', () => {
 
       const res = await request(getTestApp())
         .post('/api/v1/auth/refresh')
-        .set('Cookie', [`refresh_token=${tokens.refreshToken}`])
+        .set('Cookie', [`refresh_token=${tokens.refreshToken}`, 'csrf_token=test-csrf-token'])
+        .set('X-CSRF-Token', 'test-csrf-token')
         .expect(200);
 
       const body = assertApiResponse(res);
@@ -550,7 +551,8 @@ describe('auth.controller (P0 接口集成测试)', () => {
 
       await request(getTestApp())
         .post('/api/v1/auth/refresh')
-        .set('Cookie', [`refresh_token=${tokens.refreshToken}`])
+        .set('Cookie', [`refresh_token=${tokens.refreshToken}`, 'csrf_token=test-csrf-token'])
+        .set('X-CSRF-Token', 'test-csrf-token')
         .expect(200);
 
       // 1. 旧 jti 应进黑名单
@@ -574,7 +576,8 @@ describe('auth.controller (P0 接口集成测试)', () => {
     it('should_return_401_when_refresh_token_jwt_invalid', async () => {
       const res = await request(getTestApp())
         .post('/api/v1/auth/refresh')
-        .set('Cookie', ['refresh_token=invalid.jwt.token'])
+        .set('Cookie', ['refresh_token=invalid.jwt.token', 'csrf_token=test-csrf-token'])
+        .set('X-CSRF-Token', 'test-csrf-token')
         .expect(401);
 
       assertApiError(res, ErrorCode.REFRESH_TOKEN_INVALID, 401);
@@ -597,7 +600,8 @@ describe('auth.controller (P0 接口集成测试)', () => {
 
       const res = await request(getTestApp())
         .post('/api/v1/auth/refresh')
-        .set('Cookie', [`refresh_token=${tokens.refreshToken}`])
+        .set('Cookie', [`refresh_token=${tokens.refreshToken}`, 'csrf_token=test-csrf-token'])
+        .set('X-CSRF-Token', 'test-csrf-token')
         .expect(401);
 
       assertApiError(res, ErrorCode.REFRESH_TOKEN_INVALID, 401);
@@ -619,7 +623,8 @@ describe('auth.controller (P0 接口集成测试)', () => {
 
       const res = await request(getTestApp())
         .post('/api/v1/auth/refresh')
-        .set('Cookie', [`refresh_token=${tokens.refreshToken}`])
+        .set('Cookie', [`refresh_token=${tokens.refreshToken}`, 'csrf_token=test-csrf-token'])
+        .set('X-CSRF-Token', 'test-csrf-token')
         .expect(401);
 
       assertApiError(res, ErrorCode.REFRESH_TOKEN_INVALID, 401);
@@ -636,7 +641,8 @@ describe('auth.controller (P0 接口集成测试)', () => {
 
       const res = await request(getTestApp())
         .post('/api/v1/auth/refresh')
-        .set('Cookie', [`refresh_token=${tokens.refreshToken}`])
+        .set('Cookie', [`refresh_token=${tokens.refreshToken}`, 'csrf_token=test-csrf-token'])
+        .set('X-CSRF-Token', 'test-csrf-token')
         .expect(401);
 
       assertApiError(res, ErrorCode.REFRESH_TOKEN_INVALID, 401);
@@ -657,7 +663,8 @@ describe('auth.controller (P0 接口集成测试)', () => {
 
       const res = await request(getTestApp())
         .post('/api/v1/auth/refresh')
-        .set('Cookie', [`refresh_token=${tokens.refreshToken}`])
+        .set('Cookie', [`refresh_token=${tokens.refreshToken}`, 'csrf_token=test-csrf-token'])
+        .set('X-CSRF-Token', 'test-csrf-token')
         .expect(403);
 
       assertApiError(res, ErrorCode.TENANT_DISABLED, 403);
@@ -672,7 +679,8 @@ describe('auth.controller (P0 接口集成测试)', () => {
 
       const res = await request(getTestApp())
         .post('/api/v1/auth/refresh')
-        .set('Cookie', [`refresh_token=${tokens.refreshToken}`])
+        .set('Cookie', [`refresh_token=${tokens.refreshToken}`, 'csrf_token=test-csrf-token'])
+        .set('X-CSRF-Token', 'test-csrf-token')
         .expect(401);
 
       assertApiError(res, ErrorCode.REFRESH_TOKEN_INVALID, 401);
@@ -707,7 +715,8 @@ describe('auth.controller (P0 接口集成测试)', () => {
       const res = await request(getTestApp())
         .post('/api/v1/auth/logout')
         .set('Authorization', `Bearer ${tokens.accessToken}`)
-        .set('Cookie', [`refresh_token=${tokens.refreshToken}`])
+        .set('Cookie', [`refresh_token=${tokens.refreshToken}`, 'csrf_token=test-csrf-token'])
+        .set('X-CSRF-Token', 'test-csrf-token')
         .expect(200);
 
       const body = assertApiResponse(res);
@@ -748,7 +757,8 @@ describe('auth.controller (P0 接口集成测试)', () => {
       const res = await request(getTestApp())
         .post('/api/v1/auth/logout')
         .set('Authorization', `Bearer ${tokens.accessToken}`)
-        .set('Cookie', [`refresh_token=${tokens.refreshToken}`])
+        .set('Cookie', [`refresh_token=${tokens.refreshToken}`, 'csrf_token=test-csrf-token'])
+        .set('X-CSRF-Token', 'test-csrf-token')
         .send({ revokeAll: true })
         .expect(200);
 
@@ -779,7 +789,8 @@ describe('auth.controller (P0 接口集成测试)', () => {
       await request(getTestApp())
         .post('/api/v1/auth/logout')
         .set('Authorization', `Bearer ${tokens.accessToken}`)
-        .set('Cookie', [`refresh_token=${tokens.refreshToken}`])
+        .set('Cookie', [`refresh_token=${tokens.refreshToken}`, 'csrf_token=test-csrf-token'])
+        .set('X-CSRF-Token', 'test-csrf-token')
         .expect(200);
 
       // access_token jti 应进黑名单
@@ -990,10 +1001,11 @@ describe('auth.controller (P0 接口集成测试)', () => {
         .get('/health')
         .expect(200);
 
-      const body = res.body as { code: number; data: { status: string; service: string } };
+      // G8:健康检查脱敏后仅返回 { status, timestamp },不再暴露 service/version/nodeEnv
+      const body = res.body as { code: number; data: { status: string; timestamp: string } };
       expect(body.code).toBe(0);
       expect(body.data.status).toBe('up');
-      expect(body.data.service).toBe('danqing-ai-server');
+      expect(body.data.timestamp).toBeTruthy();
     });
 
     it('should_return_trace_id_header_for_every_request', async () => {

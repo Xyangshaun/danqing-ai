@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Heart, Sparkles, Loader2, Download, Share2, Sun, Moon, Wind, Droplets, Flame, Waves, Palette, Sliders, Layers, Copy, RefreshCw } from 'lucide-react';
+import { Heart, Sparkles, Loader2, Download, Share2, Sun, Moon, Wind, Droplets, Flame, Waves, Palette, Sliders, Layers, Copy, RefreshCw, Brush } from 'lucide-react';
 import { generateEmotionCanvas, emotionPresets } from '../services/imageService';
 import { saveEmotionPalette } from '../services/data-service';
 import { useToast } from '../components/ToastProvider';
+import EmptyState from '../components/EmptyState';
+import EmotionBrushCanvas from '../components/EmotionBrushCanvas';
 
 const emotionData: Record<string, {
   desc: string;
@@ -370,19 +372,29 @@ export default function EmotionPage() {
               </div>
 
               <div className="mb-4">
-                <p className="text-sm font-medium text-ink-700 mb-2">关键词联想</p>
+                <p className="text-sm font-medium text-ink-700 mb-2">
+                  关键词联想
+                  <span className="text-xs font-normal text-ink-400 ml-2">点击复制</span>
+                </p>
                 <div className="flex flex-wrap gap-2">
                   {currentEmotion.keywords.map((kw) => (
-                    <span
+                    <button
                       key={kw}
-                      className="px-3 py-1 text-sm rounded-full"
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard?.writeText(kw).then(
+                          () => toast.success('已复制', kw),
+                          () => toast.error('复制失败', '请检查浏览器权限')
+                        );
+                      }}
+                      className="px-3 py-1 text-sm rounded-full transition-all hover:scale-105 hover:shadow-card cursor-pointer active:scale-95"
                       style={{
                         backgroundColor: `${currentEmotion.color}15`,
                         color: currentEmotion.color,
                       }}
                     >
                       {kw}
-                    </span>
+                    </button>
                   ))}
                 </div>
               </div>
@@ -431,6 +443,21 @@ export default function EmotionPage() {
               </div>
             </div>
           </div>
+        </div>
+
+        {/* 手绘创作区域 */}
+        <div className="mb-8">
+          <div className="flex items-center gap-2 mb-4">
+            <Brush className="w-5 h-5 text-cinnabar" />
+            <h2 className="font-serif text-xl font-bold text-ink-900">手绘创作</h2>
+            <span className="text-xs text-ink-400 ml-1">用画笔直接表达情绪</span>
+          </div>
+          <EmotionBrushCanvas
+            colorPalette={currentEmotion.colorPalette}
+            emotionName={selectedEmotion + (secondaryEmotion ? `-${secondaryEmotion}` : '')}
+            width={Math.min(900, typeof window !== 'undefined' ? window.innerWidth - 80 : 800)}
+            height={420}
+          />
         </div>
 
         {/* Generate Button */}
@@ -567,21 +594,12 @@ export default function EmotionPage() {
 
         {/* Empty State */}
         {results.length === 0 && !generating && (
-          <div className="bg-rice-50 rounded-2xl p-12 shadow-card text-center">
-            <div
-              className="w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4"
-              style={{ background: getGradient(currentEmotion.colorPalette, 0.2) }}
-            >
-              <Palette className="w-10 h-10" style={{ color: currentEmotion.color }} />
-            </div>
-            <h3 className="font-serif text-xl font-semibold text-ink-700 mb-2">
-              调整情绪，开始创作
-            </h3>
-            <p className="text-ink-500 max-w-md mx-auto">
-              选择你的主情绪，调节浓度，甚至可以叠加第二种情绪
-              <br />
-              让 AI 为你生成独一无二的情感视觉表达
-            </p>
+          <div className="bg-rice-50 rounded-2xl shadow-card">
+            <EmptyState
+              icon={Heart}
+              title="输入情绪词开始探索"
+              desc="将情绪转化为色彩方案"
+            />
           </div>
         )}
       </div>

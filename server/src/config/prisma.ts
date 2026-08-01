@@ -26,16 +26,11 @@ export function initPrisma(): PrismaClient {
   });
 
   // 日志输出(脱敏:Prisma 默认 query 日志可能含参数,生产环境关闭)
-  // 使用类型断言绕过 Prisma 严格泛型($on 的 'never' 类型推断与 emit:'event' 不匹配)
-  type PrismaEventEmitter = {
-    on(event: 'warn', listener: (e: { target?: string; message?: string }) => void): void;
-    on(event: 'error', listener: (e: { target?: string; message?: string }) => void): void;
-  };
-  const eventEmitter = prismaInstance as unknown as PrismaEventEmitter;
-  eventEmitter.on('warn', (e) => {
+  // Prisma $on 用于监听 emit:'event' 的日志事件(不是 EventEmitter .on)
+  prismaInstance.$on('warn' as never, (e: { target?: string; message?: string }) => {
     logger.warn({ target: e.target, message: e.message }, '[prisma] warn');
   });
-  eventEmitter.on('error', (e) => {
+  prismaInstance.$on('error' as never, (e: { target?: string; message?: string }) => {
     logger.error({ target: e.target, message: e.message }, '[prisma] error');
   });
 

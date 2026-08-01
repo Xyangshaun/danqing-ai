@@ -47,7 +47,51 @@ export type Permission =
   | 'tenant:switch' // 切换当前激活租户
   | 'artwork:read' // 查看艺术品知识库
   | 'stats:read' // 查看个人统计数据
-  | 'stats:read:tenant'; // 查看租户统计数据
+  | 'stats:read:tenant' // 查看租户统计数据
+  | 'subscription:read' // 查看当前租户订阅信息与发票
+  | 'subscription:update' // 升级/取消订阅(仅 admin/owner)
+  // 管理后台权限(Phase 4,仅 admin/owner 拥有)
+  | 'admin:user:read' // 查看用户列表/详情
+  | 'admin:user:write' // 更新/删除/锁定/批量操作用户
+  | 'admin:user:export' // 导出用户 CSV
+  | 'admin:role:read' // 查看角色权限矩阵
+  | 'admin:role:write' // 更新角色权限
+  | 'admin:artwork:read' // 查看作品列表/详情
+  | 'admin:artwork:write' // 审核/删除作品
+  | 'admin:template:read' // 查看创意模板
+  | 'admin:template:write' // 创建/更新/删除模板
+  | 'admin:subscription:read' // 查看订阅/发票列表
+  | 'admin:subscription:write' // 取消订阅/退款
+  | 'admin:plan:read' // 查看套餐列表
+  | 'admin:plan:write' // 创建/更新套餐
+  | 'admin:stats:read' // 查看数据看板
+  | 'admin:tenant:read' // 查看租户列表
+  | 'admin:tenant:write' // 创建/更新租户
+  | 'admin:audit:read' // 查看审计日志
+  | 'admin:apikey:read' // 查看 API 密钥列表
+  | 'admin:apikey:write' // 生成/吊销 API 密钥
+  | 'admin:system:health' // 系统健康检查
+  // Phase 5 预留接口权限(知识库/模块/UI 配置/功能参数)
+  | 'knowledge:read' // 知识库检索(所有角色)
+  | 'knowledge:write' // 知识条目 CRUD(ADMIN/OWNER)
+  | 'knowledge:index:manage' // 重建索引(ADMIN)
+  | 'modules:read' // 查看已安装/可用模块(所有角色)
+  | 'modules:manage' // 安装/卸载/启用/禁用/配置模块(ADMIN/OWNER)
+  | 'ui:config:read' // 查看主题/布局/组件配置(所有角色)
+  | 'ui:config:write' // 更新主题/布局/组件配置(ADMIN/OWNER)
+  | 'config:features:read' // 查看功能开关(所有角色)
+  | 'config:features:write' // 更新功能开关(ADMIN/OWNER)
+  | 'config:workflows:manage' // 工作流定义与执行(ADMIN/OWNER)
+  // Phase 5 新功能权限(评分预设/评委评审/争议仲裁)
+  | 'preset:read' // 查看可用预设(所有角色)
+  | 'preset:write' // 创建/fork/更新/删除预设(TEACHER/ADMIN/OWNER)
+  | 'review:read' // 查看评审记录(租户内所有角色)
+  | 'review:write' // 提交评审(TEACHER/ADMIN/OWNER)
+  | 'dispute:read' // 查看争议案件(租户内所有角色)
+  | 'dispute:resolve' // 裁定争议(TEACHER/ADMIN/OWNER)
+  | 'admin:invitation:write' // 创建邀请码/批量导入学生(ADMIN/OWNER)
+  | 'admin:preset:read' // 管理后台查看所有预设(ADMIN/OWNER)
+  | 'admin:preset:write'; // 管理后台派生覆盖预设(ADMIN/OWNER)
 
 /**
  * 权限全集(用于 ADMIN/OWNER 全权角色)
@@ -70,6 +114,50 @@ export const ALL_PERMISSIONS: readonly Permission[] = [
   'artwork:read',
   'stats:read',
   'stats:read:tenant',
+  'subscription:read',
+  'subscription:update',
+  // 管理后台权限(Phase 4)
+  'admin:user:read',
+  'admin:user:write',
+  'admin:user:export',
+  'admin:role:read',
+  'admin:role:write',
+  'admin:artwork:read',
+  'admin:artwork:write',
+  'admin:template:read',
+  'admin:template:write',
+  'admin:subscription:read',
+  'admin:subscription:write',
+  'admin:plan:read',
+  'admin:plan:write',
+  'admin:stats:read',
+  'admin:tenant:read',
+  'admin:tenant:write',
+  'admin:audit:read',
+  'admin:apikey:read',
+  'admin:apikey:write',
+  'admin:system:health',
+  // Phase 5 预留接口权限
+  'knowledge:read',
+  'knowledge:write',
+  'knowledge:index:manage',
+  'modules:read',
+  'modules:manage',
+  'ui:config:read',
+  'ui:config:write',
+  'config:features:read',
+  'config:features:write',
+  'config:workflows:manage',
+  // Phase 5 新功能权限
+  'preset:read',
+  'preset:write',
+  'review:read',
+  'review:write',
+  'dispute:read',
+  'dispute:resolve',
+  'admin:invitation:write',
+  'admin:preset:read',
+  'admin:preset:write',
 ];
 
 // ============================================================
@@ -80,37 +168,51 @@ export const ALL_PERMISSIONS: readonly Permission[] = [
  * RBAC 权限矩阵(角色 → 权限列表)
  *
  * 权限矩阵表:
- * | 权限                    | ADMIN | OWNER | TEACHER | STUDENT |
- * |-------------------------|:-----:|:-----:|:-------:|:-------:|
- * | analysis:create         |  Y    |  Y    |   Y     |   Y     |
- * | analysis:read:own       |  Y    |  Y    |   Y     |   Y     |
- * | analysis:read:tenant    |  Y    |  Y    |   Y     |   N     |
- * | analysis:delete:own     |  Y    |  Y    |   Y     |   Y     |
- * | analysis:delete:tenant  |  Y    |  Y    |   N     |   N     |
- * | user:read               |  Y    |  Y    |   Y     |   N     |
- * | user:update:own         |  Y    |  Y    |   Y     |   Y     |
- * | user:update:tenant      |  Y    |  Y    |   N     |   N     |
- * | user:invite             |  Y    |  Y    |   Y     |   N     |
- * | user:remove             |  Y    |  Y    |   N     |   N     |
- * | tenant:read             |  Y    |  Y    |   Y     |   Y     |
- * | tenant:update           |  Y    |  Y    |   N     |   N     |
- * | tenant:switch           |  Y    |  Y    |   Y     |   Y     |
- * | artwork:read            |  Y    |  Y    |   Y     |   Y     |
- * | stats:read              |  Y    |  Y    |   Y     |   Y     |
- * | stats:read:tenant       |  Y    |  Y    |   Y     |   N     |
+ * | 权限                       | ADMIN | OWNER | TEACHER | STUDENT |
+ * |----------------------------|:-----:|:-----:|:-------:|:-------:|
+ * | analysis:create            |  Y    |  Y    |   Y     |   Y     |
+ * | analysis:read:own          |  Y    |  Y    |   Y     |   Y     |
+ * | analysis:read:tenant       |  Y    |  Y    |   Y     |   N     |
+ * | analysis:delete:own        |  Y    |  Y    |   Y     |   Y     |
+ * | analysis:delete:tenant     |  Y    |  Y    |   N     |   N     |
+ * | user:read                  |  Y    |  Y    |   Y     |   N     |
+ * | user:update:own            |  Y    |  Y    |   Y     |   Y     |
+ * | user:update:tenant         |  Y    |  Y    |   N     |   N     |
+ * | user:invite                |  Y    |  Y    |   Y     |   N     |
+ * | user:remove                |  Y    |  Y    |   N     |   N     |
+ * | tenant:read                |  Y    |  Y    |   Y     |   Y     |
+ * | tenant:update              |  Y    |  Y    |   N     |   N     |
+ * | tenant:switch              |  Y    |  Y    |   Y     |   Y     |
+ * | artwork:read               |  Y    |  Y    |   Y     |   Y     |
+ * | stats:read                 |  Y    |  Y    |   Y     |   Y     |
+ * | stats:read:tenant          |  Y    |  Y    |   Y     |   N     |
+ * | subscription:read          |  Y    |  Y    |   Y     |   Y     |
+ * | subscription:update        |  Y    |  Y    |   N     |   N     |
+ * | knowledge:read             |  Y    |  Y    |   Y     |   Y     | (Phase 5 预留)
+ * | knowledge:write            |  Y    |  Y    |   N     |   N     | (Phase 5 预留)
+ * | knowledge:index:manage     |  Y    |  Y    |   N     |   N     | (Phase 5 预留)
+ * | modules:read               |  Y    |  Y    |   Y     |   Y     | (Phase 5 预留)
+ * | modules:manage             |  Y    |  Y    |   N     |   N     | (Phase 5 预留)
+ * | ui:config:read             |  Y    |  Y    |   Y     |   Y     | (Phase 5 预留)
+ * | ui:config:write            |  Y    |  Y    |   N     |   N     | (Phase 5 预留)
+ * | config:features:read       |  Y    |  Y    |   Y     |   Y     | (Phase 5 预留)
+ * | config:features:write      |  Y    |  Y    |   N     |   N     | (Phase 5 预留)
+ * | config:workflows:manage    |  Y    |  Y    |   N     |   N     | (Phase 5 预留)
  *
  * 说明:
  *  - ADMIN/OWNER:全权限(OWNER 等同 ADMIN,见 schema.prisma UserRole.owner 注释)
  *  - TEACHER:可管理租户内分析(读全量/删自己)、邀请成员、查看租户统计,
  *            但不可移除成员、不可改租户设置、不可删他人分析
  *  - STUDENT:仅可操作自己的资源 + 查看艺术品库 + 个人统计
+ *  - Phase 5 预留接口:读类权限(knowledge:read / modules:read / ui:config:read /
+ *            config:features:read)对所有角色开放;写/管理类仅 ADMIN/OWNER
  */
 export const ROLE_PERMISSIONS: Readonly<Record<UserRole, readonly Permission[]>> = Object.freeze({
   // 管理员:全部权限
   admin: ALL_PERMISSIONS,
   // 所有者:等同 admin(个人租户场景)
   owner: ALL_PERMISSIONS,
-  // 教师:租户内分析只读 + 自删 + 邀请 + 租户统计
+  // 教师:租户内分析只读 + 自删 + 邀请 + 租户统计 + 订阅只读 + Phase 5 预留读类权限
   teacher: Object.freeze<Permission[]>([
     'analysis:create',
     'analysis:read:own',
@@ -124,8 +226,21 @@ export const ROLE_PERMISSIONS: Readonly<Record<UserRole, readonly Permission[]>>
     'artwork:read',
     'stats:read',
     'stats:read:tenant',
+    'subscription:read',
+    // Phase 5 预留接口读类权限
+    'knowledge:read',
+    'modules:read',
+    'ui:config:read',
+    'config:features:read',
+    // Phase 5 新功能权限:教师可读写预设/评审/争议
+    'preset:read',
+    'preset:write',
+    'review:read',
+    'review:write',
+    'dispute:read',
+    'dispute:resolve',
   ]),
-  // 学生:仅自己的资源 + 个人统计
+  // 学生:仅自己的资源 + 个人统计 + 订阅只读 + Phase 5 预留读类权限
   student: Object.freeze<Permission[]>([
     'analysis:create',
     'analysis:read:own',
@@ -135,6 +250,16 @@ export const ROLE_PERMISSIONS: Readonly<Record<UserRole, readonly Permission[]>>
     'tenant:switch',
     'artwork:read',
     'stats:read',
+    'subscription:read',
+    // Phase 5 预留接口读类权限
+    'knowledge:read',
+    'modules:read',
+    'ui:config:read',
+    'config:features:read',
+    // Phase 5 新功能权限:学生可读预设/评审/争议(不可写)
+    'preset:read',
+    'review:read',
+    'dispute:read',
   ]),
 });
 
@@ -201,3 +326,29 @@ export function canReadTenantWide(role: UserRole): boolean {
 export function canDeleteTenantWide(role: UserRole): boolean {
   return role === 'admin' || role === 'owner';
 }
+
+/**
+ * 判断角色是否为管理后台管理员(仅 admin / owner)
+ * 用于 /api/admin/* 路由的入口校验
+ */
+export function isAdminRole(role: UserRole): boolean {
+  return role === 'admin' || role === 'owner';
+}
+
+/**
+ * 管理后台权限分组(便于按模块快速校验)
+ * 用于 requireAdminPermission 中间件
+ */
+export const ADMIN_PERMISSION_GROUPS = {
+  user: ['admin:user:read', 'admin:user:write', 'admin:user:export'] as const,
+  role: ['admin:role:read', 'admin:role:write'] as const,
+  artwork: ['admin:artwork:read', 'admin:artwork:write'] as const,
+  template: ['admin:template:read', 'admin:template:write'] as const,
+  subscription: ['admin:subscription:read', 'admin:subscription:write'] as const,
+  plan: ['admin:plan:read', 'admin:plan:write'] as const,
+  stats: ['admin:stats:read'] as const,
+  tenant: ['admin:tenant:read', 'admin:tenant:write'] as const,
+  audit: ['admin:audit:read'] as const,
+  apikey: ['admin:apikey:read', 'admin:apikey:write'] as const,
+  system: ['admin:system:health'] as const,
+} as const;

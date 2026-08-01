@@ -36,6 +36,15 @@ const typeConfig: Record<ToastType, { icon: LucideIcon; bg: string; iconColor: s
   info: { icon: Info, bg: 'bg-rice-50', iconColor: 'text-stone', border: 'border-stone/30' },
 };
 
+/* ====== 各类型默认展示时长(ms) ======
+ * success/info 短停留(轻提示);warning 中等;error 需充分阅读,最长 */
+const defaultDurations: Record<ToastType, number> = {
+  success: 2000,
+  info: 2000,
+  warning: 3000,
+  error: 4000,
+};
+
 /* ====== Provider ====== */
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
@@ -47,7 +56,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const toast = useCallback(
     (t: Omit<ToastItem, 'id' | 'duration'> & { duration?: number }) => {
       const id = `toast-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-      const duration = t.duration ?? 3500;
+      const duration = t.duration ?? defaultDurations[t.type];
       const item: ToastItem = { ...t, id, duration };
       setToasts((list) => [...list, item]);
       if (duration > 0) {

@@ -1,13 +1,14 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   Settings, User, Bell, Palette, Database, Cloud, Shield, Keyboard,
-  Check, Loader2, type LucideIcon,
+  Check, Loader2, type LucideIcon, Server, Wifi, WifiOff, Loader,
 } from 'lucide-react';
 import {
   getSettings, saveSettings, clearAnalysisHistory, getAnalysisHistory,
   type UserSettings,
 } from '../services/data-service';
 import { useToast } from '../components/ToastProvider';
+import { SkeletonBox } from '../components/PageSkeleton';
 
 type Section = {
   id: string;
@@ -22,9 +23,34 @@ const sections: Section[] = [
   { id: 'notifications', label: '通知', icon: Bell, desc: '提醒方式与频率' },
   { id: 'storage', label: '存储', icon: Database, desc: '本地缓存与历史记录' },
   { id: 'cloud', label: '云端同步', icon: Cloud, desc: '云端分析与数据同步' },
+  { id: 'backend', label: '后端设置', icon: Server, desc: '后端开关、地址、健康检查' },
   { id: 'shortcuts', label: '快捷键', icon: Keyboard, desc: '查看与自定义快捷键' },
   { id: 'privacy', label: '隐私', icon: Shield, desc: '数据权限与安全' },
 ];
+
+/* localStorage 键名 —— 与全局 data-service 配置保持一致 */
+const LS_USE_API_KEY = 'danqing-ai-use-api';
+const LS_BACKEND_URL_KEY = 'danqing-ai-backend-url';
+const DEFAULT_BACKEND_URL = 'http://localhost:3000';
+
+/* 健康检查状态：idle(未检查) / checking / ok / fail */
+type HealthStatus = 'idle' | 'checking' | 'ok' | 'fail';
+
+/* 读取 localStorage 中后端配置，提供安全默认值 */
+function readUseApi(): boolean {
+  try {
+    return localStorage.getItem(LS_USE_API_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+function readBackendUrl(): string {
+  try {
+    return localStorage.getItem(LS_BACKEND_URL_KEY) || DEFAULT_BACKEND_URL;
+  } catch {
+    return DEFAULT_BACKEND_URL;
+  }
+}
 
 const DEFAULT_SETTINGS: UserSettings = {
   theme: 'rice',
@@ -41,6 +67,11 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [historyCount, setHistoryCount] = useState(0);
+
+  /* 后端配置：从 localStorage 初始化，状态变更时自动持久化 */
+  const [useApi, setUseApi] = useState<boolean>(readUseApi);
+  const [backendUrl, setBackendUrl] = useState<string>(readBackendUrl);
+  const [healthStatus, setHealthStatus] = useState<HealthStatus>('idle');
 
   /* 初次加载:从 dataService 读取设置 + 历史条数 */
   useEffect(() => {
@@ -96,6 +127,82 @@ export default function SettingsPage() {
     }
   };
 
+  /* ===== 后端配置处理 ===== */
+
+  /* 切换"启用后端 API"开关：立即写入 localStorage 并提示 */
+  const handleToggleUseApi = (next: boolean) => {
+    setUseApi(next);
+    try {
+      localStorage.setItem(LS_USE_API_KEY, String(next));
+    } catch (err) {
+      console.error('保存后端开关失败:', err);
+    }
+    toast.success(
+      next ? '已启用后端 API' : '已切换为本地模式',
+      next ? '数据将通过后端服务读取' : '数据将从 LocalStorage 读取'
+    );
+  };
+
+  /* 后端地址变更：失焦时保存到 localStorage */
+  const handleBackendUrlBlur = () => {
+    const trimmed = backendUrl.trim();
+    if (!trimmed) {
+      setBackendUrl(DEFAULT_BACKEND_URL);
+      try { localStorage.setItem(LS_BACKEND_URL_KEY, DEFAULT_BACKEND_URL); } catch { /* ignore */ }
+      toast.info('已恢复默认后端地址', DEFAULT_BACKEND_URL);
+      return;
+    }
+    try {
+      localStorage.setItem(LS_BACKEND_URL_KEY, trimmed);
+    } catch (err) {
+      console.error('保存后端地址失败:', err);
+      toast.error('保存失败', '请稍后重试');
+      return;
+    }
+    // 地址变更后，重置健康检查状态
+    setHealthStatus('idle');
+    toast.success('后端地址已保存', trimmed);
+  };
+
+  /* 健康检查：调用 /health 接口，带 5s 超时 */
+  const handleHealthCheck = async () => {
+    const url = backendUrl.trim();
+    if (!url) {
+      toast.error('请先填写后端地址', '');
+      return;
+    }
+    setHealthStatus('checking');
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 5000);
+      const res = await fetch(`${url.replace(/\/$/, '')}/health`, {
+        method: 'GET',
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+      if (res.ok) {
+        setHealthStatus('ok');
+        toast.success('连接成功', `后端服务正常 (${res.status})`);
+      } else {
+        setHealthStatus('fail');
+        toast.error('连接失败', `HTTP ${res.status}`);
+      }
+    } catch (err) {
+      setHealthStatus('fail');
+      const msg = err instanceof Error ? (err.name === 'AbortError' ? '请求超时' : err.message) : '未知错误';
+      toast.error('连接失败', msg);
+    }
+  };
+
+  /* 自动保存：监听 useApi / backendUrl 变化，确保刷新后配置不丢失。
+     注：useApi 在 handleToggleUseApi 中已写入，此处只作兜底同步，避免重复提示。 */
+  useEffect(() => {
+    try { localStorage.setItem(LS_USE_API_KEY, String(useApi)); } catch { /* ignore */ }
+  }, [useApi]);
+  useEffect(() => {
+    try { localStorage.setItem(LS_BACKEND_URL_KEY, backendUrl); } catch { /* ignore */ }
+  }, [backendUrl]);
+
   /* 局部 setter：每个设置项变更时立即更新本地状态 + 异步落库到 dataService */
   const setTheme = (t: UserSettings['theme']) => updateSettings({ theme: t });
   const setDensity = (d: UserSettings['density']) => updateSettings({ density: d });
@@ -111,9 +218,30 @@ export default function SettingsPage() {
 
   if (loading) {
     return (
-      <div className="h-full flex items-center justify-center text-ink-400">
-        <Loader2 className="w-6 h-6 animate-spin mr-2" />
-        <span className="text-sm">加载设置中...</span>
+      <div className="h-full flex bg-rice-200" role="status" aria-live="polite" aria-label="加载设置中">
+        {/* 左：导航骨架 */}
+        <aside className="w-60 flex-shrink-0 border-r border-ink-900/8 bg-rice-100/50 p-4">
+          <SkeletonBox className="h-6 w-24 mb-2" />
+          <SkeletonBox className="h-3 w-20 mb-6" />
+          <div className="space-y-2">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <SkeletonBox key={i} className="h-9 w-full" />
+            ))}
+          </div>
+        </aside>
+        {/* 右：表单内容骨架 */}
+        <div className="flex-1 p-8 overflow-y-auto scrollbar-thin">
+          <div className="max-w-2xl mx-auto space-y-6">
+            <SkeletonBox className="h-8 w-1/3" />
+            <div className="bg-rice-50 border border-ink-900/6 rounded-md p-6 space-y-4">
+              <SkeletonBox className="h-4 w-1/4" />
+              <SkeletonBox className="h-10 w-full" />
+              <SkeletonBox className="h-4 w-1/4" />
+              <SkeletonBox className="h-10 w-full" />
+              <SkeletonBox className="h-10 w-32" />
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
@@ -325,6 +453,104 @@ export default function SettingsPage() {
                 value={cloudSync.multiDevice}
                 onChange={(v) => setCloudSync((c) => ({ ...c, multiDevice: v }))}
               />
+            </SectionBlock>
+          )}
+
+          {active === 'backend' && (
+            <SectionBlock title="后端设置" desc="配置后端 API 连接，切换数据来源">
+              {/* 后端开关 */}
+              <Toggle
+                label="启用后端 API"
+                desc="开启后数据通过后端服务读取，关闭则使用 LocalStorage"
+                value={useApi}
+                onChange={handleToggleUseApi}
+              />
+
+              {/* 后端地址输入 */}
+              <Field label="后端地址">
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={backendUrl}
+                    onChange={(e) => setBackendUrl(e.target.value)}
+                    onBlur={handleBackendUrlBlur}
+                    placeholder={DEFAULT_BACKEND_URL}
+                    className="flex-1 h-9 px-3 bg-rice-50 border border-ink-900/10 rounded-md text-sm focus:border-cinnabar focus-ring transition-all font-mono"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleHealthCheck}
+                    disabled={healthStatus === 'checking'}
+                    className="px-3 h-9 text-sm bg-ink-900 hover:bg-ink-800 text-rice-100 rounded-md transition-colors flex items-center gap-1.5 disabled:opacity-60 disabled:cursor-not-allowed flex-shrink-0"
+                  >
+                    {healthStatus === 'checking' ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        检查中
+                      </>
+                    ) : (
+                      <>
+                        <Wifi className="w-3.5 h-3.5" />
+                        测试连接
+                      </>
+                    )}
+                  </button>
+                </div>
+                <p className="text-2xs text-ink-400 mt-1.5">
+                  修改后失焦自动保存。默认 {DEFAULT_BACKEND_URL}
+                </p>
+              </Field>
+
+              {/* 连接状态指示器 */}
+              <div className="p-3 bg-rice-100 rounded-md">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-ink-900">连接状态</span>
+                    {healthStatus === 'idle' && (
+                      <span className="inline-flex items-center gap-1 text-xs text-ink-400">
+                        <span className="w-1.5 h-1.5 bg-ink-300 rounded-full" />
+                        未检查
+                      </span>
+                    )}
+                    {healthStatus === 'checking' && (
+                      <span className="inline-flex items-center gap-1 text-xs text-ink-500">
+                        <Loader className="w-3 h-3 animate-spin" />
+                        检查中...
+                      </span>
+                    )}
+                    {healthStatus === 'ok' && (
+                      <span className="inline-flex items-center gap-1 text-xs text-jade">
+                        <Wifi className="w-3 h-3" />
+                        已连接
+                      </span>
+                    )}
+                    {healthStatus === 'fail' && (
+                      <span className="inline-flex items-center gap-1 text-xs text-cinnabar">
+                        <WifiOff className="w-3 h-3" />
+                        连接失败
+                      </span>
+                    )}
+                  </div>
+                  {/* 状态色块：直观反映连接状态 */}
+                  <span
+                    className={`w-2 h-2 rounded-full ${
+                      healthStatus === 'ok'
+                        ? 'bg-jade'
+                        : healthStatus === 'fail'
+                        ? 'bg-cinnabar'
+                        : healthStatus === 'checking'
+                        ? 'bg-ink-400 animate-pulse'
+                        : 'bg-ink-300'
+                    }`}
+                    aria-hidden="true"
+                  />
+                </div>
+                {healthStatus === 'fail' && (
+                  <p className="text-2xs text-ink-500 mt-2 leading-relaxed">
+                    请确认后端服务已启动，地址正确，且 CORS 已允许当前域名访问。
+                  </p>
+                )}
+              </div>
             </SectionBlock>
           )}
 

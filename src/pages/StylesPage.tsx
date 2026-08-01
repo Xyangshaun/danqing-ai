@@ -1,6 +1,9 @@
 import { useState } from 'react';
 import { ArrowRight, X, ExternalLink, Heart, Globe, BookMarked, Brush, PenTool, Box, Layers, Loader2, ImageOff } from 'lucide-react';
-import { artworksDatabase, styleCategories, type ArtworkItem } from '../services/artworksDatabase';
+import { styleCategories, type ArtworkItem } from '../services/artworksDatabase';
+import { getBuiltinArtworkItems } from '../services/materialService';
+import { SkeletonBox, SkeletonStyle } from '../components/PageSkeleton';
+import { useToast } from '../components/ToastProvider';
 
 const styleConfigs = {
   painting: {
@@ -30,11 +33,14 @@ const styleConfigs = {
 };
 
 export default function StylesPage() {
+  const toast = useToast();
   const [selectedCategory, setSelectedCategory] = useState<keyof typeof styleCategories | null>(null);
   const [selectedStyle, setSelectedStyle] = useState<string | null>(null);
   const [selectedArtwork, setSelectedArtwork] = useState<ArtworkItem | null>(null);
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
   const [imageLoadStates, setImageLoadStates] = useState<Record<string, 'loading' | 'loaded' | 'error'>>({});
+  /* 分类封面图加载状态：独立管理，避免与作品图状态冲突 */
+  const [coverLoadStates, setCoverLoadStates] = useState<Record<string, 'loading' | 'loaded' | 'error'>>({});
 
   const handleImageLoad = (id: string) => {
     setImageLoadStates((prev) => ({ ...prev, [id]: 'loaded' }));
@@ -44,18 +50,28 @@ export default function StylesPage() {
     setImageLoadStates((prev) => ({ ...prev, [id]: 'error' }));
   };
 
-  // 根据风格获取作品
-  const getArtworksByStyle = (style: string): ArtworkItem[] => {
-    return artworksDatabase.filter((a) => a.style === style);
+  const handleCoverLoad = (key: string) => {
+    setCoverLoadStates((prev) => ({ ...prev, [key]: 'loaded' }));
+  };
+  const handleCoverError = (key: string) => {
+    setCoverLoadStates((prev) => ({ ...prev, [key]: 'error' }));
   };
 
-  const toggleFavorite = (id: string) => {
+  // 根据风格获取作品
+  const getArtworksByStyle = (style: string): ArtworkItem[] => {
+    return getBuiltinArtworkItems().filter((a) => a.style === style);
+  };
+
+  /* 收藏切换：补全操作反馈，避免"无响应"体验 */
+  const toggleFavorite = (id: string, title?: string) => {
     setFavorites((prev) => {
       const next = new Set(prev);
       if (next.has(id)) {
         next.delete(id);
+        toast.info('已取消收藏', title ?? '');
       } else {
         next.add(id);
+        toast.success('已收藏', title ?? '作品已加入收藏夹');
       }
       return next;
     });
@@ -63,6 +79,7 @@ export default function StylesPage() {
 
   return (
     <div className="min-h-screen bg-rice-200 ink-texture pt-20 pb-20">
+      <SkeletonStyle />
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Header */}
         <div className="text-center mb-12">
@@ -74,7 +91,7 @@ export default function StylesPage() {
             艺术风格 · 分类索引
           </h1>
           <p className="text-ink-600 max-w-2xl mx-auto">
-            收录{artworksDatabase.length}+件海内外艺术作品，覆盖四大创作类型、{Object.values(styleCategories).flatMap(c => c.styles).length}+种风格流派
+            收录{getBuiltinArtworkItems().length}+件海内外艺术作品，覆盖四大创作类型、{Object.values(styleCategories).flatMap(c => c.styles).length}+种风格流派
           </p>
         </div>
 
@@ -84,7 +101,7 @@ export default function StylesPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
               {Object.entries(styleConfigs).map(([key, config]) => {
                 const Icon = config.icon;
-                const count = artworksDatabase.filter(a => a.category === key).length;
+                const count = getBuiltinArtworkItems().filter(a => a.category === key).length;
                 const styleCount = styleCategories[key as keyof typeof styleCategories].styles.length;
                 
                 return (
@@ -93,12 +110,27 @@ export default function StylesPage() {
                     className="bg-rice-50 rounded-2xl overflow-hidden shadow-card hover:shadow-card-hover transition-all group cursor-pointer"
                     onClick={() => setSelectedCategory(key as keyof typeof styleCategories)}
                   >
-                    <div className="aspect-[16/9] relative overflow-hidden">
-                      <img
-                        src={config.coverImage}
-                        alt={config.name}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                      />
+                    <div className="aspect-[16/9] relative overflow-hidden bg-ink-100">
+                      {/* 封面图加载骨架：避免大图加载时空白闪动 */}
+                      {coverLoadStates[key] !== 'loaded' && coverLoadStates[key] !== 'error' && (
+                        <SkeletonBox className="absolute inset-0 z-10" />
+                      )}
+                      {coverLoadStates[key] === 'error' ? (
+                        <div className="absolute inset-0 flex flex-col items-center justify-center bg-rice-100">
+                          <ImageOff className="w-8 h-8 text-ink-300 mb-1" />
+                          <p className="text-xs text-ink-400">封面加载失败</p>
+                        </div>
+                      ) : (
+                        <img
+                          src={config.coverImage}
+                          alt={config.name}
+                          className={`w-full h-full object-cover group-hover:scale-105 transition-all duration-500 ${
+                            coverLoadStates[key] === 'loaded' ? 'opacity-100' : 'opacity-0'
+                          }`}
+                          onLoad={() => handleCoverLoad(key)}
+                          onError={() => handleCoverError(key)}
+                        />
+                      )}
                       <div className="absolute inset-0 bg-gradient-to-t from-ink-900/70 via-ink-900/20 to-transparent" />
                       <div className="absolute bottom-0 left-0 right-0 p-6">
                         <div className="flex items-center gap-3 mb-2">
@@ -131,7 +163,7 @@ export default function StylesPage() {
                 {Object.entries(styleCategories).map(([key, cat]) => {
                   const config = styleConfigs[key as keyof typeof styleConfigs];
                   const Icon = config.icon;
-                  const count = artworksDatabase.filter(a => a.category === key).length;
+                  const count = getBuiltinArtworkItems().filter(a => a.category === key).length;
                   return (
                     <div
                       key={key}
@@ -157,7 +189,7 @@ export default function StylesPage() {
               <div className="flex flex-wrap gap-3">
                 {Object.entries(styleCategories).flatMap(([key, cat]) =>
                   cat.styles.map((style) => {
-                    const count = artworksDatabase.filter(a => a.style === style).length;
+                    const count = getBuiltinArtworkItems().filter(a => a.style === style).length;
                     return (
                       <button
                         key={`${key}-${style}`}
@@ -220,7 +252,7 @@ export default function StylesPage() {
                     全部
                   </button>
                   {styleCategories[selectedCategory].styles.map((style) => {
-                    const count = artworksDatabase.filter(a => a.category === selectedCategory && a.style === style).length;
+                    const count = getBuiltinArtworkItems().filter(a => a.category === selectedCategory && a.style === style).length;
                     if (count === 0) return null;
                     return (
                       <button
@@ -244,8 +276,8 @@ export default function StylesPage() {
                   <div className="bg-rice-50 rounded-lg p-3">
                     <p className="text-2xl font-bold text-ink-900">
                       {selectedStyle
-                        ? artworksDatabase.filter(a => a.style === selectedStyle).length
-                        : artworksDatabase.filter(a => a.category === selectedCategory).length}
+                        ? getBuiltinArtworkItems().filter(a => a.style === selectedStyle).length
+                        : getBuiltinArtworkItems().filter(a => a.category === selectedCategory).length}
                     </p>
                     <p className="text-xs text-ink-500">件作品</p>
                   </div>
@@ -269,7 +301,7 @@ export default function StylesPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {(selectedStyle
                 ? getArtworksByStyle(selectedStyle)
-                : artworksDatabase.filter(a => a.category === selectedCategory)
+                : getBuiltinArtworkItems().filter(a => a.category === selectedCategory)
               ).map((artwork) => (
                 <div
                   key={artwork.id}
@@ -278,9 +310,7 @@ export default function StylesPage() {
                 >
                   <div className="aspect-[4/3] overflow-hidden relative bg-ink-100">
                     {imageLoadStates[artwork.id] === 'loading' && (
-                      <div className="absolute inset-0 flex items-center justify-center bg-ink-100 z-10">
-                        <Loader2 className="w-8 h-8 text-ink-300 animate-spin" />
-                      </div>
+                      <SkeletonBox className="absolute inset-0 z-10" />
                     )}
                     {imageLoadStates[artwork.id] === 'error' ? (
                       <div className="absolute inset-0 flex flex-col items-center justify-center bg-rice-100">
@@ -317,7 +347,7 @@ export default function StylesPage() {
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          toggleFavorite(artwork.id);
+                          toggleFavorite(artwork.id, artwork.title);
                         }}
                         className="p-1.5 rounded-full hover:bg-rice-100 transition-all"
                       >
@@ -451,7 +481,7 @@ export default function StylesPage() {
 
                 <div className="flex gap-3">
                   <button
-                    onClick={() => toggleFavorite(selectedArtwork.id)}
+                    onClick={() => toggleFavorite(selectedArtwork.id, selectedArtwork.title)}
                     className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg transition-all ${
                       favorites.has(selectedArtwork.id)
                         ? 'bg-cinnabar text-white'

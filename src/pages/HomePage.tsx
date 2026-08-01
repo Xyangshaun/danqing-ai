@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import {
   Eye, BookOpen, Wand2, Heart, Sparkles, TrendingUp, TrendingDown, ArrowRight,
   Plus, Clock, Award, Zap, Brush, PenTool, Box, Layers, RefreshCw, type LucideIcon,
-  Quote, ChevronRight, Star, Target, AlertCircle,
+  Quote, ChevronRight, Star, Target, AlertCircle, ChevronLeft,
 } from 'lucide-react';
 import { getAnalysisHistory, getGrowthData } from '../services/data-service';
 import type { HistoryRecord, GrowthData } from '../types';
@@ -41,6 +41,8 @@ export default function HomePage() {
   const [history, setHistory] = useState<HistoryRecord[]>([]);
   const [growthData, setGrowthData] = useState<GrowthData[]>([]);
   const navigate = useNavigate();
+  /* 名言索引：初始为今日名言，用户可通过左右按钮切换 */
+  const [quoteIndex, setQuoteIndex] = useState(() => new Date().getDate() % artQuotes.length);
 
   // 异步并行加载历史和成长数据：通过 data-service 自动选择数据源
   useEffect(() => {
@@ -62,11 +64,10 @@ export default function HomePage() {
     return () => { cancelled = true; };
   }, []);
 
-  /* 每日名言（按日期取） */
-  const todayQuote = useMemo(() => {
-    const day = new Date().getDate();
-    return artQuotes[day % artQuotes.length];
-  }, []);
+  /* 每日名言（按日期取初始值，用户可手动切换） */
+  const todayQuote = useMemo(() => artQuotes[quoteIndex] ?? artQuotes[0], [quoteIndex]);
+  const handlePrevQuote = () => setQuoteIndex((i) => (i - 1 + artQuotes.length) % artQuotes.length);
+  const handleNextQuote = () => setQuoteIndex((i) => (i + 1) % artQuotes.length);
 
   /* 统计数据 */
   const stats = useMemo(() => {
@@ -362,7 +363,7 @@ export default function HomePage() {
 
           {/* 右：侧栏（每日名言 + 待办 + 创作类型） */}
           <div className="space-y-4">
-            {/* 每日名言 */}
+            {/* 每日名言（可切换） */}
             <div className="relative overflow-hidden bg-gradient-to-br from-ink-900 to-ink-800 rounded-lg p-5 shadow-card">
               <div className="absolute -top-8 -right-8 w-32 h-32 bg-cinnabar/10 rounded-full blur-2xl" />
               <div className="absolute -bottom-8 -left-8 w-32 h-32 bg-stone/10 rounded-full blur-2xl" />
@@ -370,8 +371,34 @@ export default function HomePage() {
                 <div className="flex items-center gap-2 mb-3">
                   <Quote className="w-4 h-4 text-cinnabar-light" />
                   <span className="text-2xs text-rice-300 uppercase tracking-wider">每日艺语</span>
+                  {/* 切换按钮 + 计数 */}
+                  <div className="ml-auto flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={handlePrevQuote}
+                      aria-label="上一条名言"
+                      className="w-6 h-6 flex items-center justify-center rounded text-rice-300 hover:text-rice-100 hover:bg-rice-100/10 transition-colors"
+                    >
+                      <ChevronLeft className="w-3.5 h-3.5" />
+                    </button>
+                    <span className="text-2xs text-rice-400 font-mono tabular-nums">
+                      {quoteIndex + 1}/{artQuotes.length}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleNextQuote}
+                      aria-label="下一条名言"
+                      className="w-6 h-6 flex items-center justify-center rounded text-rice-300 hover:text-rice-100 hover:bg-rice-100/10 transition-colors"
+                    >
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
-                <p className="font-serif text-lg text-rice-100 leading-relaxed mb-3">
+                {/* 用 key 触发淡入动画，切换名言时有过渡 */}
+                <p
+                  key={quoteIndex}
+                  className="font-serif text-lg text-rice-100 leading-relaxed mb-3 animate-fade-in"
+                >
                   {todayQuote.text}
                 </p>
                 <p className="text-xs text-rice-400">—— {todayQuote.author}</p>

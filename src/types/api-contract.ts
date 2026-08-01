@@ -42,6 +42,20 @@ export interface PaginationQuery {
   pageSize?: number;  // 默认 20,最大 100
 }
 
+/** 预设风格 */
+export type PresetStyle = 'academic' | 'artist' | 'academy' | 'applied' | 'custom';
+
+/** 预设适用阶段 */
+export type PresetStage = 'basic' | 'foundation' | 'advanced' | 'creative';
+
+/** 评分维度项(预设内一项) */
+export interface PresetDimension {
+  key: string;
+  label: string;
+  labelEn: string;
+  weight: number;
+}
+
 /** 客户端标识 */
 export type ClientType = 'web' | 'admin' | 'mobile' | 'marketing';
 
@@ -464,4 +478,52 @@ export interface AnalysisResult {
   originality: OriginalityDimension;
   /** 综合评分(0-100) */
   overallScore: number;
+}
+
+// ============ 3.7 评分预设相关类型(Phase 5, 从后端同步) ============
+
+/** GET /presets 响应项(精简) */
+export interface EvaluationPresetSummary {
+  id: string;
+  name: string;
+  description: string | null;
+  styleType: PresetStyle;
+  artType: ArtType;
+  applicableStage: PresetStage;
+  isBuiltIn: boolean;
+  isPrivate: boolean;
+  forkedFromId: string | null;
+  creatorId: string | null;
+  enabled: boolean;
+  sortOrder: number;
+}
+
+/** GET /presets/:id 响应(完整) */
+export interface EvaluationPresetDetail extends EvaluationPresetSummary {
+  dimensions: PresetDimension[];
+  rationale: string | null;
+  createdAt: ISODateString;
+  updatedAt: ISODateString;
+}
+
+/** POST /presets/apply 请求体 */
+export interface ApplyPresetRequest {
+  analysisId: string;
+  presetId: string;
+}
+
+/** POST /presets/apply 响应 */
+export interface ApplyPresetResponse {
+  /** 按预设权重重算后的加权总分 */
+  weightedScore: number;
+  /** 各维度加权明细 */
+  weightedDimensions: {
+    key: string;
+    label: string;
+    originalScore: number;
+    weight: number;
+    weightedContribution: number;
+  }[];
+  /** 使用的预设信息 */
+  appliedPreset: EvaluationPresetSummary;
 }

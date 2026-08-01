@@ -428,3 +428,29 @@ export function del<T>(
 export function isAuthenticated(): boolean {
   return hasAccessToken();
 }
+
+/* ============================================================
+ * Preset API(Phase 5 评分预设)
+ * ============================================================ */
+
+import type {
+  EvaluationPresetSummary,
+  EvaluationPresetDetail,
+  ApplyPresetRequest,
+  ApplyPresetResponse,
+} from '../types/api-contract';
+
+/** GET /presets - 列出当前用户可见的评分预设 */
+export function getPresets(): Promise<EvaluationPresetSummary[]> {
+  return get<EvaluationPresetSummary[]>('/presets');
+}
+
+/** GET /presets/:id - 获取预设详情(含维度权重) */
+export function getPreset(id: string): Promise<EvaluationPresetDetail> {
+  return get<EvaluationPresetDetail>(`/presets/${id}`);
+}
+
+/** POST /presets/apply - 对已有分析结果应用预设权重重新计算 */
+export function applyPreset(body: ApplyPresetRequest): Promise<ApplyPresetResponse> {
+  return post<ApplyPresetResponse>('/presets/apply', body);
+}

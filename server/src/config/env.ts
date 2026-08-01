@@ -69,6 +69,8 @@ export interface EnvConfig {
   // AI 视觉分析(Phase 2 追加,全部可选带默认值,保证向后兼容)
   /** AI 功能总开关(默认 false,生产环境手动开启) */
   aiEnabled: boolean;
+  /** AI 服务提供商选择(glm=智谱GLM / trae=TRAE,默认 glm,向后兼容) */
+  aiProvider: 'glm' | 'trae';
   /** 智谱 API Key(留空时 AI_ENABLED=true 也会自动 fallback) */
   aiApiKey: string;
   /** 智谱 GLM-4V API 端点(OpenAI 兼容格式) */
@@ -77,6 +79,24 @@ export interface EnvConfig {
   aiApiTimeout: number;
   /** AI 模型名(glm-4v-flash 免费 / glm-4v-plus 付费高精度) */
   aiApiModel: string;
+
+  // TRAE AI 服务配置(Phase B1 追加,均可选带默认值,不配置时自动降级到 GLM)
+  /** TRAE API Key(留空且 aiProvider='trae' 时自动降级到 GLM) */
+  traeApiKey: string;
+  /** TRAE API 端点(OpenAI 兼容格式,预留) */
+  traeApiUrl: string;
+  /** TRAE 模型名 */
+  traeApiModel: string;
+
+  // 开发模式(Phase 2 追加)
+  /** 开发模式跳过认证(true 时 auth 中间件注入 dev 用户,仅 NODE_ENV=development 生效) */
+  devSkipAuth: boolean;
+
+  // Phase 5 短信网关(手机 OTP)
+  /** 短信服务商:mock(默认,日志输出)/ aliyun / tencent */
+  smsProvider: 'mock' | 'aliyun' | 'tencent';
+  /** 手机号正则校验(默认中国大陆 /^1[3-9]\d{9}$/) */
+  phoneRegex: string;
 }
 
 function parseBoolean(value: string | undefined, defaultValue: boolean): boolean {
@@ -133,6 +153,14 @@ function parseTenantType(value: string | undefined): 'school' | 'college' | 'cla
   return v;
 }
 
+function parseAiProvider(value: string | undefined): 'glm' | 'trae' {
+  const v = (value ?? 'glm').toLowerCase();
+  if (v !== 'glm' && v !== 'trae') {
+    throw new Error(`AI_PROVIDER must be one of glm|trae, got "${value}"`);
+  }
+  return v;
+}
+
 /**
  * 校验必填环境变量非空
  * @throws Error 缺失必填项时抛错(启动自检失败)
@@ -184,26 +212,58 @@ function assertRsaPublicKey(pem: string): void {
 /**
  * 加载并校验环境变量,返回强类型配置对象
  * 在 src/index.ts 启动入口调用,任何错误都会让进程退出
+ *
+ * 开发模式特殊处理:
+ *   - NODE_ENV=development 时,FEISHU_APP_ID/FEISHU_APP_SECRET 可为空,
+ *     自动填充占位值(OAuth 端点调用会失败,但服务器可启动)
+ *   - DEV_SKIP_AUTH=true 且 NODE_ENV=development 时,auth 中间件跳过 JWT 校验,
+ *     注入开发测试用户,方便前端 skipLogin 模式联调
  */
 export function loadEnv(): EnvConfig {
   const env = process.env;
+  const nodeEnv = parseNodeEnv(env.NODE_ENV);
+  const isDev = nodeEnv === 'development';
+  const isTest = nodeEnv === 'test';
+  const devSkipAuth = isDev && parseBoolean(env.DEV_SKIP_AUTH, false);
 
   // 必填项校验(对应 auth-design.md §4.7 自检清单)
-  const requiredKeys = [
-    'FEISHU_APP_ID',
-    'FEISHU_APP_SECRET',
-    'FEISHU_REDIRECT_URI_WEB',
-    'JWT_PRIVATE_KEY',
-    'JWT_PUBLIC_KEY',
-    'JWT_KEY_ID',
-    'DATABASE_URL',
-    'REDIS_URL',
-    'CORS_ORIGINS',
-  ] as const;
+  // 开发/测试模式下 JWT 密钥和飞书密钥可为空,后续自动填充占位值/临时密钥
+  // 生产环境必须全部存在,assertRequired 会抛错拒绝启动
+  const baseRequired = ['FEISHU_REDIRECT_URI_WEB', 'DATABASE_URL', 'REDIS_URL', 'CORS_ORIGINS'] as const;
+  const prodRequired = ['FEISHU_APP_ID', 'FEISHU_APP_SECRET', 'JWT_PRIVATE_KEY', 'JWT_PUBLIC_KEY', 'JWT_KEY_ID'] as const;
+  const requiredKeys: readonly string[] = (isDev || isTest) ? baseRequired : [...baseRequired, ...prodRequired];
   assertRequired(env, requiredKeys);
 
-  const jwtPrivateKey = env.JWT_PRIVATE_KEY as string;
-  const jwtPublicKey = env.JWT_PUBLIC_KEY as string;
+  // 开发/测试模式:为空的飞书配置填充占位值(生产环境已由 assertRequired 保证非空)
+  let feishuAppId: string = env.FEISHU_APP_ID || '';
+  let feishuAppSecret: string = env.FEISHU_APP_SECRET || '';
+  if (isDev || isTest) {
+    if (!feishuAppId) feishuAppId = 'dev-cli-placeholder';
+    if (!feishuAppSecret) feishuAppSecret = 'dev-secret-placeholder';
+  }
+
+  // JWT 密钥:开发/测试模式下若缺失则自动生成临时 RSA 密钥对
+  let jwtPrivateKey: string = env.JWT_PRIVATE_KEY || '';
+  let jwtPublicKey: string = env.JWT_PUBLIC_KEY || '';
+  let jwtKeyId: string = env.JWT_KEY_ID || '';
+  if ((isDev || isTest) && (!jwtPrivateKey || !jwtPublicKey)) {
+    // 动态生成临时 RSA 密钥对(仅开发/测试使用,每次重启重新生成)
+    const { privateKey, publicKey } = crypto.generateKeyPairSync('rsa', {
+      modulusLength: 2048,
+      publicKeyEncoding: { type: 'spki', format: 'pem' },
+      privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+    });
+    jwtPrivateKey = privateKey;
+    jwtPublicKey = publicKey;
+    if (!jwtKeyId) {
+      jwtKeyId = 'dev-kid-' + Date.now().toString(36);
+    }
+    // eslint-disable-next-line no-console
+    console.warn('[env] DEV MODE: JWT keys not provided, generated ephemeral RSA key pair');
+  }
+  // 生产环境:assertRequired 已保证 JWT 密钥存在,此处仅做类型兜底
+  // 开发环境:已通过上面的 if 块自动生成,不会走到这里为空
+
   // 启动自检:私钥/公钥必须为 RSA 类型
   assertRsaPrivateKey(jwtPrivateKey);
   assertRsaPublicKey(jwtPublicKey);
@@ -220,19 +280,26 @@ export function loadEnv(): EnvConfig {
     throw new Error('[env] CORS_ORIGINS must not contain "*" (security constraint)');
   }
 
+  // G7 安全修复:生产环境强制 COOKIE_SECURE=true
+  // 防止配置遗漏导致 refresh_token Cookie 在 HTTP 下传输被中间人窃取
+  // (refresh_token 是长效凭据,泄露后果严重;对应 auth-design.md §0 C2 安全原则)
+  if (nodeEnv === 'production' && !parseBoolean(env.COOKIE_SECURE, false)) {
+    throw new Error('[env] COOKIE_SECURE must be true in production');
+  }
+
   return {
-    feishuAppId: env.FEISHU_APP_ID as string,
-    feishuAppSecret: env.FEISHU_APP_SECRET as string,
-    feishuRedirectUriWeb: env.FEISHU_REDIRECT_URI_WEB as string,
-    feishuRedirectUriAdmin: env.FEISHU_REDIRECT_URI_ADMIN ?? env.FEISHU_REDIRECT_URI_WEB as string,
-    feishuRedirectUriMobile: env.FEISHU_REDIRECT_URI_MOBILE ?? env.FEISHU_REDIRECT_URI_WEB as string,
-    feishuAuthzEndpoint: env.FEISHU_AUTHZ_ENDPOINT ?? 'https://open.feishu.cn/open-apis/authen/v1/authorize',
-    feishuTokenEndpoint: env.FEISHU_TOKEN_ENDPOINT ?? 'https://open.feishu.cn/open-apis/authen/v1/oidc/access_token',
-    feishuUserinfoEndpoint: env.FEISHU_USERINFO_ENDPOINT ?? 'https://open.feishu.cn/open-apis/authen/v1/user_info',
+    feishuAppId,
+    feishuAppSecret,
+    feishuRedirectUriWeb: env.FEISHU_REDIRECT_URI_WEB!,
+    feishuRedirectUriAdmin: env.FEISHU_REDIRECT_URI_ADMIN || env.FEISHU_REDIRECT_URI_WEB!,
+    feishuRedirectUriMobile: env.FEISHU_REDIRECT_URI_MOBILE || env.FEISHU_REDIRECT_URI_WEB!,
+    feishuAuthzEndpoint: env.FEISHU_AUTHZ_ENDPOINT || 'https://open.feishu.cn/open-apis/authen/v1/authorize',
+    feishuTokenEndpoint: env.FEISHU_TOKEN_ENDPOINT || 'https://open.feishu.cn/open-apis/authen/v1/oidc/access_token',
+    feishuUserinfoEndpoint: env.FEISHU_USERINFO_ENDPOINT || 'https://open.feishu.cn/open-apis/authen/v1/user_info',
 
     jwtPrivateKey,
     jwtPublicKey,
-    jwtKeyId: env.JWT_KEY_ID as string,
+    jwtKeyId,
     jwtIssuer: env.JWT_ISSUER ?? 'danqing-ai-auth',
     jwtAudienceWeb: env.JWT_AUDIENCE_WEB ?? 'danqing-ai-web',
     jwtAudienceAdmin: env.JWT_AUDIENCE_ADMIN ?? 'danqing-ai-admin',
@@ -261,7 +328,7 @@ export function loadEnv(): EnvConfig {
 
     enableHsts: parseBoolean(env.ENABLE_HSTS, false),
     logLevel: parseLogLevel(env.LOG_LEVEL),
-    nodeEnv: parseNodeEnv(env.NODE_ENV),
+    nodeEnv,
     port: parseInteger(env.PORT, 3000),
 
     uploadDir: env.UPLOAD_DIR ?? 'uploads',
@@ -269,11 +336,35 @@ export function loadEnv(): EnvConfig {
 
     // AI 视觉分析(Phase 2,全部带默认值,缺失不报错)
     aiEnabled: parseBoolean(env.AI_ENABLED, false),
+    aiProvider: parseAiProvider(env.AI_PROVIDER),
     aiApiKey: env.AI_API_KEY ?? '',
     aiApiUrl: env.AI_API_URL ?? 'https://open.bigmodel.cn/api/paas/v4/chat/completions',
     aiApiTimeout: parseInteger(env.AI_API_TIMEOUT, 2500),
     aiApiModel: env.AI_API_MODEL ?? 'glm-4v-flash',
+
+    // TRAE AI 配置(Phase B1,均可选带默认值,留空时服务层自动降级到 GLM)
+    traeApiKey: env.TRAE_API_KEY ?? '',
+    traeApiUrl: env.TRAE_API_URL ?? '',
+    traeApiModel: env.TRAE_API_MODEL ?? '',
+
+    // 开发模式
+    devSkipAuth,
+
+    // Phase 5 短信网关
+    smsProvider: parseSmsProvider(env.SMS_PROVIDER),
+    phoneRegex: env.PHONE_REGEX ?? '^1[3-9]\\d{9}$',
   };
+}
+
+/**
+ * 解析短信服务商枚举(Phase 5)
+ */
+function parseSmsProvider(value: string | undefined): 'mock' | 'aliyun' | 'tencent' {
+  const v = (value ?? 'mock').toLowerCase();
+  if (v !== 'mock' && v !== 'aliyun' && v !== 'tencent') {
+    throw new Error(`SMS_PROVIDER must be one of mock|aliyun|tencent, got "${value}"`);
+  }
+  return v;
 }
 
 /**
@@ -292,11 +383,16 @@ export function initEnv(): EnvConfig {
 
 /**
  * 获取 env 单例
- * @throws Error 未初始化时抛错(防止误用)
+ *
+ * 设计演进(Gx 修复):
+ *   - 显式 initEnv() 仍是首选(测试/生产入口均调用)
+ *   - 自动初始化兜底:ESM 模块加载顺序可能导致某些路由文件在 initEnv() 前
+ *     调用 env();此时自动执行 loadEnv() 避免启动崩溃
+ *   - 不影响测试:setup.ts 已显式 initEnv(),自动初始化不会触发
  */
 export function env(): EnvConfig {
   if (!envInstance) {
-    throw new Error('[env] not initialized. Call initEnv() at startup first.');
+    envInstance = loadEnv();
   }
   return envInstance;
 }

@@ -32,6 +32,7 @@ import type {
   AIVisionRequest,
   AIInvocationMeta,
   AIFailureReason,
+  JimpMetricsForPrompt,
 } from '../types/ai-analysis.js';
 import { createDisabledAIMeta } from '../types/ai-analysis.js';
 import { analyzeImage, generateFallbackAnalysis } from './analysis-engine.service.js';
@@ -41,6 +42,7 @@ import {
   extractJimpMetricsFromResult,
   type AIVisionCallResult,
 } from './ai-vision.service.js';
+import { createFallbackAIVisionResult } from './template-suggestions.service.js';
 import { env } from '../config/env.js';
 import { logger } from '../utils/logger.js';
 
@@ -81,14 +83,16 @@ export async function runHybridAnalysis(
   const cfg = env();
   const model = cfg.aiApiModel;
 
-  // 第一道防线:AI 功能未启用 → 仅 Jimp 分析
+  // 第一道防线:AI 功能未启用 → Jimp + 模板降级建议
   if (!isAIEnabled()) {
     logger.debug(
       { aiEnabled: cfg.aiEnabled, hasKey: cfg.aiApiKey.length > 0 },
-      '[ai-analysis] AI disabled, running Jimp-only',
+      '[ai-analysis] AI disabled, running Jimp with template suggestions',
     );
     const jimpResult = await safeJimpAnalyze(req.imageSource, req.artType);
-    return wrapAsHybridResult(jimpResult, createDisabledAIMeta(model));
+    const jimpMetrics = extractJimpMetricsFromResult(jimpResult);
+    const fallbackVision = createFallbackAIVisionResult(jimpMetrics, req.artType);
+    return wrapAsHybridResultWithFallback(jimpResult, createDisabledAIMeta(model), fallbackVision);
   }
 
   // 第二步:Jimp 像素分析(始终执行,作为客观指标来源 + fallback 兜底)
@@ -110,7 +114,7 @@ export async function runHybridAnalysis(
   const aiCallResult = await analyzeWithAI(aiReq);
 
   // 第五步:合并结果
-  const merged = mergeResults(jimpResult, aiCallResult, req.artType, model, jimpDurationMs);
+  const merged = mergeResults(jimpResult, aiCallResult, req.artType, model, jimpDurationMs, jimpMetrics);
 
   logger.info(
     {
@@ -165,15 +169,20 @@ async function safeJimpAnalyze(
  *
  * 策略矩阵:
  *   Jimp 成功 + AI 成功 → 合并增强(应用 score_adjustments)
- *   Jimp 成功 + AI 失败 → 仅 Jimp(aiEnhanced=false)
+ *   Jimp 成功 + AI 失败 → Jimp + 模板降级建议(aiEnhanced=false,aiVisionResult 含模板建议)
  *   Jimp 失败 + AI 成功 → Jimp fallback 兜底 + AI 语义增强(不应用 score_adjustments)
- *   Jimp 失败 + AI 失败 → Jimp fallback 兜底(aiEnhanced=false)
+ *   Jimp 失败 + AI 失败 → Jimp fallback 兜底 + 模板降级建议(aiEnhanced=false)
+ *
+ * Phase B5 更新:AI 失败时不再返回 aiVisionResult=null,
+ *   而是通过 createFallbackAIVisionResult 生成基于指标阈值的模板建议,
+ *   确保用户始终能看到有用的建议内容
  *
  * @param jimpResult Jimp 分析结果(可能为 fallback)
  * @param aiCallResult AI 调用结果
  * @param artType 作品类型
  * @param model AI 模型名
  * @param jimpDurationMs Jimp 耗时(用于日志)
+ * @param jimpMetrics Jimp 提取的客观指标(用于生成模板降级建议)
  */
 function mergeResults(
   jimpResult: AnalysisResult,
@@ -181,6 +190,7 @@ function mergeResults(
   artType: ArtType,
   model: string,
   jimpDurationMs: number,
+  jimpMetrics: JimpMetricsForPrompt,
 ): HybridAnalysisResult {
   // 构造 AI 元信息
   const aiMeta: AIInvocationMeta = {
@@ -192,9 +202,18 @@ function mergeResults(
     aiTokenUsage: aiCallResult.tokenUsage,
   };
 
-  // 情况 1:AI 失败 → 仅 Jimp,不合并
+  // 情况 1:AI 失败 → Jimp + 模板降级建议(Phase B5:不再返回 aiVisionResult=null)
   if (!aiCallResult.success || !aiCallResult.result) {
-    return wrapAsHybridResult(jimpResult, aiMeta);
+    logger.debug(
+      {
+        artType,
+        aiFailureReason: aiCallResult.failureReason,
+        aiDurationMs: aiCallResult.durationMs,
+      },
+      '[ai-analysis] AI call failed, using template suggestions as fallback',
+    );
+    const fallbackVision = createFallbackAIVisionResult(jimpMetrics, artType);
+    return wrapAsHybridResultWithFallback(jimpResult, aiMeta, fallbackVision);
   }
 
   // 情况 2:AI 成功 → 合并增强,应用 score_adjustments
@@ -219,6 +238,11 @@ function mergeResults(
     aiEnhanced: true,
     aiVisionResult: aiVision,
     aiMeta,
+    // AI 字段提升到顶层(前端期望从 result.professionalSuggestions 直接访问)
+    professionalSuggestions: aiVision.professionalSuggestions,
+    semanticTheme: aiVision.semanticTheme,
+    styleRecognition: aiVision.styleRecognition,
+    referenceArtworks: aiVision.referenceArtworks,
   };
 }
 
@@ -417,22 +441,33 @@ function applySculptureAdjustments(
 }
 
 // ============================================================
-// 6. 工具:包装为 HybridAnalysisResult(AI 失败/禁用场景)
+// 6. 工具:包装为 HybridAnalysisResult(AI 失败/禁用场景,含模板降级建议)
 // ============================================================
 
 /**
- * 将 AnalysisResult 包装为 HybridAnalysisResult
- * 用于 AI 失败/禁用场景,aiEnhanced=false,aiVisionResult=null
+ * 将 AnalysisResult 包装为 HybridAnalysisResult(含模板降级建议)
+ * Phase B5:AI 失败/禁用时,aiEnhanced=false 但 aiVisionResult 含模板建议,
+ * 确保前端始终能渲染 professionalSuggestions
+ *
+ * @param result Jimp 分析结果
+ * @param aiMeta AI 调用元信息(aiSuccess=false)
+ * @param fallbackVision 模板降级生成的 AIVisionResult(含模板建议)
  */
-function wrapAsHybridResult(
+function wrapAsHybridResultWithFallback(
   result: AnalysisResult,
   aiMeta: AIInvocationMeta,
+  fallbackVision: AIVisionResult,
 ): HybridAnalysisResult {
   return {
     ...result,
     aiEnhanced: false,
-    aiVisionResult: null,
+    aiVisionResult: fallbackVision,
     aiMeta,
+    // 降级建议同样提升到顶层(确保前端始终能从 result.professionalSuggestions 获取)
+    professionalSuggestions: fallbackVision.professionalSuggestions,
+    semanticTheme: fallbackVision.semanticTheme,
+    styleRecognition: fallbackVision.styleRecognition,
+    referenceArtworks: fallbackVision.referenceArtworks,
   };
 }
 

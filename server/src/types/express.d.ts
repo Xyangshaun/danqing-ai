@@ -5,6 +5,7 @@
 // ============================================================
 
 import type { ClientType, UserRole } from './api-contract.js';
+import type { AuthType } from './arbitration.js';
 
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
@@ -20,6 +21,8 @@ declare global {
       role?: UserRole;
       /** 飞书 open_id,仅作审计关联,不作信任依据 */
       feishuOpenId?: string;
+      /** Phase 5:认证方式(feishu/phone/invitation/password),旧 token 缺省为 'feishu' */
+      authType?: AuthType;
       /** JWT jti,用于 access_token 撤销查询 */
       jti?: string;
       /** 客户端类型(web/admin/mobile/marketing) */

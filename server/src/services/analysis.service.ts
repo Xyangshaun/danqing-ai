@@ -40,8 +40,11 @@ import { canReadTenantWide, canDeleteTenantWide } from '../config/permissions.js
 import { analyzeImage } from './analysis-engine.service.js';
 import { runHybridAnalysis } from './ai-analysis.service.js';
 import { isAIEnabled } from './ai-vision.service.js';
+import { analysisCacheService } from './analysis-cache.service.js';
 import { logger } from '../utils/logger.js';
+import { env } from '../config/env.js';
 import type { Analysis, Tenant } from '@prisma/client';
+import type { HybridAnalysisResult } from '../types/ai-analysis.js';
 
 /**
  * 订阅计划对应配额上限
@@ -83,7 +86,9 @@ class AnalysisServiceClass {
 
   /**
    * 提交分析任务(文件上传模式)
-   * 流程与 createAnalysis 一致,但使用本地文件路径,分析完成后自动清理临时文件
+   * 流程与 createAnalysis 一致,文件存储策略由 UPLOAD_DIR 配置决定:
+   *   - 绝对路径(如 /lhcos-data/uploads,COS挂载):文件持久化保留,URL为 /uploads/xxx
+   *   - 相对路径(如 uploads,本地目录):分析完成后自动清理临时文件
    */
   async createAnalysisFromUpload(params: {
     tenantId: string;
@@ -95,13 +100,15 @@ class AnalysisServiceClass {
     remark?: string;
   }): Promise<CreateAnalysisResponse> {
     const { tenantId, userId, artType, localImagePath, originalFileName, title, remark } = params;
+    // 生成可通过 Nginx 访问的 URL 路径(/uploads/文件名),持久化保存到 DB
+    const publicUrl = `/uploads/${basename(localImagePath)}`;
     return this.runAnalysis({
       tenantId,
       userId,
       body: {
         artType,
-        // 上传模式无外部 URL,使用本地路径占位标识(由 runAnalysis 识别 localImagePath 优先)
-        imageUrl: `upload://${originalFileName ?? basename(localImagePath)}`,
+        // 上传到COS挂载目录的文件持久化存储,使用公开访问URL
+        imageUrl: publicUrl,
         title,
         remark,
       },
@@ -196,6 +203,14 @@ class AnalysisServiceClass {
       throw new BusinessError(ErrorCode.ANALYSIS_NOT_FOUND, '分析记录不存在', 404);
     }
 
+    // Phase F1:从持久化的 HybridAnalysisResult 中提取可观测性元信息
+    // 注:cacheHit/jimpDurationMs 未持久化,历史记录不返回;aiEnhanced/aiDurationMs 从 result 中提取
+    const storedResult = analysis.result as
+      | (AnalysisDetail['result'] & { aiEnhanced?: boolean; aiMeta?: { aiDurationMs?: number } })
+      | null;
+    const storedAiEnhanced = storedResult?.aiEnhanced;
+    const storedAiDurationMs = storedResult?.aiMeta?.aiDurationMs;
+
     return {
       id: analysis.id,
       tenantId: analysis.tenantId,
@@ -210,6 +225,8 @@ class AnalysisServiceClass {
       durationMs: analysis.durationMs,
       createdAt: analysis.createdAt.toISOString(),
       completedAt: analysis.completedAt?.toISOString() ?? null,
+      aiEnhanced: storedAiEnhanced,
+      aiDurationMs: storedAiDurationMs,
     };
   }
 
@@ -293,7 +310,7 @@ class AnalysisServiceClass {
    * 7. 返回 CreateAnalysisResponse(包含完整 result)
    */
   private async runAnalysis(params: CreateAnalysisInput): Promise<CreateAnalysisResponse> {
-    const { tenantId, userId, body, localImagePath, originalFileName } = params;
+    const { tenantId, userId, body, localImagePath } = params;
 
     // 1. 校验租户配额(抛 6001 / 3001 / 3002)
     await this.checkQuota(tenantId);
@@ -323,7 +340,10 @@ class AnalysisServiceClass {
 
     // 3. 决定分析输入源:本地文件路径优先,否则用 imageUrl
     const analysisSource = hasLocal && localImagePath ? localImagePath : body.imageUrl!;
-    const imageUrlForDb = body.imageUrl ?? `upload://${originalFileName ?? 'unknown'}`;
+    // body.imageUrl 已由调用方处理:
+    //   - JSON模式:直接使用用户提供的外部URL
+    //   - 上传模式:createAnalysisFromUpload 已生成 /uploads/xxx 公开访问路径
+    const imageUrlForDb = body.imageUrl!;
 
     // 4. 写 DB(pending)
     const analysis = await analysisRepository.create({
@@ -337,38 +357,83 @@ class AnalysisServiceClass {
 
     // 5. 调用分析引擎(同步模式,3 秒 SLA)
     // AI_ENABLED=true 时走混合分析(Jimp + AI),否则走 Jimp-only(现有逻辑)
+    // Phase 3 优化:优先检查 Redis 缓存(相同图片+类型 → 缓存命中 < 50ms)
+    // Phase F1:捕获 jimpDurationMs/aiDurationMs 用于可观测性透传
     const startMs = Date.now();
     let result: AnalysisResult;
     let analysisStatus: 'success' | 'failed' = 'success';
     let failureReason: string | null = null;
     let aiEnhanced = false;
+    let cacheHit = false;
+    let jimpDurationMs: number | undefined;
+    let aiDurationMs: number | undefined;
 
     try {
-      if (isAIEnabled()) {
-        // 混合分析:Jimp(~500ms)+ AI(~2s),总耗时 ~2.5s < 3s SLA
-        // AI 失败时内部自动 fallback 到 Jimp,保证可用性
-        const hybridResult = await runHybridAnalysis({
-          imageSource: analysisSource,
-          artType: body.artType,
-          title: body.title,
-          remark: body.remark,
-        });
-        result = hybridResult;
-        aiEnhanced = hybridResult.aiEnhanced;
-        if (!hybridResult.aiEnhanced && hybridResult.aiMeta.aiFailureReason) {
-          // AI 调用失败但 Jimp 兜底成功,记录警告日志(不影响响应)
+      // 缓存优化:通过图片 hash 查找缓存结果
+      // 缓存命中时跳过 Jimp+AI 分析,直接返回历史结果(节省配额与时间)
+      const isLocal = hasLocal && !!localImagePath;
+      const cacheResult = await analysisCacheService.getOrAnalyze(
+        analysisSource,
+        body.artType,
+        isLocal,
+        async () => {
+          if (env().aiEnabled) {
+            // 混合分析:Jimp(~500ms)+ AI(~2s),总耗时 ~2.5s < 3s SLA
+            // AI 未配置/失败时 runHybridAnalysis 内部自动 fallback 到 Jimp+模板建议,保证 professionalSuggestions 始终存在
+            const hybridStartMs = Date.now();
+            const hybridResult = await runHybridAnalysis({
+              imageSource: analysisSource,
+              artType: body.artType,
+              title: body.title,
+              remark: body.remark,
+            });
+            // 从 HybridAnalysisResult.aiMeta 提取 AI 耗时
+            // jimpDurationMs 近似为 (混合分析总耗时 - AI 耗时),包含 Jimp + 合并开销
+            aiDurationMs = hybridResult.aiMeta.aiDurationMs;
+            jimpDurationMs = Math.max(0, (Date.now() - hybridStartMs) - aiDurationMs);
+            return {
+              result: hybridResult,
+              aiEnhanced: hybridResult.aiEnhanced,
+            };
+          }
+          // Jimp-only 模式(现有逻辑,~500ms)
+          const jimpStartMs = Date.now();
+          const jimpResult = await analyzeImage(analysisSource, body.artType);
+          jimpDurationMs = Date.now() - jimpStartMs;
+          aiDurationMs = 0;
+          return { result: jimpResult, aiEnhanced: false };
+        },
+      );
+
+      result = cacheResult.result;
+      aiEnhanced = cacheResult.aiEnhanced;
+      cacheHit = cacheResult.cacheHit;
+
+      // 缓存命中时无实际计算,耗时归零(可观测性标识)
+      if (cacheHit) {
+        jimpDurationMs = 0;
+        aiDurationMs = 0;
+      }
+
+      if (cacheHit) {
+        logger.info(
+          { analysisId: analysis.id, artType: body.artType, aiEnhanced },
+          '[analysis] cache HIT, skipped analysis',
+        );
+      } else if (isAIEnabled() && aiEnhanced === false) {
+        // AI 启用但未增强(AI 失败 fallback 到 Jimp),记录警告
+        // 注意:cacheResult.result 此时为 HybridAnalysisResult,需安全访问 aiMeta
+        const hybrid = cacheResult.result as HybridAnalysisResult;
+        if (hybrid.aiMeta?.aiFailureReason) {
           logger.warn(
             {
               analysisId: analysis.id,
-              aiFailureReason: hybridResult.aiMeta.aiFailureReason,
-              aiDurationMs: hybridResult.aiMeta.aiDurationMs,
+              aiFailureReason: hybrid.aiMeta.aiFailureReason,
+              aiDurationMs: hybrid.aiMeta.aiDurationMs,
             },
             '[analysis] AI enhancement failed, fallback to Jimp-only',
           );
         }
-      } else {
-        // Jimp-only 模式(现有逻辑,~500ms)
-        result = await analyzeImage(analysisSource, body.artType);
       }
     } catch (err) {
       // 兜底:runHybridAnalysis/analyzeImage 内部已捕获异常并返回 fallback,
@@ -412,12 +477,20 @@ class AnalysisServiceClass {
       // 不抛错:结果已计算,返回给前端;DB 状态留 pending,后台任务可补偿
     }
 
-    // 7. 清理临时文件(上传模式)
+    // 7. 清理临时文件(仅当上传目录为非持久化本地目录时删除)
+    // COS 挂载路径(如 /lhcos-data/uploads)是持久化存储,文件需要保留供前端访问
+    // 判断依据:uploadDir 为绝对路径(以 / 开头) → 持久化存储,不删除
     if (hasLocal && localImagePath) {
-      this.safeCleanup(localImagePath).catch((err) => {
-        const msg = err instanceof Error ? err.message : String(err);
-        logger.warn({ err: msg, path: localImagePath }, '[analysis] cleanup temp file failed');
-      });
+      const uploadDirConfig = env().uploadDir;
+      const isPersistentStorage = uploadDirConfig.startsWith('/');
+      if (!isPersistentStorage) {
+        this.safeCleanup(localImagePath).catch((err) => {
+          const msg = err instanceof Error ? err.message : String(err);
+          logger.warn({ err: msg, path: localImagePath }, '[analysis] cleanup temp file failed');
+        });
+      } else {
+        logger.debug({ path: localImagePath }, '[analysis] file in persistent storage (COS mounted), kept');
+      }
     }
 
     logger.info(
@@ -438,6 +511,7 @@ class AnalysisServiceClass {
     // 8. 返回完整结果(同步模式)
     // 注:CreateAnalysisResponse.result 类型为 AnalysisDetail | null,
     // 但同步模式下我们返回完整 AnalysisDetail 以便前端立即渲染
+    // Phase F1:透传 aiEnhanced/cacheHit/jimpDurationMs/aiDurationMs 可观测性元信息
     const detail: AnalysisDetail = {
       id: analysis.id,
       tenantId: analysis.tenantId,
@@ -452,6 +526,10 @@ class AnalysisServiceClass {
       durationMs,
       createdAt: analysis.createdAt.toISOString(),
       completedAt: new Date().toISOString(),
+      aiEnhanced,
+      cacheHit,
+      jimpDurationMs,
+      aiDurationMs,
     };
 
     return {

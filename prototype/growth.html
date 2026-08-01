@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="丹青有AI 成长曲线 - 追踪五维能力成长">
+  <title>成长曲线 | Danqing AI 丹青有AI</title>
+  <link rel="stylesheet" href="styles/main.css">
+  <link rel="stylesheet" href="styles/console.css">
+</head>
+<body>
+  <!-- 加载动画 -->
+  <div class="loader">
+    <div class="loader-content">
+      <div class="loader-ink"></div>
+      <p style="font-family: var(--font-serif); color: var(--ink-400); font-size: 0.875rem;">丹青有AI</p>
+    </div>
+  </div>
+
+  <div class="console-layout">
+    <!-- 侧边栏 -->
+    <aside class="console-sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <a href="index.html" class="sidebar-logo">
+          <span class="logo-mark">DQ</span>
+          <span class="sidebar-logo-text">
+            <span class="sidebar-logo-en">Danqing AI</span>
+            <span class="sidebar-logo-cn">丹青有AI</span>
+          </span>
+        </a>
+      </div>
+
+      <nav class="sidebar-nav">
+        <div class="sidebar-section">
+          <div class="sidebar-section-title">诊断</div>
+          <a href="console.html" class="sidebar-link" data-view="dashboard">
+            <svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="3" width="7" height="7"></rect>
+              <rect x="14" y="3" width="7" height="7"></rect>
+              <rect x="14" y="14" width="7" height="7"></rect>
+              <rect x="3" y="14" width="7" height="7"></rect>
+            </svg>
+            工作台
+          </a>
+          <a href="diagnose.html" class="sidebar-link" data-view="diagnose">
+            <svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="17 8 12 3 7 8"></polyline>
+              <line x1="12" y1="3" x2="12" y2="15"></line>
+            </svg>
+            新建诊断
+          </a>
+          <a href="report.html" class="sidebar-link" data-view="report">
+            <svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+              <polyline points="14 2 14 8 20 8"></polyline>
+              <line x1="16" y1="13" x2="8" y2="13"></line>
+              <line x1="16" y1="17" x2="8" y2="17"></line>
+            </svg>
+            诊断报告
+          </a>
+        </div>
+
+        <div class="sidebar-section">
+          <div class="sidebar-section-title">成长</div>
+          <a href="history.html" class="sidebar-link" data-view="history">
+            <svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <polyline points="12 6 12 12 16 14"></polyline>
+            </svg>
+            历史记录
+          </a>
+          <a href="growth.html" class="sidebar-link active" data-view="growth">
+            <svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+            </svg>
+            成长曲线
+          </a>
+        </div>
+
+        <div class="sidebar-section">
+          <div class="sidebar-section-title">教学</div>
+          <a href="console.html#classes" class="sidebar-link" data-view="classes">
+            <svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+              <circle cx="9" cy="7" r="4"></circle>
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+              <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+            </svg>
+            班级管理
+          </a>
+        </div>
+
+        <div class="sidebar-section">
+          <div class="sidebar-section-title">系统</div>
+          <a href="console.html#settings" class="sidebar-link" data-view="settings">
+            <svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06-.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+            </svg>
+            设置
+          </a>
+        </div>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="user-card">
+          <div class="user-avatar">林</div>
+          <div class="user-info">
+            <div class="user-name">林小雅</div>
+            <div class="user-role">学生 · 视觉传达</div>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- 移动端遮罩 -->
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+    <!-- 主内容 -->
+    <div class="console-main">
+      <header class="console-header">
+        <div class="header-left">
+          <button class="sidebar-toggle" id="sidebarToggle" aria-label="切换侧边栏">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="3" y1="12" x2="21" y2="12"></line>
+              <line x1="3" y1="6" x2="21" y2="6"></line>
+              <line x1="3" y1="18" x2="21" y2="18"></line>
+            </svg>
+          </button>
+          <h1 class="page-title">成长曲线</h1>
+        </div>
+        <div class="header-right">
+          <button class="header-action" aria-label="通知">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+              <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+            </svg>
+            <span class="header-badge"></span>
+          </button>
+        </div>
+      </header>
+
+      <main class="console-content">
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-header">
+              <span class="stat-label">综合平均分</span>
+              <span class="stat-icon gold">分</span>
+            </div>
+            <div class="stat-value">80.3</div>
+            <div class="stat-change up">较上月 +2.1</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-header">
+              <span class="stat-label">诊断次数</span>
+              <span class="stat-icon blue">次</span>
+            </div>
+            <div class="stat-value">24</div>
+            <div class="stat-change up">本月 +6</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-header">
+              <span class="stat-label">最大提升维度</span>
+              <span class="stat-icon green">升</span>
+            </div>
+            <div class="stat-value">构图</div>
+            <div class="stat-change up">+8 分</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-header">
+              <span class="stat-label">持续练习天数</span>
+              <span class="stat-icon red">天</span>
+            </div>
+            <div class="stat-value">12</div>
+            <div class="stat-change"> keep going</div>
+          </div>
+        </div>
+
+        <div class="growth-layout">
+          <div class="panel">
+            <div class="panel-header">
+              <h2 class="panel-title">五维能力成长趋势</h2>
+              <div style="display: flex; gap: var(--space-md); font-size: 0.875rem; color: var(--ink-500);">
+                <span style="display: flex; align-items: center; gap: var(--space-xs);"><span style="width: 12px; height: 3px; background: var(--cinnabar); border-radius: 2px;"></span>构图</span>
+                <span style="display: flex; align-items: center; gap: var(--space-xs);"><span style="width: 12px; height: 3px; background: var(--stone); border-radius: 2px;"></span>色彩</span>
+                <span style="display: flex; align-items: center; gap: var(--space-xs);"><span style="width: 12px; height: 3px; background: var(--gold); border-radius: 2px;"></span>造型</span>
+              </div>
+            </div>
+            <div class="panel-body">
+              <div class="growth-chart-container">
+                <svg viewBox="0 0 600 300" preserveAspectRatio="none">
+                  <!-- 网格 -->
+                  <g stroke="var(--ink-100)" stroke-width="1">
+                    <line x1="60" y1="20" x2="580" y2="20"/>
+                    <line x1="60" y1="90" x2="580" y2="90"/>
+                    <line x1="60" y1="160" x2="580" y2="160"/>
+                    <line x1="60" y1="230" x2="580" y2="230"/>
+                  </g>
+
+                  <!-- 坐标轴 -->
+                  <line x1="60" y1="20" x2="60" y2="250" stroke="var(--ink-300)" stroke-width="1.5"/>
+                  <line x1="60" y1="250" x2="580" y2="250" stroke="var(--ink-300)" stroke-width="1.5"/>
+
+                  <!-- 标签 -->
+                  <g font-size="11" fill="var(--ink-400)" text-anchor="middle">
+                    <text x="60" y="270">05-30</text>
+                    <text x="190" y="270">06-15</text>
+                    <text x="320" y="270">06-30</text>
+                    <text x="450" y="270">07-15</text>
+                    <text x="580" y="270">07-30</text>
+                  </g>
+                  <g font-size="11" fill="var(--ink-400)" text-anchor="end">
+                    <text x="50" y="25">100</text>
+                    <text x="50" y="95">75</text>
+                    <text x="50" y="165">50</text>
+                    <text x="50" y="235">25</text>
+                  </g>
+
+                  <!-- 构图线 -->
+                  <polyline fill="none" stroke="var(--cinnabar)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"
+                    points="60,180 190,150 320,120 450,90 580,70"/>
+
+                  <!-- 色彩线 -->
+                  <polyline fill="none" stroke="var(--stone)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"
+                    points="60,200 190,180 320,165 450,150 580,130"/>
+
+                  <!-- 造型线 -->
+                  <polyline fill="none" stroke="var(--gold)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"
+                    points="60,220 190,200 320,185 450,160 580,140"/>
+
+                  <!-- 数据点 -->
+                  <g>
+                    <circle cx="60" cy="180" r="5" fill="var(--cinnabar)"/>
+                    <circle cx="190" cy="150" r="5" fill="var(--cinnabar)"/>
+                    <circle cx="320" cy="120" r="5" fill="var(--cinnabar)"/>
+                    <circle cx="450" cy="90" r="5" fill="var(--cinnabar)"/>
+                    <circle cx="580" cy="70" r="5" fill="var(--cinnabar)"/>
+
+                    <circle cx="60" cy="200" r="5" fill="var(--stone)"/>
+                    <circle cx="190" cy="180" r="5" fill="var(--stone)"/>
+                    <circle cx="320" cy="165" r="5" fill="var(--stone)"/>
+                    <circle cx="450" cy="150" r="5" fill="var(--stone)"/>
+                    <circle cx="580" cy="130" r="5" fill="var(--stone)"/>
+
+                    <circle cx="60" cy="220" r="5" fill="var(--gold)"/>
+                    <circle cx="190" cy="200" r="5" fill="var(--gold)"/>
+                    <circle cx="320" cy="185" r="5" fill="var(--gold)"/>
+                    <circle cx="450" cy="160" r="5" fill="var(--gold)"/>
+                    <circle cx="580" cy="140" r="5" fill="var(--gold)"/>
+                  </g>
+                </svg>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-header">
+              <h2 class="panel-title">能力概览</h2>
+            </div>
+            <div class="panel-body">
+              <div style="display: flex; flex-direction: column; gap: var(--space-lg);">
+                <div>
+                  <div style="display: flex; justify-content: space-between; margin-bottom: var(--space-sm);">
+                    <span style="color: var(--ink-600);">构图</span>
+                    <span style="font-weight: 700;">85</span>
+                  </div>
+                  <div style="height: 6px; background: var(--ink-100); border-radius: 3px; overflow: hidden;">
+                    <div style="width: 85%; height: 100%; background: var(--cinnabar); border-radius: 3px;"></div>
+                  </div>
+                </div>
+                <div>
+                  <div style="display: flex; justify-content: space-between; margin-bottom: var(--space-sm);">
+                    <span style="color: var(--ink-600);">色彩</span>
+                    <span style="font-weight: 700;">78</span>
+                  </div>
+                  <div style="height: 6px; background: var(--ink-100); border-radius: 3px; overflow: hidden;">
+                    <div style="width: 78%; height: 100%; background: var(--stone); border-radius: 3px;"></div>
+                  </div>
+                </div>
+                <div>
+                  <div style="display: flex; justify-content: space-between; margin-bottom: var(--space-sm);">
+                    <span style="color: var(--ink-600);">造型</span>
+                    <span style="font-weight: 700;">80</span>
+                  </div>
+                  <div style="height: 6px; background: var(--ink-100); border-radius: 3px; overflow: hidden;">
+                    <div style="width: 80%; height: 100%; background: var(--gold); border-radius: 3px;"></div>
+                  </div>
+                </div>
+                <div>
+                  <div style="display: flex; justify-content: space-between; margin-bottom: var(--space-sm);">
+                    <span style="color: var(--ink-600);">技法</span>
+                    <span style="font-weight: 700;">83</span>
+                  </div>
+                  <div style="height: 6px; background: var(--ink-100); border-radius: 3px; overflow: hidden;">
+                    <div style="width: 83%; height: 100%; background: var(--jade); border-radius: 3px;"></div>
+                  </div>
+                </div>
+                <div>
+                  <div style="display: flex; justify-content: space-between; margin-bottom: var(--space-sm);">
+                    <span style="color: var(--ink-600);">创意</span>
+                    <span style="font-weight: 700;">75</span>
+                  </div>
+                  <div style="height: 6px; background: var(--ink-100); border-radius: 3px; overflow: hidden;">
+                    <div style="width: 75%; height: 100%; background: var(--ink-600); border-radius: 3px;"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <script src="scripts/main.js"></script>
+  <script>
+    (function() {
+      'use strict';
+      document.addEventListener('DOMContentLoaded', initSidebar);
+
+      function initSidebar() {
+        const toggle = document.getElementById('sidebarToggle');
+        const sidebar = document.getElementById('sidebar');
+        const overlay = document.getElementById('sidebarOverlay');
+        if (!toggle || !sidebar) return;
+
+        function open() {
+          sidebar.classList.add('open');
+          if (overlay) overlay.classList.add('active');
+          document.body.style.overflow = 'hidden';
+        }
+
+        function close() {
+          sidebar.classList.remove('open');
+          if (overlay) overlay.classList.remove('active');
+          document.body.style.overflow = '';
+        }
+
+        toggle.addEventListener('click', () => {
+          sidebar.classList.contains('open') ? close() : open();
+        });
+
+        if (overlay) overlay.addEventListener('click', close);
+
+        window.addEventListener('resize', () => {
+          if (window.innerWidth >= 1024) close();
+        });
+      }
+    })();
+  </script>
+</body>
+</html>

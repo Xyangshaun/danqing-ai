@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="丹青有AI 控制台 - AI 作业诊断工作区">
+  <title>控制台 | Danqing AI 丹青有AI</title>
+  <link rel="stylesheet" href="styles/main.css">
+  <link rel="stylesheet" href="styles/console.css">
+</head>
+<body>
+  <!-- 加载动画 -->
+  <div class="loader">
+    <div class="loader-content">
+      <div class="loader-ink"></div>
+      <p style="font-family: var(--font-serif); color: var(--ink-400); font-size: 0.875rem;">丹青有AI</p>
+    </div>
+  </div>
+
+  <div class="console-layout">
+    <!-- 侧边栏 -->
+    <aside class="console-sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <a href="index.html" class="sidebar-logo">
+          <span class="logo-mark">DQ</span>
+          <span class="sidebar-logo-text">
+            <span class="sidebar-logo-en">Danqing AI</span>
+            <span class="sidebar-logo-cn">丹青有AI</span>
+          </span>
+        </a>
+      </div>
+
+      <nav class="sidebar-nav">
+        <div class="sidebar-section">
+          <div class="sidebar-section-title">诊断</div>
+          <a href="console.html" class="sidebar-link active" data-view="dashboard">
+            <svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="3" width="7" height="7"></rect>
+              <rect x="14" y="3" width="7" height="7"></rect>
+              <rect x="14" y="14" width="7" height="7"></rect>
+              <rect x="3" y="14" width="7" height="7"></rect>
+            </svg>
+            工作台
+          </a>
+          <a href="diagnose.html" class="sidebar-link" data-view="diagnose">
+            <svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="17 8 12 3 7 8"></polyline>
+              <line x1="12" y1="3" x2="12" y2="15"></line>
+            </svg>
+            新建诊断
+          </a>
+          <a href="report.html" class="sidebar-link" data-view="report">
+            <svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+              <polyline points="14 2 14 8 20 8"></polyline>
+              <line x1="16" y1="13" x2="8" y2="13"></line>
+              <line x1="16" y1="17" x2="8" y2="17"></line>
+            </svg>
+            诊断报告
+          </a>
+        </div>
+
+        <div class="sidebar-section">
+          <div class="sidebar-section-title">成长</div>
+          <a href="history.html" class="sidebar-link" data-view="history">
+            <svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <polyline points="12 6 12 12 16 14"></polyline>
+            </svg>
+            历史记录
+          </a>
+          <a href="growth.html" class="sidebar-link" data-view="growth">
+            <svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+            </svg>
+            成长曲线
+          </a>
+        </div>
+
+        <div class="sidebar-section">
+          <div class="sidebar-section-title">教学</div>
+          <a class="sidebar-link" data-view="classes">
+            <svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+              <circle cx="9" cy="7" r="4"></circle>
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+              <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+            </svg>
+            班级管理
+          </a>
+        </div>
+
+        <div class="sidebar-section">
+          <div class="sidebar-section-title">系统</div>
+          <a class="sidebar-link" data-view="settings">
+            <svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+            </svg>
+            设置
+          </a>
+        </div>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="user-card">
+          <div class="user-avatar">林</div>
+          <div class="user-info">
+            <div class="user-name">林小雅</div>
+            <div class="user-role">学生 · 视觉传达</div>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- 移动端遮罩 -->
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+    <!-- 主内容 -->
+    <div class="console-main">
+      <header class="console-header">
+        <div class="header-left">
+          <button class="sidebar-toggle" id="sidebarToggle" aria-label="切换侧边栏">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="3" y1="12" x2="21" y2="12"></line>
+              <line x1="3" y1="6" x2="21" y2="6"></line>
+              <line x1="3" y1="18" x2="21" y2="18"></line>
+            </svg>
+          </button>
+          <h1 class="page-title" id="pageTitle">工作台</h1>
+        </div>
+        <div class="header-right">
+          <button class="header-action" aria-label="通知">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+              <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+            </svg>
+            <span class="header-badge"></span>
+          </button>
+          <button class="header-action" aria-label="帮助">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+              <line x1="12" y1="17" x2="12.01" y2="17"></line>
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <main class="console-content">
+        <!-- 工作台 -->
+        <section class="console-view active" id="view-dashboard" data-title="工作台">
+          <div class="stats-grid">
+            <div class="stat-card">
+              <div class="stat-header">
+                <span class="stat-label">总诊断次数</span>
+                <span class="stat-icon red">画</span>
+              </div>
+              <div class="stat-value">128</div>
+              <div class="stat-change up">↑ 12% 本月</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-header">
+                <span class="stat-label">平均评分</span>
+                <span class="stat-icon gold">分</span>
+              </div>
+              <div class="stat-value">78.5</div>
+              <div class="stat-change up">↑ 5.3 分</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-header">
+                <span class="stat-label">待改进作品</span>
+                <span class="stat-icon blue">改</span>
+              </div>
+              <div class="stat-value">6</div>
+              <div class="stat-change">需持续练习</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-header">
+                <span class="stat-label">连续创作</span>
+                <span class="stat-icon green">天</span>
+              </div>
+              <div class="stat-value">14</div>
+              <div class="stat-change up">保持创作节奏</div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-header">
+              <h2 class="panel-title">快速开始</h2>
+            </div>
+            <div class="panel-body">
+              <div class="quick-actions">
+                <button class="quick-action" onclick="location.href='diagnose.html?type=painting'">
+                  <span class="quick-action-icon">画</span>
+                  <span class="quick-action-label">绘画诊断</span>
+                </button>
+                <button class="quick-action" onclick="location.href='diagnose.html?type=design'">
+                  <span class="quick-action-icon">设</span>
+                  <span class="quick-action-label">设计诊断</span>
+                </button>
+                <button class="quick-action" onclick="location.href='diagnose.html?type=product'">
+                  <span class="quick-action-icon">产</span>
+                  <span class="quick-action-label">产品设计</span>
+                </button>
+                <button class="quick-action" onclick="location.href='diagnose.html?type=sculpture'">
+                  <span class="quick-action-icon">塑</span>
+                  <span class="quick-action-label">雕塑诊断</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-header">
+              <h2 class="panel-title">最近诊断</h2>
+              <a href="history.html" class="btn btn-ghost">查看全部</a>
+            </div>
+            <div class="panel-body">
+              <div class="history-list">
+                <article class="history-item">
+                  <div class="history-thumb">
+                    <img src="https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=A%20student%20charcoal%20drawing%20of%20human%20figure%2C%20Chinese%20art%20academy%20style%2C%20professional%20photography&image_size=square" alt="素描习作">
+                  </div>
+                  <div class="history-info">
+                    <h4>人物素描习作</h4>
+                    <p class="history-meta">绘画 · 2 小时前</p>
+                  </div>
+                  <div class="history-score">
+                    <div class="history-score-value">82</div>
+                    <div class="history-score-label">分</div>
+                  </div>
+                </article>
+                <article class="history-item">
+                  <div class="history-thumb">
+                    <img src="https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=A%20color%20poster%20design%20with%20Chinese%20typography%2C%20professional%20mockup&image_size=square" alt="海报设计">
+                  </div>
+                  <div class="history-info">
+                    <h4>品牌海报设计</h4>
+                    <p class="history-meta">设计 · 昨天</p>
+                  </div>
+                  <div class="history-score">
+                    <div class="history-score-value">76</div>
+                    <div class="history-score-label">分</div>
+                  </div>
+                </article>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 新建诊断 -->
+        <section class="console-view" id="view-diagnose" data-title="新建诊断">
+          <div class="panel">
+            <div class="panel-header">
+              <h2 class="panel-title">选择创作形式</h2>
+            </div>
+            <div class="panel-body">
+              <div class="form-type-grid">
+                <div class="form-type-option selected" data-type="painting">
+                  <span class="icon" style="background: rgba(196,30,58,0.1); color: var(--cinnabar);">画</span>
+                  <span style="font-weight: 600;">绘画</span>
+                </div>
+                <div class="form-type-option" data-type="design">
+                  <span class="icon" style="background: rgba(46,95,161,0.1); color: var(--stone);">设</span>
+                  <span style="font-weight: 600;">设计</span>
+                </div>
+                <div class="form-type-option" data-type="product">
+                  <span class="icon" style="background: rgba(212,175,55,0.1); color: var(--gold-dark);">产</span>
+                  <span style="font-weight: 600;">产品设计</span>
+                </div>
+                <div class="form-type-option" data-type="sculpture">
+                  <span class="icon" style="background: rgba(91,140,90,0.1); color: var(--jade);">塑</span>
+                  <span style="font-weight: 600;">雕塑</span>
+                </div>
+              </div>
+
+              <div class="upload-zone" id="uploadZone">
+                <div class="upload-icon">
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="17 8 12 3 7 8"></polyline>
+                    <line x1="12" y1="3" x2="12" y2="15"></line>
+                  </svg>
+                </div>
+                <h3 class="upload-title">拖拽作品到这里，或点击上传</h3>
+                <p class="upload-desc">支持 JPG、PNG、WEBP 格式，单张不超过 20MB</p>
+                <p class="upload-formats">建议使用高清原图以获得更精准诊断</p>
+              </div>
+
+              <div class="btn-group" style="margin-top: var(--space-xl); justify-content: center;">
+                <button class="btn btn-primary" onclick="startAnalysis()">开始诊断</button>
+                <button class="btn btn-secondary" onclick="switchView('dashboard')">取消</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel" id="analysisProgressPanel" style="display: none;">
+            <div class="panel-header">
+              <h2 class="panel-title">AI 分析中</h2>
+            </div>
+            <div class="panel-body">
+              <div class="analysis-progress">
+                <div class="progress-ring">
+                  <svg width="120" height="120" viewBox="0 0 120 120">
+                    <circle class="progress-ring-bg" cx="60" cy="60" r="54"></circle>
+                    <circle class="progress-ring-bar" id="progressBar" cx="60" cy="60" r="54"></circle>
+                  </svg>
+                  <div class="progress-text" id="progressText">0%</div>
+                </div>
+                <h3 id="progressStatus">正在上传作品...</h3>
+                <div class="progress-steps">
+                  <div class="progress-step-item active" id="step1">
+                    <span class="dot"></span>
+                    <span>上传</span>
+                  </div>
+                  <div class="progress-step-item" id="step2">
+                    <span class="dot"></span>
+                    <span>识别</span>
+                  </div>
+                  <div class="progress-step-item" id="step3">
+                    <span class="dot"></span>
+                    <span>分析</span>
+                  </div>
+                  <div class="progress-step-item" id="step4">
+                    <span class="dot"></span>
+                    <span>生成报告</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 诊断报告 -->
+        <section class="console-view" id="view-report" data-title="诊断报告">
+          <div class="report-header">
+            <div class="report-score-card">
+              <div class="report-score-value">82</div>
+              <div class="report-score-label">综合评分</div>
+            </div>
+            <div class="report-meta">
+              <span class="report-meta-item">
+                <strong>作品：</strong>人物素描习作
+              </span>
+              <span class="report-meta-item">
+                <strong>类型：</strong>绘画
+              </span>
+              <span class="report-meta-item">
+                <strong>时间：</strong>2026-07-30
+              </span>
+              <span class="report-meta-item">
+                <strong>耗时：</strong>2.4 秒
+              </span>
+            </div>
+          </div>
+
+          <div class="growth-layout">
+            <div class="panel">
+              <div class="panel-header">
+                <h2 class="panel-title">五维能力雷达</h2>
+              </div>
+              <div class="panel-body">
+                <div class="radar-chart">
+                  <svg viewBox="0 0 300 260">
+                    <g transform="translate(150, 130)">
+                      <!-- 网格 -->
+                      <polygon points="0,-100 95,-31 59,81 -59,81 -95,-31" fill="none" stroke="var(--ink-200)" stroke-width="1"/>
+                      <polygon points="0,-75 71,-23 44,61 -44,61 -71,-23" fill="none" stroke="var(--ink-200)" stroke-width="1"/>
+                      <polygon points="0,-50 48,-16 29,40 -29,40 -48,-16" fill="none" stroke="var(--ink-200)" stroke-width="1"/>
+                      <polygon points="0,-25 24,-8 15,20 -15,20 -24,-8" fill="none" stroke="var(--ink-200)" stroke-width="1"/>
+                      <!-- 轴线 -->
+                      <line x1="0" y1="0" x2="0" y2="-100" stroke="var(--ink-200)" stroke-width="1"/>
+                      <line x1="0" y1="0" x2="95" y2="-31" stroke="var(--ink-200)" stroke-width="1"/>
+                      <line x1="0" y1="0" x2="59" y2="81" stroke="var(--ink-200)" stroke-width="1"/>
+                      <line x1="0" y1="0" x2="-59" y2="81" stroke="var(--ink-200)" stroke-width="1"/>
+                      <line x1="0" y1="0" x2="-95" y2="-31" stroke="var(--ink-200)" stroke-width="1"/>
+                      <!-- 数据区域 -->
+                      <polygon points="0,-78 76,-23 42,61 -40,77 -72,-22" fill="rgba(196,30,58,0.15)" stroke="var(--cinnabar)" stroke-width="2"/>
+                      <!-- 标签 -->
+                      <text x="0" y="-115" text-anchor="middle" font-size="12" fill="var(--ink-600)">构图</text>
+                      <text x="115" y="-28" text-anchor="start" font-size="12" fill="var(--ink-600)">色彩</text>
+                      <text x="72" y="100" text-anchor="start" font-size="12" fill="var(--ink-600)">造型</text>
+                      <text x="-72" y="100" text-anchor="end" font-size="12" fill="var(--ink-600)">技法</text>
+                      <text x="-115" y="-28" text-anchor="end" font-size="12" fill="var(--ink-600)">创意</text>
+                    </g>
+                  </svg>
+                </div>
+              </div>
+            </div>
+
+            <div class="panel">
+              <div class="panel-header">
+                <h2 class="panel-title">维度得分</h2>
+              </div>
+              <div class="panel-body">
+                <div style="display: flex; flex-direction: column; gap: var(--space-md);">
+                  <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="color: var(--ink-600);">构图</span>
+                    <span style="font-weight: 700; color: var(--cinnabar);">85</span>
+                  </div>
+                  <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="color: var(--ink-600);">色彩</span>
+                    <span style="font-weight: 700; color: var(--stone);">78</span>
+                  </div>
+                  <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="color: var(--ink-600);">造型</span>
+                    <span style="font-weight: 700; color: var(--gold-dark);">80</span>
+                  </div>
+                  <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="color: var(--ink-600);">技法</span>
+                    <span style="font-weight: 700; color: var(--jade);">83</span>
+                  </div>
+                  <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="color: var(--ink-600);">创意</span>
+                    <span style="font-weight: 700; color: var(--ink-700);">75</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-header">
+              <h2 class="panel-title">专业改进建议</h2>
+            </div>
+            <div class="panel-body">
+              <div class="suggestion-list">
+                <article class="suggestion-item">
+                  <span class="suggestion-priority high"></span>
+                  <div class="suggestion-content">
+                    <h4 class="suggestion-title">
+                      加强明暗交界线的处理
+                      <span class="suggestion-tag high">高优先级</span>
+                    </h4>
+                    <p class="suggestion-desc">当前作品明暗交界线偏软，缺乏明确的形体转折。建议加强颧骨、下颌骨等关键转折处的对比，增强体积感。</p>
+                    <p class="suggestion-evidence">依据：面部明暗对比度 0.42，低于建议值 0.55</p>
+                  </div>
+                </article>
+                <article class="suggestion-item">
+                  <span class="suggestion-priority medium"></span>
+                  <div class="suggestion-content">
+                    <h4 class="suggestion-title">
+                      调整构图重心
+                      <span class="suggestion-tag medium">中优先级</span>
+                    </h4>
+                    <p class="suggestion-desc">画面重心略微偏右，可通过增加左侧背景层次或微调主体位置来达到更好的视觉平衡。</p>
+                    <p class="suggestion-evidence">依据：视觉重心坐标 (0.56, 0.48)，偏离中心 6%</p>
+                  </div>
+                </article>
+                <article class="suggestion-item">
+                  <span class="suggestion-priority low"></span>
+                  <div class="suggestion-content">
+                    <h4 class="suggestion-title">
+                      丰富边缘线变化
+                      <span class="suggestion-tag low">低优先级</span>
+                    </h4>
+                    <p class="suggestion-desc">部分轮廓线过于均匀，可尝试虚实结合，让近实远虚的线条变化增强空间纵深感。</p>
+                    <p class="suggestion-evidence">依据：边缘线变化指数 0.31，建议提升至 0.45</p>
+                  </div>
+                </article>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 历史记录 -->
+        <section class="console-view" id="view-history" data-title="历史记录">
+          <div class="panel">
+            <div class="panel-header">
+              <h2 class="panel-title">全部诊断记录</h2>
+              <div class="btn-group">
+                <button class="btn btn-secondary" style="padding: 0.5rem 1rem; font-size: 0.875rem;">筛选</button>
+                <button class="btn btn-secondary" style="padding: 0.5rem 1rem; font-size: 0.875rem;">导出</button>
+              </div>
+            </div>
+            <div class="panel-body">
+              <div class="history-list">
+                <article class="history-item">
+                  <div class="history-thumb">
+                    <img src="https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=A%20student%20charcoal%20drawing%20of%20human%20figure%2C%20Chinese%20art%20academy%20style&image_size=square" alt="素描">
+                  </div>
+                  <div class="history-info">
+                    <h4>人物素描习作</h4>
+                    <p class="history-meta">绘画 · 2026-07-30 · 2.4 秒</p>
+                  </div>
+                  <div class="history-score">
+                    <div class="history-score-value">82</div>
+                    <div class="history-score-label">分</div>
+                  </div>
+                </article>
+                <article class="history-item">
+                  <div class="history-thumb">
+                    <img src="https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=A%20brand%20poster%20design%20with%20Chinese%20typography%2C%20professional%20mockup&image_size=square" alt="海报">
+                  </div>
+                  <div class="history-info">
+                    <h4>品牌海报设计</h4>
+                    <p class="history-meta">设计 · 2026-07-29 · 2.1 秒</p>
+                  </div>
+                  <div class="history-score">
+                    <div class="history-score-value">76</div>
+                    <div class="history-score-label">分</div>
+                  </div>
+                </article>
+                <article class="history-item">
+                  <div class="history-thumb">
+                    <img src="https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=A%20product%20design%20sketch%20of%20ergonomic%20chair%2C%20industrial%20design&image_size=square" alt="产品设计">
+                  </div>
+                  <div class="history-info">
+                    <h4>人体工学椅设计</h4>
+                    <p class="history-meta">产品设计 · 2026-07-28 · 2.7 秒</p>
+                  </div>
+                  <div class="history-score">
+                    <div class="history-score-value">79</div>
+                    <div class="history-score-label">分</div>
+                  </div>
+                </article>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 成长曲线 -->
+        <section class="console-view" id="view-growth" data-title="成长曲线">
+          <div class="growth-layout">
+            <div class="panel">
+              <div class="panel-header">
+                <h2 class="panel-title">能力成长趋势</h2>
+              </div>
+              <div class="panel-body">
+                <div class="growth-chart-container">
+                  <svg viewBox="0 0 600 300" preserveAspectRatio="xMidYMid meet">
+                    <!-- 网格 -->
+                    <line x1="50" y1="250" x2="550" y2="250" stroke="var(--ink-200)" stroke-width="1"/>
+                    <line x1="50" y1="190" x2="550" y2="190" stroke="var(--ink-100)" stroke-width="1"/>
+                    <line x1="50" y1="130" x2="550" y2="130" stroke="var(--ink-100)" stroke-width="1"/>
+                    <line x1="50" y1="70" x2="550" y2="70" stroke="var(--ink-100)" stroke-width="1"/>
+                    <!-- 曲线 -->
+                    <path d="M 50 220 Q 150 200, 200 160 T 350 130 T 550 70" fill="none" stroke="var(--cinnabar)" stroke-width="3" stroke-linecap="round"/>
+                    <!-- 数据点 -->
+                    <circle cx="50" cy="220" r="5" fill="var(--cinnabar)"/>
+                    <circle cx="150" cy="190" r="5" fill="var(--cinnabar)"/>
+                    <circle cx="250" cy="150" r="5" fill="var(--cinnabar)"/>
+                    <circle cx="350" cy="130" r="5" fill="var(--cinnabar)"/>
+                    <circle cx="450" cy="100" r="5" fill="var(--cinnabar)"/>
+                    <circle cx="550" cy="70" r="5" fill="var(--cinnabar)"/>
+                    <!-- X轴标签 -->
+                    <text x="50" y="280" text-anchor="middle" font-size="12" fill="var(--ink-400)">1月</text>
+                    <text x="150" y="280" text-anchor="middle" font-size="12" fill="var(--ink-400)">2月</text>
+                    <text x="250" y="280" text-anchor="middle" font-size="12" fill="var(--ink-400)">3月</text>
+                    <text x="350" y="280" text-anchor="middle" font-size="12" fill="var(--ink-400)">4月</text>
+                    <text x="450" y="280" text-anchor="middle" font-size="12" fill="var(--ink-400)">5月</text>
+                    <text x="550" y="280" text-anchor="middle" font-size="12" fill="var(--ink-400)">6月</text>
+                  </svg>
+                </div>
+              </div>
+            </div>
+
+            <div class="panel">
+              <div class="panel-header">
+                <h2 class="panel-title">成长里程碑</h2>
+              </div>
+              <div class="panel-body">
+                <div style="display: flex; flex-direction: column; gap: var(--space-lg);">
+                  <div style="padding-left: var(--space-md); border-left: 2px solid var(--cinnabar);">
+                    <div style="font-weight: 600; margin-bottom: var(--space-xs);">连续创作 14 天</div>
+                    <div style="font-size: 0.875rem; color: var(--ink-400);">保持稳定创作节奏</div>
+                  </div>
+                  <div style="padding-left: var(--space-md); border-left: 2px solid var(--stone);">
+                    <div style="font-weight: 600; margin-bottom: var(--space-xs);">平均评分提升 5.3</div>
+                    <div style="font-size: 0.875rem; color: var(--ink-400);">近 30 天进步显著</div>
+                  </div>
+                  <div style="padding-left: var(--space-md); border-left: 2px solid var(--gold);">
+                    <div style="font-weight: 600; margin-bottom: var(--space-xs);">完成 128 次诊断</div>
+                    <div style="font-size: 0.875rem; color: var(--ink-400);">积累大量练习数据</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 班级管理 -->
+        <section class="console-view" id="view-classes" data-title="班级管理">
+          <div class="panel">
+            <div class="panel-header">
+              <h2 class="panel-title">我的班级</h2>
+              <button class="btn btn-primary" style="padding: 0.5rem 1rem; font-size: 0.875rem;">创建班级</button>
+            </div>
+            <div class="panel-body">
+              <div class="class-grid">
+                <article class="class-card">
+                  <div class="class-header">
+                    <span class="class-name">视觉传达 2301</span>
+                    <span class="class-code">VS-2301</span>
+                  </div>
+                  <p style="font-size: 0.875rem; color: var(--ink-500); margin-bottom: var(--space-md);">海报设计基础课程</p>
+                  <div class="class-stats">
+                    <div class="class-stat">
+                      <div class="class-stat-value">42</div>
+                      <div class="class-stat-label">学生</div>
+                    </div>
+                    <div class="class-stat">
+                      <div class="class-stat-value">156</div>
+                      <div class="class-stat-label">作业</div>
+                    </div>
+                    <div class="class-stat">
+                      <div class="class-stat-value">78</div>
+                      <div class="class-stat-label">均分</div>
+                    </div>
+                  </div>
+                </article>
+                <article class="class-card">
+                  <div class="class-header">
+                    <span class="class-name">色彩构成 2202</span>
+                    <span class="class-code">CC-2202</span>
+                  </div>
+                  <p style="font-size: 0.875rem; color: var(--ink-500); margin-bottom: var(--space-md);">色彩理论与应用</p>
+                  <div class="class-stats">
+                    <div class="class-stat">
+                      <div class="class-stat-value">38</div>
+                      <div class="class-stat-label">学生</div>
+                    </div>
+                    <div class="class-stat">
+                      <div class="class-stat-value">114</div>
+                      <div class="class-stat-label">作业</div>
+                    </div>
+                    <div class="class-stat">
+                      <div class="class-stat-value">81</div>
+                      <div class="class-stat-label">均分</div>
+                    </div>
+                  </div>
+                </article>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 设置 -->
+        <section class="console-view" id="view-settings" data-title="设置">
+          <div class="panel">
+            <div class="panel-header">
+              <h2 class="panel-title">偏好设置</h2>
+            </div>
+            <div class="panel-body">
+              <div class="settings-list">
+                <div class="setting-item">
+                  <div class="setting-info">
+                    <h4>诊断完成后自动保存</h4>
+                    <p>每次诊断自动保存到历史记录</p>
+                  </div>
+                  <div class="toggle active" onclick="this.classList.toggle('active')"></div>
+                </div>
+                <div class="setting-item">
+                  <div class="setting-info">
+                    <h4>邮件周报</h4>
+                    <p>每周一发送学习进展摘要</p>
+                  </div>
+                  <div class="toggle active" onclick="this.classList.toggle('active')"></div>
+                </div>
+                <div class="setting-item">
+                  <div class="setting-info">
+                    <h4>减少动画效果</h4>
+                    <p>关闭非必要动效，提升可访问性</p>
+                  </div>
+                  <div class="toggle" onclick="this.classList.toggle('active')"></div>
+                </div>
+                <div class="setting-item">
+                  <div class="setting-info">
+                    <h4>深色模式</h4>
+                    <p>使用深色主题保护视力</p>
+                  </div>
+                  <div class="toggle" onclick="this.classList.toggle('active')"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <script src="scripts/main.js"></script>
+  <script src="scripts/console.js"></script>
+</body>
+</html>

@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="丹青有AI 是面向高校艺术教育的 AI 作业诊断系统，3 秒智能分析绘画、设计、产品设计、雕塑四种创意形式，以专业美院标准助力教师减负、学生成长。">
+  <title>Danqing AI 丹青有AI | 让每一次创作都被专业看见</title>
+  <link rel="stylesheet" href="styles/main.css">
+</head>
+<body>
+  <!-- 加载动画：至少持续到 Hero 水墨动画完成前 -->
+  <div class="loader">
+    <div class="loader-content">
+      <div class="loader-ink"></div>
+      <p style="font-family: var(--font-serif); color: var(--ink-400); font-size: 0.875rem;">丹青有AI</p>
+    </div>
+  </div>
+  <style>
+    .loader { background: var(--rice-50); }
+  </style>
+
+  <!-- 导航 -->
+  <header class="navbar">
+    <div class="container navbar-inner">
+      <a href="index.html" class="logo" aria-label="Danqing AI 首页">
+        <span class="logo-mark">DQ</span>
+        <span class="logo-text">
+          <span class="logo-en">Danqing AI</span>
+          <span class="logo-cn">丹青有AI</span>
+        </span>
+      </a>
+
+      <nav class="nav-links" aria-label="主导航">
+        <a href="#art-types" class="nav-link">创作形式</a>
+        <a href="#process" class="nav-link">诊断流程</a>
+        <a href="#dimensions" class="nav-link">诊断维度</a>
+        <a href="#scenarios" class="nav-link">应用场景</a>
+        <a href="#cases" class="nav-link">案例</a>
+        <a href="#effects" class="nav-link">动效演示</a>
+      </nav>
+
+      <div style="display: flex; align-items: center; gap: 1rem;">
+        <a href="portal.html" class="nav-cta">开始诊断</a>
+        <button class="mobile-menu-btn" aria-label="打开菜单" aria-expanded="false">
+          <span></span>
+          <span></span>
+          <span></span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- 移动端菜单 -->
+  <div class="mobile-menu" role="dialog" aria-label="移动端菜单">
+    <a href="index.html#art-types">创作形式</a>
+    <a href="index.html#process">诊断流程</a>
+    <a href="index.html#dimensions">诊断维度</a>
+    <a href="index.html#scenarios">应用场景</a>
+    <a href="index.html#cases">案例</a>
+    <a href="index.html#effects">动效演示</a>
+    <a href="portal.html" class="btn btn-primary" style="margin-top: 1rem;">开始诊断</a>
+  </div>
+
+  <main>
+    <!-- Hero -->
+    <section class="hero" id="hero">
+      <div class="hero-bg">
+        <div class="hero-gradient"></div>
+        <!-- 水墨动画舞台 -->
+        <div class="ink-stage" aria-hidden="true">
+          <!-- 墨滴落下 -->
+          <div class="ink-drop"></div>
+          <!-- 溅落涟漪 -->
+          <div class="ink-splash"></div>
+          <!-- 散开的大墨团 -->
+          <svg class="ink-bloom" viewBox="0 0 600 700" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <filter id="hero-ink" x="-30%" y="-30%" width="160%" height="160%">
+                <feTurbulence type="fractalNoise" baseFrequency="0.008 0.012" numOctaves="3" seed="9" result="noise"/>
+                <feDisplacementMap in="SourceGraphic" in2="noise" scale="60" xChannelSelector="R" yChannelSelector="G"/>
+                <feGaussianBlur stdDeviation="6"/>
+              </filter>
+              <filter id="hero-ink-2" x="-30%" y="-30%" width="160%" height="160%">
+                <feTurbulence type="fractalNoise" baseFrequency="0.015 0.02" numOctaves="2" seed="4" result="noise"/>
+                <feDisplacementMap in="SourceGraphic" in2="noise" scale="30" xChannelSelector="R" yChannelSelector="G"/>
+                <feGaussianBlur stdDeviation="3"/>
+              </filter>
+              <radialGradient id="ink-grad" cx="50%" cy="50%" r="50%">
+                <stop offset="0%" stop-color="#1a1a1a" stop-opacity="0.85"/>
+                <stop offset="60%" stop-color="#1a1a1a" stop-opacity="0.4"/>
+                <stop offset="100%" stop-color="#1a1a1a" stop-opacity="0"/>
+              </radialGradient>
+              <radialGradient id="stone-grad" cx="50%" cy="50%" r="50%">
+                <stop offset="0%" stop-color="#2e5c6e" stop-opacity="0.5"/>
+                <stop offset="100%" stop-color="#2e5c6e" stop-opacity="0"/>
+              </radialGradient>
+            </defs>
+            <g filter="url(#hero-ink)">
+              <ellipse cx="380" cy="320" rx="220" ry="200" fill="url(#ink-grad)"/>
+            </g>
+            <g filter="url(#hero-ink-2)" opacity="0.7">
+              <ellipse cx="480" cy="180" rx="120" ry="100" fill="url(#stone-grad)"/>
+            </g>
+            <g filter="url(#hero-ink-2)" opacity="0.5">
+              <path d="M 120 500 Q 280 460, 460 490 T 580 480" stroke="#1a1a1a" stroke-width="10" fill="none" stroke-linecap="round"/>
+              <path d="M 180 560 Q 320 540, 440 555" stroke="#1a1a1a" stroke-width="3" fill="none" stroke-linecap="round" opacity="0.6"/>
+            </g>
+            <g filter="url(#hero-ink-2)">
+              <circle cx="180" cy="200" r="8" fill="#1a1a1a" opacity="0.4"/>
+              <circle cx="520" cy="420" r="5" fill="#1a1a1a" opacity="0.5"/>
+              <circle cx="240" cy="380" r="4" fill="#c9a961" opacity="0.6"/>
+              <circle cx="450" cy="560" r="3" fill="#1a1a1a" opacity="0.4"/>
+            </g>
+          </svg>
+          <!-- 品牌文案浮现 -->
+          <div class="hero-brand-text">
+            <div class="hero-brand-motto">丹青不渝</div>
+            <div class="hero-brand-slogan">让每一次创作都被专业看见</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="container">
+        <div class="hero-content">
+          <div class="eyebrow">
+            <span class="eyebrow-dot"></span>
+            面向高校艺术教育的 AI 作业诊断系统
+          </div>
+
+          <h1 class="hero-title">
+            让每一次创作
+            <span>都被专业看见</span>
+          </h1>
+
+          <p class="hero-desc">
+            以专业美院标准为尺，3 秒智能分析绘画、设计、产品设计、雕塑四种创意形式。
+            为教师减负，让学生成长可见，让艺术教育更智能、更有人文温度。
+          </p>
+
+          <div class="hero-actions">
+            <a href="portal.html" class="btn btn-primary">
+              开始诊断
+              <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+                <polyline points="12 5 19 12 12 19"></polyline>
+              </svg>
+            </a>
+            <a href="#process" class="btn btn-secondary">了解如何工作</a>
+          </div>
+
+          <div class="hero-trust">
+            <span class="trust-item">
+              <span class="trust-dot gold"></span>
+              3 秒级响应 SLA
+            </span>
+            <span class="trust-item">
+              <span class="trust-dot cinnabar"></span>
+              专业美院标准
+            </span>
+            <span class="trust-item">
+              <span class="trust-dot stone"></span>
+              四种创意形式
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div class="scroll-hint">
+        <span>Scroll</span>
+        <div class="scroll-line"></div>
+      </div>
+    </section>
+
+    <!-- 四种创作形式 - Bento Grid 布局 -->
+    <section class="section" id="art-types">
+      <div class="container">
+        <div class="section-header reveal">
+          <span class="section-eyebrow">Creative Forms</span>
+          <h2 class="section-title">覆盖四类核心创作形式</h2>
+          <p class="section-desc">针对不同艺术形式建立专属视觉分析模型，让诊断建议真正贴合专业教学场景。</p>
+        </div>
+
+        <div class="bento-grid">
+          <!-- 绘画 - 大图特色卡片 -->
+          <article class="bento-cell featured reveal reveal-delay-1" onclick="location.href='diagnose.html?type=painting'" style="cursor: pointer;">
+            <div class="bento-visual" style="aspect-ratio: 16/9;">
+              <img src="https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=A%20student%20oil%20painting%20on%20easel%2C%20warm%20studio%20light%2C%20Chinese%20art%20academy%20style%2C%20professional%20photography%2C%20shallow%20depth%20of%20field%2C%20muted%20colors&image_size=landscape_16_9" alt="绘画作品诊断" loading="lazy">
+              <div class="art-type-overlay" style="position: absolute; inset: 0; background: linear-gradient(to top, rgba(15,15,15,0.7), transparent 60%);"></div>
+              <div style="position: absolute; bottom: var(--space-lg); left: var(--space-lg); right: var(--space-lg); display: flex; align-items: flex-end; justify-content: space-between;">
+                <div>
+                  <span class="art-type-badge" style="position: static; margin-bottom: var(--space-sm); display: inline-block;">绘画</span>
+                  <h3 style="font-family: var(--font-serif); font-size: var(--text-h3); font-weight: 700; color: white; margin-top: var(--space-sm);">绘画诊断</h3>
+                </div>
+                <span style="width: 48px; height: 48px; border-radius: 50%; background: rgba(255,255,255,0.2); backdrop-filter: blur(8px); display: flex; align-items: center; justify-content: center; color: white;">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+                </span>
+              </div>
+            </div>
+            <div class="bento-content" style="padding-top: 0;">
+              <p style="color: var(--ink-500); line-height: 1.7;">素描、色彩、油画、国画、版画的全维度分析，聚焦构图、色彩、笔触技法。</p>
+              <div class="art-type-tags" style="margin-top: var(--space-md);">
+                <span class="art-type-tag">构图</span>
+                <span class="art-type-tag">色彩</span>
+                <span class="art-type-tag">笔触</span>
+              </div>
+            </div>
+          </article>
+
+          <!-- 设计 -->
+          <article class="bento-cell reveal reveal-delay-2" onclick="location.href='diagnose.html?type=design'" style="cursor: pointer;">
+            <div class="bento-visual" style="aspect-ratio: 4/3;">
+              <img src="https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=A%20minimalist%20graphic%20design%20poster%20on%20desk%2C%20Chinese%20typography%2C%20grid%20system%2C%20professional%20photography%2C%20clean%20workspace&image_size=landscape_4_3" alt="设计作品诊断" loading="lazy">
+              <div class="art-type-overlay" style="position: absolute; inset: 0; background: linear-gradient(to top, rgba(15,15,15,0.6), transparent 50%);"></div>
+              <span class="art-type-badge" style="position: absolute; top: var(--space-md); left: var(--space-md);">设计</span>
+            </div>
+            <div class="bento-content">
+              <div class="art-type-icon design" style="width: 40px; height: 40px; font-size: 1rem; margin-bottom: var(--space-sm);">设</div>
+              <h3 style="font-family: var(--font-serif); font-size: var(--text-h4); font-weight: 700; margin-bottom: var(--space-sm);">设计诊断</h3>
+              <p style="font-size: var(--text-small); color: var(--ink-500); line-height: 1.6;">视觉传达、数字媒体、环境艺术的视觉层次与排版分析。</p>
+              <div class="art-type-tags" style="margin-top: var(--space-sm);">
+                <span class="art-type-tag">视觉层次</span>
+                <span class="art-type-tag">排版</span>
+              </div>
+            </div>
+          </article>
+
+          <!-- 产品设计 -->
+          <article class="bento-cell reveal reveal-delay-3" onclick="location.href='diagnose.html?type=product'" style="cursor: pointer;">
+            <div class="bento-visual" style="aspect-ratio: 4/3;">
+              <img src="https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=A%20sleek%20product%20design%20sketch%20and%20render%2C%20industrial%20design%20model%2C%20white%20background%2C%20professional%20studio%20photography&image_size=landscape_4_3" alt="产品设计诊断" loading="lazy">
+              <div class="art-type-overlay" style="position: absolute; inset: 0; background: linear-gradient(to top, rgba(15,15,15,0.6), transparent 50%);"></div>
+              <span class="art-type-badge" style="position: absolute; top: var(--space-md); left: var(--space-md);">产品设计</span>
+            </div>
+            <div class="bento-content">
+              <div class="art-type-icon product" style="width: 40px; height: 40px; font-size: 1rem; margin-bottom: var(--space-sm);">产</div>
+              <h3 style="font-family: var(--font-serif); font-size: var(--text-h4); font-weight: 700; margin-bottom: var(--space-sm);">产品设计诊断</h3>
+              <p style="font-size: var(--text-small); color: var(--ink-500); line-height: 1.6;">产品手绘、建模渲染、实物模型的形态、材质与功能表达评估。</p>
+              <div class="art-type-tags" style="margin-top: var(--space-sm);">
+                <span class="art-type-tag">形态</span>
+                <span class="art-type-tag">材质</span>
+              </div>
+            </div>
+          </article>
+
+          <!-- 雕塑 -->
+          <article class="bento-cell reveal reveal-delay-4" onclick="location.href='diagnose.html?type=sculpture'" style="cursor: pointer;">
+            <div class="bento-visual" style="aspect-ratio: 4/3;">
+              <img src="https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=A%20contemporary%20sculpture%20in%20art%20gallery%2C%20dramatic%20lighting%2C%20negative%20space%2C%20Chinese%20academy%20style%2C%20professional%20photography&image_size=landscape_4_3" alt="雕塑作品诊断" loading="lazy">
+              <div class="art-type-overlay" style="position: absolute; inset: 0; background: linear-gradient(to top, rgba(15,15,15,0.6), transparent 50%);"></div>
+              <span class="art-type-badge" style="position: absolute; top: var(--space-md); left: var(--space-md);">雕塑</span>
+            </div>
+            <div class="bento-content">
+              <div class="art-type-icon sculpture" style="width: 40px; height: 40px; font-size: 1rem; margin-bottom: var(--space-sm);">塑</div>
+              <h3 style="font-family: var(--font-serif); font-size: var(--text-h4); font-weight: 700; margin-bottom: var(--space-sm);">雕塑诊断</h3>
+              <p style="font-size: var(--text-small); color: var(--ink-500); line-height: 1.6;">雕塑、装置、公共艺术的空间构成、形体语言与材料语言分析。</p>
+              <div class="art-type-tags" style="margin-top: var(--space-sm);">
+                <span class="art-type-tag">空间构成</span>
+                <span class="art-type-tag">形体语言</span>
+              </div>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- 诊断流程 -->
+    <section class="section" id="process" style="background: var(--rice-100);">
+      <div class="container">
+        <div class="section-header reveal">
+          <span class="section-eyebrow">How It Works</span>
+          <h2 class="section-title">三步完成专业诊断</h2>
+          <p class="section-desc">从上传作品到获得结构化报告，全程 3 秒级响应，让学生在创作记忆鲜活时即刻获得反馈。</p>
+        </div>
+
+        <div class="process-steps">
+          <div class="process-step reveal reveal-delay-1">
+            <span class="process-number">01</span>
+            <div class="process-icon upload">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="17 8 12 3 7 8"></polyline>
+                <line x1="12" y1="3" x2="12" y2="15"></line>
+              </svg>
+            </div>
+            <h3 class="process-title">上传作品</h3>
+            <p class="process-desc">支持拖拽上传与点击选择，自动识别图片格式与清晰度，一键选择创作形式与课程。</p>
+          </div>
+
+          <div class="process-step reveal reveal-delay-2">
+            <span class="process-number">02</span>
+            <div class="process-icon analyze">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="8" x2="12" y2="12"></line>
+                <line x1="12" y1="16" x2="12.01" y2="16"></line>
+              </svg>
+            </div>
+            <h3 class="process-title">AI 分析</h3>
+            <p class="process-desc">GLM-4V 视觉模型结合美院教学标准，自动提取构图、色彩、造型等关键视觉特征。</p>
+          </div>
+
+          <div class="process-step reveal reveal-delay-3">
+            <span class="process-number">03</span>
+            <div class="process-icon report">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+                <line x1="16" y1="13" x2="8" y2="13"></line>
+                <line x1="16" y1="17" x2="8" y2="17"></line>
+                <polyline points="10 9 9 9 8 9"></polyline>
+              </svg>
+            </div>
+            <h3 class="process-title">获取报告</h3>
+            <p class="process-desc">生成包含评分、热力图、具体改进建议的结构化报告，支持保存、分享与对比。</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 诊断维度 - Bento Grid 暗色主题 -->
+    <section class="section section-dark" id="dimensions">
+      <div class="container">
+        <div class="section-header reveal">
+          <span class="section-eyebrow">Dimensions</span>
+          <h2 class="section-title">美院标准，五维诊断</h2>
+          <p class="section-desc">基于中央美术学院、中国美术学院、清华大学美术学院教学体系，构建可量化、可追溯的专业评价体系。</p>
+        </div>
+
+        <div class="bento-grid">
+          <!-- 构图 - Featured -->
+          <div class="bento-cell featured reveal reveal-delay-1 glass-dark" style="background: linear-gradient(135deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 100%); border-color: rgba(255,255,255,0.08); display: flex; flex-direction: column; justify-content: center; padding: var(--space-xl);">
+            <div style="display: flex; align-items: center; gap: var(--space-lg); margin-bottom: var(--space-md);">
+              <div class="dimension-icon composition" style="width: 56px; height: 56px; font-size: 1.5rem;">构</div>
+              <h3 style="font-family: var(--font-serif); font-size: var(--text-h2); font-weight: 700; color: var(--rice-50);">构图</h3>
+            </div>
+            <p style="color: var(--ink-300); line-height: 1.7; font-size: var(--text-body);">画面结构、视觉重心、留白比例、引导线与黄金分割分析。AI 自动识别画面视觉重心坐标，计算黄金分割契合度。</p>
+          </div>
+
+          <!-- 色彩 -->
+          <div class="bento-cell reveal reveal-delay-2 glass-dark" style="background: linear-gradient(135deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 100%); border-color: rgba(255,255,255,0.08); display: flex; align-items: center; gap: var(--space-md); padding: var(--space-xl);">
+            <div class="dimension-icon color" style="width: 48px; height: 48px; font-size: 1.25rem; flex-shrink: 0;">色</div>
+            <div>
+              <h3 style="font-family: var(--font-serif); font-size: var(--text-h4); font-weight: 700; color: var(--rice-50); margin-bottom: var(--space-xs);">色彩</h3>
+              <p style="color: var(--ink-300); font-size: var(--text-small); line-height: 1.6;">主色调识别、色彩和谐度、冷暖对比、情感表达。</p>
+            </div>
+          </div>
+
+          <!-- 造型 -->
+          <div class="bento-cell reveal reveal-delay-3 glass-dark" style="background: linear-gradient(135deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 100%); border-color: rgba(255,255,255,0.08); display: flex; align-items: center; gap: var(--space-md); padding: var(--space-xl);">
+            <div class="dimension-icon form" style="width: 48px; height: 48px; font-size: 1.25rem; flex-shrink: 0;">形</div>
+            <div>
+              <h3 style="font-family: var(--font-serif); font-size: var(--text-h4); font-weight: 700; color: var(--rice-50); margin-bottom: var(--space-xs);">造型</h3>
+              <p style="color: var(--ink-300); font-size: var(--text-small); line-height: 1.6;">形体准确性、空间关系、比例结构、透视与解剖。</p>
+            </div>
+          </div>
+
+          <!-- 技法 -->
+          <div class="bento-cell reveal reveal-delay-1 glass-dark" style="background: linear-gradient(135deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 100%); border-color: rgba(255,255,255,0.08); display: flex; align-items: center; gap: var(--space-md); padding: var(--space-xl);">
+            <div class="dimension-icon technique" style="width: 48px; height: 48px; font-size: 1.25rem; flex-shrink: 0;">技</div>
+            <div>
+              <h3 style="font-family: var(--font-serif); font-size: var(--text-h4); font-weight: 700; color: var(--rice-50); margin-bottom: var(--space-xs);">技法</h3>
+              <p style="color: var(--ink-300); font-size: var(--text-small); line-height: 1.6;">笔触控制、材料运用、表现手法、工艺完成度。</p>
+            </div>
+          </div>
+
+          <!-- 创意 -->
+          <div class="bento-cell reveal reveal-delay-2 glass-dark" style="background: linear-gradient(135deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 100%); border-color: rgba(255,255,255,0.08); display: flex; align-items: center; gap: var(--space-md); padding: var(--space-xl);">
+            <div class="dimension-icon creativity" style="width: 48px; height: 48px; font-size: 1.25rem; flex-shrink: 0;">创</div>
+            <div>
+              <h3 style="font-family: var(--font-serif); font-size: var(--text-h4); font-weight: 700; color: var(--rice-50); margin-bottom: var(--space-xs);">创意</h3>
+              <p style="color: var(--ink-300); font-size: var(--text-small); line-height: 1.6;">概念表达、原创性、视觉叙事、个人风格。</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 应用场景 -->
+    <section class="section" id="scenarios">
+      <div class="container">
+        <div class="section-header reveal">
+          <span class="section-eyebrow">Scenarios</span>
+          <h2 class="section-title">为每一位艺术教育参与者赋能</h2>
+          <p class="section-desc">无论你是教师、学生、院校管理者还是艺术爱好者，丹青有AI 都能成为你专业成长的伙伴。</p>
+        </div>
+
+        <div class="scenarios">
+          <article class="scenario-card reveal reveal-delay-1">
+            <div class="scenario-image">
+              <img src="https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=A%20Chinese%20art%20teacher%20reviewing%20student%20works%20in%20classroom%2C%20warm%20natural%20light%2C%20professional%20photography%2C%20authentic%20moment&image_size=landscape_16_9" alt="教师场景" loading="lazy">
+            </div>
+            <div class="scenario-content">
+              <span class="scenario-role teacher">教师</span>
+              <h3 class="scenario-title">减负增效，让点评更专业</h3>
+              <p class="scenario-desc">批量获取学生作业的结构化分析，快速定位共性问题，把更多时间留给个性化创作引导。</p>
+              <ul class="scenario-features">
+                <li class="scenario-feature">班级作业批量诊断</li>
+                <li class="scenario-feature">学情数据可视化</li>
+                <li class="scenario-feature">课堂讲评素材一键生成</li>
+              </ul>
+            </div>
+          </article>
+
+          <article class="scenario-card reveal reveal-delay-2">
+            <div class="scenario-image">
+              <img src="https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=A%20young%20Chinese%20art%20student%20painting%20in%20studio%2C%20focused%20expression%2C%20natural%20light%20from%20window%2C%20professional%20photography&image_size=landscape_16_9" alt="学生场景" loading="lazy">
+            </div>
+            <div class="scenario-content">
+              <span class="scenario-role student">学生</span>
+              <h3 class="scenario-title">即时反馈，让成长可见</h3>
+              <p class="scenario-desc">上传作品即可在 3 秒内获得专业建议，追踪个人能力成长曲线，清晰看见每一次进步。</p>
+              <ul class="scenario-features">
+                <li class="scenario-feature">3 秒生成诊断报告</li>
+                <li class="scenario-feature">历史作品对比分析</li>
+                <li class="scenario-feature">个性化练习建议</li>
+              </ul>
+            </div>
+          </article>
+
+          <article class="scenario-card reveal reveal-delay-3">
+            <div class="scenario-image">
+              <img src="https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=A%20modern%20Chinese%20university%20art%20academy%20building%20interior%2C%20gallery%20space%2C%20clean%20architecture%2C%20professional%20photography&image_size=landscape_16_9" alt="院校场景" loading="lazy">
+            </div>
+            <div class="scenario-content">
+              <span class="scenario-role institution">院校</span>
+              <h3 class="scenario-title">数据驱动，让教学更科学</h3>
+              <p class="scenario-desc">沉淀教学过程数据，构建院系级能力画像，为课程改革与教学质量评估提供客观依据。</p>
+              <ul class="scenario-features">
+                <li class="scenario-feature">院系级教学数据看板</li>
+                <li class="scenario-feature">课程目标达成度分析</li>
+                <li class="scenario-feature">私有化部署方案</li>
+              </ul>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- 案例 -->
+    <section class="section" id="cases" style="background: var(--rice-100);">
+      <div class="container">
+        <div class="section-header reveal">
+          <span class="section-eyebrow">Cases</span>
+          <h2 class="section-title">真实作品，真实改变</h2>
+          <p class="section-desc">来自合作院校的学生作品，展示 AI 诊断如何帮助创作者发现问题、理解标准、持续改进。</p>
+        </div>
+
+        <div class="cases-grid">
+          <article class="case-card reveal">
+            <div class="case-image">
+              <img src="https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=Before%20and%20after%20comparison%20of%20a%20Chinese%20academy%20student%20oil%20painting%2C%20left%20side%20needs%20improvement%20right%20side%20improved%2C%20split%20screen%2C%20professional%20photography&image_size=landscape_4_3" alt="绘画案例" loading="lazy">
+            </div>
+            <div class="case-content">
+              <div class="case-meta">
+                <span class="case-tag painting">绘画</span>
+                <span style="font-size: 0.875rem; color: var(--ink-400);">中央美术学院</span>
+              </div>
+              <h3 class="case-title">从"像不像"到"好不好"的专业跃迁</h3>
+              <p class="case-desc">学生通过构图热力图发现画面重心偏移，结合色彩和谐度建议调整色调后，作品评分从 68 分提升至 85 分。</p>
+              <div class="case-stats">
+                <div class="case-stat">
+                  <div class="case-stat-value" data-counter="68" data-counter-suffix="→85"></div>
+                  <div class="case-stat-label">评分提升</div>
+                </div>
+                <div class="case-stat">
+                  <div class="case-stat-value" data-counter="3" data-counter-suffix="次"></div>
+                  <div class="case-stat-label">迭代次数</div>
+                </div>
+                <div class="case-stat">
+                  <div class="case-stat-value" data-counter="2" data-counter-suffix="周"></div>
+                  <div class="case-stat-label">练习周期</div>
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <article class="case-card reverse reveal">
+            <div class="case-image">
+              <img src="https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=A%20graphic%20design%20poster%20before%20and%20after%20redesign%2C%20Chinese%20typography%2C%20visual%20hierarchy%20improvement%2C%20split%20screen%2C%20professional%20mockup&image_size=landscape_4_3" alt="设计案例" loading="lazy">
+            </div>
+            <div class="case-content">
+              <div class="case-meta">
+                <span class="case-tag design">设计</span>
+                <span style="font-size: 0.875rem; color: var(--ink-400);">中国美术学院</span>
+              </div>
+              <h3 class="case-title">视觉层次的逻辑重构</h3>
+              <p class="case-desc">AI 指出海报视觉层次混乱、信息优先级不清，学生通过调整网格系统与字号对比，显著提升了作品的专业完成度。</p>
+              <div class="case-stats">
+                <div class="case-stat">
+                  <div class="case-stat-value" data-counter="72" data-counter-suffix="→88"></div>
+                  <div class="case-stat-label">评分提升</div>
+                </div>
+                <div class="case-stat">
+                  <div class="case-stat-value" data-counter="5" data-counter-suffix="个"></div>
+                  <div class="case-stat-label">修改要点</div>
+                </div>
+                <div class="case-stat">
+                  <div class="case-stat-value" data-counter="1" data-counter-suffix="天"></div>
+                  <div class="case-stat-label">完成优化</div>
+                </div>
+              </div>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- 特殊动效演示模块 -->
+    <section class="fx-section" id="effects">
+      <div class="container">
+        <div class="section-header reveal">
+          <span class="section-eyebrow">Motion Lab</span>
+          <h2 class="section-title">特殊动效演示</h2>
+          <p class="section-desc">以水墨为魂、以性能为界：所有动效仅使用 transform 与 opacity，尊重系统减少动画偏好，在低端设备上同样流畅。</p>
+        </div>
+
+        <div class="fx-grid">
+          <!-- 墨滴入画 -->
+          <article class="fx-card reveal reveal-delay-1">
+            <h3 class="fx-card-title">墨滴入画</h3>
+            <div class="fx-stage">
+              <div class="fx-ink-drop"></div>
+              <div class="fx-ink-bloom"></div>
+            </div>
+            <p class="fx-card-desc">品牌核心动效：一滴墨坠入宣纸，晕染成境。用于首页入场与加载过渡。</p>
+            <button class="fx-replay" type="button">重新播放</button>
+          </article>
+
+          <!-- 玻璃拟态 -->
+          <article class="fx-card reveal reveal-delay-2">
+            <h3 class="fx-card-title">玻璃拟态</h3>
+            <div class="fx-stage" style="background: linear-gradient(135deg, rgba(196,30,58,0.12) 0%, rgba(46,95,161,0.12) 100%);">
+              <div class="fx-glass-panel">半透明材质 + 背景模糊 + 高光描边，营造轻盈的层次纵深。</div>
+            </div>
+            <p class="fx-card-desc">Glassmorphism 材质系统，应用于导航栏、卡片与浮层，兼顾通透感与可读性。</p>
+            <button class="fx-replay" type="button">重新播放</button>
+          </article>
+
+          <!-- 磁力光斑 -->
+          <article class="fx-card reveal reveal-delay-3">
+            <h3 class="fx-card-title">磁力光斑</h3>
+            <div class="fx-stage dark">
+              <button class="fx-glow-btn" type="button"><span>移动鼠标感受光斑</span></button>
+            </div>
+            <p class="fx-card-desc">光标位置的径向高光反馈，让按钮"感知"用户意图，增强可点击感。</p>
+            <button class="fx-replay" type="button">重新播放</button>
+          </article>
+
+          <!-- 流动进度 -->
+          <article class="fx-card reveal reveal-delay-1">
+            <h3 class="fx-card-title">流动进度</h3>
+            <div class="fx-stage">
+              <div class="fx-progress"><div class="fx-progress-bar"></div></div>
+            </div>
+            <p class="fx-card-desc">AI 分析进度反馈：先快后稳的缓动曲线，传递"正在专业思考"的等待体验。</p>
+            <button class="fx-replay" type="button">重新播放</button>
+          </article>
+
+          <!-- 书法打字机 -->
+          <article class="fx-card reveal reveal-delay-2">
+            <h3 class="fx-card-title">书法打字机</h3>
+            <div class="fx-stage dark">
+              <span class="fx-typewriter">让每一次创作都被专业看见</span>
+            </div>
+            <p class="fx-card-desc">逐字浮现配合光标呼吸，模拟书法落笔节奏，用于品牌文案的仪式感呈现。</p>
+            <button class="fx-replay" type="button">重新播放</button>
+          </article>
+
+          <!-- 3D 倾斜卡片 -->
+          <article class="fx-card reveal reveal-delay-3">
+            <h3 class="fx-card-title">3D 倾斜卡片</h3>
+            <div class="fx-stage">
+              <div class="fx-glass-panel" style="animation: none; text-align: center;">将鼠标移到本卡片上<br>感受轻微的三维倾斜</div>
+            </div>
+            <p class="fx-card-desc">全站 Bento 卡片支持克制的 3D 视差倾斜（≤3°），增强立体感而不眩晕。</p>
+            <button class="fx-replay" type="button">重新播放</button>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- CTA -->
+    <section class="cta-section">
+      <div class="cta-bg"></div>
+      <div class="container">
+        <div class="cta-content reveal">
+          <h2 class="cta-title">免费开始你的第一次 AI 诊断</h2>
+          <p class="cta-desc">无需信用卡，注册即享 50 次免费分析额度。让专业反馈成为你创作路上的镜子。</p>
+          <div style="display: flex; flex-wrap: wrap; gap: 1rem; justify-content: center;">
+            <a href="portal.html" class="btn btn-primary">
+              立即体验
+              <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+                <polyline points="12 5 19 12 12 19"></polyline>
+              </svg>
+            </a>
+            <a href="#" class="btn btn-secondary" onclick="alert('演示视频功能将在正式版上线'); return false;">观看演示</a>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- 页脚 -->
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-grid">
+        <div class="footer-brand">
+          <div class="footer-logo">
+            <span class="logo-mark">DQ</span>
+            <span class="logo-text">
+              <span class="logo-en">Danqing AI</span>
+              <span class="logo-cn">丹青有AI</span>
+            </span>
+          </div>
+          <p class="footer-desc">以美院智识为尺，以水墨气韵为魂。让每一次创作都被专业看见，让艺术教育的未来更智能、更有人文温度。</p>
+        </div>
+
+        <div class="footer-links">
+          <h4>产品</h4>
+          <ul>
+            <li><a href="index.html#art-types">创作形式</a></li>
+            <li><a href="index.html#process">诊断流程</a></li>
+            <li><a href="index.html#dimensions">诊断维度</a></li>
+            <li><a href="portal.html">开始诊断</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-links">
+          <h4>方案</h4>
+          <ul>
+            <li><a href="index.html#scenarios">教师场景</a></li>
+            <li><a href="index.html#scenarios">学生场景</a></li>
+            <li><a href="index.html#scenarios">院校合作</a></li>
+            <li><a href="#">定价方案</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-links">
+          <h4>关于</h4>
+          <ul>
+            <li><a href="#">关于我们</a></li>
+            <li><a href="#">联系我们</a></li>
+            <li><a href="#">隐私政策</a></li>
+            <li><a href="#">服务条款</a></li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="footer-bottom">
+        <p>&copy; 2026 Danqing AI 丹青有AI. 保留所有权利。</p>
+        <p>让艺术教育更智能</p>
+      </div>
+    </div>
+  </footer>
+
+  <script src="scripts/main.js"></script>
+</body>
+</html>

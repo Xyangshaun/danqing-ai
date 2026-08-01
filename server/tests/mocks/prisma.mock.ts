@@ -28,6 +28,9 @@ export interface MockUser {
   email: string | null;
   phone: string | null;
   role: string;
+  status: string; // 'active' | 'locked' | 'deleted'(Phase 4 扩展)
+  lockedAt: Date | null; // Phase 4 扩展
+  lockedBy: string | null; // Phase 4 扩展
   createdAt: Date;
   updatedAt: Date;
   lastLoginAt: Date | null;
@@ -77,8 +80,100 @@ export interface MockAnalysis {
   failureReason: string | null;
   overallScore: number | null;
   durationMs: number | null;
+  reviewStatus: string | null; // 'pending' | 'approved' | 'rejected' | 'flagged'(Phase 4 扩展)
+  reviewedBy: string | null; // Phase 4 扩展
+  reviewedAt: Date | null; // Phase 4 扩展
+  reviewNote: string | null; // Phase 4 扩展
   createdAt: Date;
   completedAt: Date | null;
+}
+
+// ============================================================
+// Phase 4 新增 Mock 数据模型
+// ============================================================
+
+export interface MockAuditLog {
+  id: string;
+  operatorId: string;
+  operatorRole: string;
+  operatorTenantId: string | null;
+  action: string;
+  resource: string;
+  resourceId: string | null;
+  targetTenantId: string | null;
+  beforeData: unknown;
+  afterData: unknown;
+  ip: string;
+  userAgent: string;
+  traceId: string | null;
+  note: string | null;
+  createdAt: Date;
+}
+
+export interface MockApiKey {
+  id: string;
+  name: string;
+  keyPrefix: string;
+  keyHash: string;
+  tenantId: string | null;
+  scopes: unknown;
+  status: string; // 'active' | 'revoked'
+  createdById: string;
+  revokedAt: Date | null;
+  revokedBy: string | null;
+  expiresAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+  lastUsedAt: Date | null;
+  lastUsedIp: string | null;
+}
+
+export interface MockCreativeTemplate {
+  id: string;
+  name: string;
+  description: string | null;
+  artType: string;
+  content: unknown;
+  tags: unknown;
+  thumbnailUrl: string | null;
+  enabled: boolean;
+  sortOrder: number;
+  createdById: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface MockSubscription {
+  id: string;
+  tenantId: string;
+  plan: string;
+  status: string; // 'active' | 'past_due' | 'canceled' | 'expired'
+  periodStart: Date;
+  periodEnd: Date;
+  cancelAtPeriodEnd: boolean;
+  paymentProvider: string | null;
+  externalSubId: string | null;
+  amount: bigint | number;
+  currency: string;
+  seats: number;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface MockInvoice {
+  id: string;
+  tenantId: string;
+  subscriptionId: string;
+  amount: bigint | number;
+  currency: string;
+  status: string; // 'paid' | 'pending' | 'refunded' | 'failed'
+  periodStart: Date;
+  periodEnd: Date;
+  paidAt: Date | null;
+  paymentProvider: string | null;
+  externalInvoiceId: string | null;
+  description: string | null;
+  createdAt: Date;
 }
 
 // ============================================================
@@ -93,7 +188,32 @@ function matchValue(recordValue: unknown, condition: WhereValue): boolean {
     return recordValue === null;
   }
   if (typeof condition === 'object' && condition !== null && !Array.isArray(condition)) {
-    const cond = condition as { equals?: unknown; gte?: unknown; lte?: unknown; lt?: unknown; gt?: unknown; in?: unknown[] };
+    const cond = condition as {
+      equals?: unknown;
+      gte?: unknown;
+      lte?: unknown;
+      lt?: unknown;
+      gt?: unknown;
+      in?: unknown[];
+      contains?: string;
+      mode?: string;
+      not?: unknown;
+    };
+    // not 操作符:recordValue 不等于 cond.not(Phase 4 新增)
+    if (cond.not !== undefined) {
+      if (recordValue === cond.not) return false;
+      // null 不等于 null 时通过,非 null 值不等于 cond.not 时通过
+      return true;
+    }
+    // contains 操作符:字符串包含匹配(Phase 4 新增)
+    if (cond.contains !== undefined) {
+      if (typeof recordValue !== 'string') return false;
+      const search = String(cond.contains);
+      if (cond.mode === 'insensitive') {
+        return recordValue.toLowerCase().includes(search.toLowerCase());
+      }
+      return recordValue.includes(search);
+    }
     if (cond.equals !== undefined && recordValue !== cond.equals) return false;
     // 统一转换为时间戳进行比较(支持 Date 对象与 number)
     const toMs = (v: unknown): number => {
@@ -303,8 +423,8 @@ function createModelDelegate<T extends Record<string, unknown> & { id: string }>
       return { count };
     },
 
-    async count(args: DelegateArgs): Promise<number> {
-      const where = args.where ?? {};
+    async count(args?: DelegateArgs): Promise<number> {
+      const where = args?.where ?? {};
       let n = 0;
       for (const record of store.values()) {
         if (matchWhere(record, where)) n += 1;
@@ -389,6 +509,12 @@ class PrismaMock {
   readonly tenantMemberStore = new Map<string, MockTenantMember>();
   readonly sessionStore = new Map<string, MockSession>();
   readonly analysisStore = new Map<string, MockAnalysis>();
+  // Phase 4 新增 stores
+  readonly auditLogStore = new Map<string, MockAuditLog>();
+  readonly apiKeyStore = new Map<string, MockApiKey>();
+  readonly creativeTemplateStore = new Map<string, MockCreativeTemplate>();
+  readonly subscriptionStore = new Map<string, MockSubscription>();
+  readonly invoiceStore = new Map<string, MockInvoice>();
 
   // 各模型委托(唯一字段对应 schema.prisma 中的 @unique)
   // tenantMember 委托:支持 include user / include tenant 关系解析
@@ -481,7 +607,151 @@ class PrismaMock {
 
   readonly tenant = createModelDelegate<MockTenant>(this.tenantStore, ['feishuTenantKey']);
   readonly session = createModelDelegate<MockSession>(this.sessionStore, ['refreshTokenHash']);
-  readonly analysis = createModelDelegate<MockAnalysis>(this.analysisStore, []);
+
+  // analysis 委托:支持 include user 关系解析(Phase 4 admin-content 使用)
+  readonly analysis = Object.assign(
+    createModelDelegate<MockAnalysis>(this.analysisStore, [], (record, include) => {
+      const enriched = { ...record } as MockAnalysis & {
+        user?: { name: string } | Partial<MockUser>;
+      };
+      if ('user' in include) {
+        const userSelect = (include as { user?: { select?: Record<string, boolean> } }).user?.select;
+        const fullUser = this.userStore.get(record.userId);
+        if (fullUser) {
+          if (userSelect) {
+            const picked: Partial<MockUser> = {};
+            for (const [field, enabled] of Object.entries(userSelect)) {
+              if (enabled && field in fullUser) {
+                (picked as Record<string, unknown>)[field] = (fullUser as Record<string, unknown>)[field];
+              }
+            }
+            enriched.user = picked as { name: string };
+          } else {
+            enriched.user = fullUser;
+          }
+        }
+      }
+      return enriched as unknown as MockAnalysis;
+    }),
+    {
+      // aggregate 方法:支持 _avg 计算(Phase 4 admin-content 使用)
+      // 注意:必须用箭头函数,通过词法作用域捕获 PrismaMock 实例的 this,
+      // 否则通过 prisma().analysis.aggregate(...) 调用时 this 指向 delegate 对象(无 analysisStore)
+      aggregate: async (args: {
+        where?: Record<string, unknown>;
+        _avg?: Record<string, boolean>;
+        _sum?: Record<string, boolean>;
+        _count?: Record<string, boolean>;
+        _min?: Record<string, boolean>;
+        _max?: Record<string, boolean>;
+      }): Promise<{
+        _avg?: Record<string, number | null>;
+        _sum?: Record<string, number | null>;
+        _count?: number;
+        _min?: Record<string, unknown>;
+        _max?: Record<string, unknown>;
+      }> => {
+        const where = args?.where ?? {};
+        const items = Array.from(this.analysisStore.values()).filter((r) => matchWhere(r, where));
+        const result: {
+          _avg?: Record<string, number | null>;
+          _sum?: Record<string, number | null>;
+          _count?: number;
+          _min?: Record<string, unknown>;
+          _max?: Record<string, unknown>;
+        } = {};
+        if (args?._avg) {
+          const avg: Record<string, number | null> = {};
+          for (const [field, enabled] of Object.entries(args._avg)) {
+            if (!enabled) continue;
+            const values = items
+              .map((i) => (i as Record<string, unknown>)[field])
+              .filter((v): v is number => typeof v === 'number' && !Number.isNaN(v));
+            avg[field] = values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : null;
+          }
+          result._avg = avg;
+        }
+        if (args?._sum) {
+          const sum: Record<string, number | null> = {};
+          for (const [field, enabled] of Object.entries(args._sum)) {
+            if (!enabled) continue;
+            const values = items
+              .map((i) => (i as Record<string, unknown>)[field])
+              .filter((v): v is number => typeof v === 'number' && !Number.isNaN(v));
+            sum[field] = values.length > 0 ? values.reduce((a, b) => a + b, 0) : null;
+          }
+          result._sum = sum;
+        }
+        if (args?._count) {
+          result._count = items.length;
+        }
+        return result;
+      },
+    },
+  );
+
+  // Phase 4 新增模型委托
+  // subscription 委托:支持 include tenant 关系解析
+  readonly subscription = createModelDelegate<MockSubscription>(
+    this.subscriptionStore,
+    [],
+    (record, include) => {
+      const enriched = { ...record } as MockSubscription & {
+        tenant?: { name: string } | Partial<MockTenant>;
+      };
+      if ('tenant' in include) {
+        const tenantSelect = (include as { tenant?: { select?: Record<string, boolean> } }).tenant?.select;
+        const fullTenant = this.tenantStore.get(record.tenantId);
+        if (fullTenant) {
+          if (tenantSelect) {
+            const picked: Partial<MockTenant> = {};
+            for (const [field, enabled] of Object.entries(tenantSelect)) {
+              if (enabled && field in fullTenant) {
+                (picked as Record<string, unknown>)[field] = (fullTenant as Record<string, unknown>)[field];
+              }
+            }
+            enriched.tenant = picked as { name: string };
+          } else {
+            enriched.tenant = fullTenant;
+          }
+        }
+      }
+      return enriched as unknown as MockSubscription;
+    },
+  );
+
+  // invoice 委托:支持 include tenant 关系解析
+  readonly invoice = createModelDelegate<MockInvoice>(
+    this.invoiceStore,
+    [],
+    (record, include) => {
+      const enriched = { ...record } as MockInvoice & {
+        tenant?: { name: string } | Partial<MockTenant>;
+      };
+      if ('tenant' in include) {
+        const tenantSelect = (include as { tenant?: { select?: Record<string, boolean> } }).tenant?.select;
+        const fullTenant = this.tenantStore.get(record.tenantId);
+        if (fullTenant) {
+          if (tenantSelect) {
+            const picked: Partial<MockTenant> = {};
+            for (const [field, enabled] of Object.entries(tenantSelect)) {
+              if (enabled && field in fullTenant) {
+                (picked as Record<string, unknown>)[field] = (fullTenant as Record<string, unknown>)[field];
+              }
+            }
+            enriched.tenant = picked as { name: string };
+          } else {
+            enriched.tenant = fullTenant;
+          }
+        }
+      }
+      return enriched as unknown as MockInvoice;
+    },
+  );
+
+  readonly auditLog = createModelDelegate<MockAuditLog>(this.auditLogStore, []);
+  readonly apiKey = createModelDelegate<MockApiKey>(this.apiKeyStore, ['keyPrefix', 'keyHash']);
+  readonly creativeTemplate = createModelDelegate<MockCreativeTemplate>(this.creativeTemplateStore, []);
 
   /**
    * 事务:直接在 mock 自身上执行回调(无真实隔离,但保证顺序)
@@ -505,6 +775,12 @@ class PrismaMock {
     this.tenantMemberStore.clear();
     this.sessionStore.clear();
     this.analysisStore.clear();
+    // Phase 4 新增 stores
+    this.auditLogStore.clear();
+    this.apiKeyStore.clear();
+    this.creativeTemplateStore.clear();
+    this.subscriptionStore.clear();
+    this.invoiceStore.clear();
   }
 
   /**
@@ -519,6 +795,9 @@ class PrismaMock {
       email: null,
       phone: null,
       role: 'student',
+      status: 'active',
+      lockedAt: null,
+      lockedBy: null,
       createdAt: now,
       updatedAt: now,
       lastLoginAt: null,
@@ -570,11 +849,111 @@ class PrismaMock {
       failureReason: null,
       overallScore: null,
       durationMs: null,
+      reviewStatus: 'pending',
+      reviewedBy: null,
+      reviewedAt: null,
+      reviewNote: null,
       createdAt: now,
       completedAt: null,
       ...analysis,
     };
     this.analysisStore.set(full.id, full);
+    return full;
+  }
+
+  // ============================================================
+  // Phase 4 新增 __insert 辅助方法
+  // ============================================================
+
+  __insertAuditLog(log: Partial<MockAuditLog> & { id: string; operatorId: string; action: string; resource: string; ip: string; userAgent: string }): MockAuditLog {
+    const full: MockAuditLog = {
+      operatorRole: 'admin',
+      operatorTenantId: null,
+      resourceId: null,
+      targetTenantId: null,
+      beforeData: null,
+      afterData: null,
+      traceId: null,
+      note: null,
+      createdAt: new Date(),
+      ...log,
+    };
+    this.auditLogStore.set(full.id, full);
+    return full;
+  }
+
+  __insertApiKey(key: Partial<MockApiKey> & { id: string; name: string; keyPrefix: string; keyHash: string; createdById: string }): MockApiKey {
+    const now = new Date();
+    const full: MockApiKey = {
+      tenantId: null,
+      scopes: [],
+      status: 'active',
+      revokedAt: null,
+      revokedBy: null,
+      expiresAt: null,
+      createdAt: now,
+      updatedAt: now,
+      lastUsedAt: null,
+      lastUsedIp: null,
+      ...key,
+    };
+    this.apiKeyStore.set(full.id, full);
+    return full;
+  }
+
+  __insertCreativeTemplate(template: Partial<MockCreativeTemplate> & { id: string; name: string; artType: string; content: unknown; createdById: string }): MockCreativeTemplate {
+    const now = new Date();
+    const full: MockCreativeTemplate = {
+      description: null,
+      tags: [],
+      thumbnailUrl: null,
+      enabled: true,
+      sortOrder: 0,
+      createdAt: now,
+      updatedAt: now,
+      ...template,
+    };
+    this.creativeTemplateStore.set(full.id, full);
+    return full;
+  }
+
+  __insertSubscription(sub: Partial<MockSubscription> & { id: string; tenantId: string }): MockSubscription {
+    const now = new Date();
+    const full: MockSubscription = {
+      plan: 'free',
+      status: 'active',
+      periodStart: now,
+      periodEnd: new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000),
+      cancelAtPeriodEnd: false,
+      paymentProvider: null,
+      externalSubId: null,
+      amount: 0,
+      currency: 'CNY',
+      seats: 1,
+      createdAt: now,
+      updatedAt: now,
+      ...sub,
+    };
+    this.subscriptionStore.set(full.id, full);
+    return full;
+  }
+
+  __insertInvoice(inv: Partial<MockInvoice> & { id: string; tenantId: string; subscriptionId: string }): MockInvoice {
+    const now = new Date();
+    const full: MockInvoice = {
+      amount: 0,
+      currency: 'CNY',
+      status: 'paid',
+      periodStart: now,
+      periodEnd: new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000),
+      paidAt: new Date(),
+      paymentProvider: null,
+      externalInvoiceId: null,
+      description: null,
+      createdAt: now,
+      ...inv,
+    };
+    this.invoiceStore.set(full.id, full);
     return full;
   }
 }

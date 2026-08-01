@@ -13,9 +13,11 @@ import {
   type FuseStyle, type FuseMethod, type FuseIntensity, type FusionAnalysis,
 } from '../services/fuseStandards';
 import { generateImage } from '../services/imageService';
-import { artworksDatabase, type ArtworkItem } from '../services/artworksDatabase';
+import { type ArtworkItem } from '../services/artworksDatabase';
+import { getBuiltinArtworkItems } from '../services/materialService';
 import { useToast } from '../components/ToastProvider';
 import { saveSavedMaterial } from '../services/data-service';
+import EmptyState from '../components/EmptyState';
 
 const methodIconMap: Record<string, typeof Layout> = {
   composition: Layout,
@@ -227,7 +229,7 @@ export default function FusePage() {
   };
 
   const filteredArtworks = useMemo(() => {
-    let results = [...artworksDatabase];
+    let results = getBuiltinArtworkItems();
     if (pickerCategory !== 'all') {
       results = results.filter((a) => a.category === pickerCategory);
     }
@@ -679,7 +681,12 @@ export default function FusePage() {
             <div className="flex items-center gap-3">
               <div className="w-16 h-16 bg-rice-100 rounded-xl flex items-center justify-center overflow-hidden shadow-sm">
                 {image1 ? (
-                  <img src={image1} alt="作品1" className="w-full h-full object-cover" />
+                  <img
+                    src={image1}
+                    alt="作品1"
+                    className="w-full h-full object-cover"
+                    onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                  />
                 ) : (
                   <ImageIcon className="w-6 h-6 text-ink-300" />
                 )}
@@ -701,7 +708,12 @@ export default function FusePage() {
             <div className="flex items-center gap-3">
               <div className="w-16 h-16 bg-rice-100 rounded-xl flex items-center justify-center overflow-hidden shadow-sm">
                 {image2 ? (
-                  <img src={image2} alt="作品2" className="w-full h-full object-cover" />
+                  <img
+                    src={image2}
+                    alt="作品2"
+                    className="w-full h-full object-cover"
+                    onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                  />
                 ) : (
                   <ImageIcon className="w-6 h-6 text-ink-300" />
                 )}
@@ -752,11 +764,21 @@ export default function FusePage() {
           <div className="bg-rice-50 rounded-2xl p-12 shadow-card text-center mb-8">
             <div className="flex items-center justify-center gap-4 mb-6 flex-wrap">
               <div className="w-20 h-20 rounded-xl overflow-hidden shadow">
-                <img src={image1} alt="作品1" className="w-full h-full object-cover" />
+                <img
+                  src={image1}
+                  alt="作品1"
+                  className="w-full h-full object-cover"
+                  onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                />
               </div>
               <Plus className="w-8 h-8 text-cinnabar" />
               <div className="w-20 h-20 rounded-xl overflow-hidden shadow">
-                <img src={image2} alt="作品2" className="w-full h-full object-cover" />
+                <img
+                  src={image2}
+                  alt="作品2"
+                  className="w-full h-full object-cover"
+                  onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                />
               </div>
               <div className="font-serif text-2xl text-cinnabar">=</div>
               <div className="w-20 h-20 border-2 border-dashed border-cinnabar rounded-xl flex items-center justify-center">
@@ -894,34 +916,12 @@ export default function FusePage() {
 
         {/* Empty State */}
         {!image1 && !image2 && results.length === 0 && !fusing && (
-          <div className="bg-rice-50 rounded-2xl p-12 shadow-card text-center">
-            <div className="w-20 h-20 bg-ink-900/5 rounded-full flex items-center justify-center mx-auto mb-4">
-              <Heart className="w-10 h-10 text-ink-400" />
-            </div>
-            <h3 className="font-serif text-xl font-semibold text-ink-700 mb-2">
-              开启创意嫁接之旅
-            </h3>
-            <p className="text-ink-500 max-w-md mx-auto mb-6">
-              上传或从素材库选择两张作品，设定融合标准
-              <br />
-              让 AI 帮你发现意想不到的创意组合
-            </p>
-            <div className="flex justify-center gap-4 flex-wrap">
-              <button
-                onClick={() => setShowArtworkPicker(1)}
-                className="inline-flex items-center gap-2 px-6 py-3 bg-cinnabar text-white rounded-lg hover:opacity-90 transition-all"
-              >
-                <Grid3X3 className="w-5 h-5" />
-                <span className="font-medium">从素材库选作品</span>
-              </button>
-              <button
-                onClick={() => setShowSettings(true)}
-                className="inline-flex items-center gap-2 px-6 py-3 border-2 border-ink-200 text-ink-700 rounded-lg hover:border-cinnabar hover:text-cinnabar transition-all"
-              >
-                <Settings2 className="w-5 h-5" />
-                <span className="font-medium">查看融合标准</span>
-              </button>
-            </div>
+          <div className="bg-rice-50 rounded-2xl shadow-card">
+            <EmptyState
+              icon={Sparkles}
+              title="选择两张作品开始融合"
+              desc="从素材库或历史记录中选择图片"
+            />
           </div>
         )}
 

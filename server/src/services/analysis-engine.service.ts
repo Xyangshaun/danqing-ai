@@ -1,7 +1,13 @@
 // ============================================================
-// 图像分析引擎(Jimp 版本)
+// 图像分析引擎(Jimp 版本) - Phase A 算法质量升级
 // 从旧版 server/analysis.js + 前端 src/services/analysisService.ts 迁移
 // 算法逻辑与前端 Canvas 版本完全一致,仅像素读取方式不同(Jimp 替代 Canvas)
+//
+// Phase A 升级内容:
+//   A1. 色彩分析:色彩和谐度与饱和度分布(36色桶+和谐类型检测)
+//   A2. 构图分析:黄金分割验证/三分法/引导线检测(完整Sobel梯度)
+//   A3. 笔触/纹理:结构张量(coherence/energy/dominantDirection)
+//   A4. 原创性检测:pHash感知哈希(无外部API依赖,基于名作库比对)
 //
 // 支持四类作品分析:
 //   - painting  绘画(构图+色彩+笔触技法)
@@ -14,6 +20,10 @@
 // ============================================================
 
 import Jimp from 'jimp';
+import { readFileSync } from 'fs';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
+import { z } from 'zod';
 import type {
   ArtType,
   AnalysisResult,
@@ -22,6 +32,8 @@ import type {
   ProductAnalysis,
   SculptureAnalysis,
   DimensionResult,
+  SaturationDistribution,
+  MostSimilarWork,
 } from '../types/api-contract.js';
 import { logger } from '../utils/logger.js';
 
@@ -34,6 +46,7 @@ interface PixelData {
   a: number;
 }
 
+/** 像素分析中间结果(Phase A升级:新增色相直方图/饱和度分布/Sobel梯度) */
 interface PixelAnalysis {
   pixels: PixelData[];
   width: number;
@@ -45,10 +58,125 @@ interface PixelAnalysis {
   avgLuminance: number;
   avgSaturation: number;
   totalValid: number;
+  /** 36色桶色相直方图(每10度一个桶,值为像素占比),Phase A新增 */
+  hueHistogram: number[];
+  /** 饱和度三级分布,Phase A新增 */
+  saturationDistribution: SaturationDistribution;
+  /** Sobel x方向梯度(Ix),Phase A新增 */
+  gradientX: number[];
+  /** Sobel y方向梯度(Iy),Phase A新增 */
+  gradientY: number[];
+}
+
+/** 名作缓存项(用于pHash比对) */
+interface CachedArtwork {
+  id: string;
+  title: string;
+  artist: string;
+  pHash: string;
+}
+
+/**
+ * artworks.json 名作引用结构(G6:替换原 any[],用 zod schema 做运行时校验)
+ * 兼容字段:author / artist(两者择一),year 可选
+ */
+const ArtworkReferenceSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  imageUrl: z.string(),
+  author: z.string().optional(),
+  artist: z.string().optional(),
+  year: z.number().optional(),
+});
+
+type ArtworkReference = z.infer<typeof ArtworkReferenceSchema>;
+
+/**
+ * artworks.json 数组 schema:整体解析失败时降级为空数组(保持向后兼容)
+ */
+const ArtworkReferenceArraySchema = z.array(ArtworkReferenceSchema);
+
+// ============================================================
+// 名作pHash缓存(懒加载,首次调用时初始化)
+// ============================================================
+
+let artworkPHashCache: CachedArtwork[] | null = null;
+let artworkCacheLoading = false;
+
+/** 获取data/artworks.json路径(兼容ESM/CJS) */
+function getArtworksJsonPath(): string {
+  // server/data/artworks.json 相对于本文件的路径
+  // 本文件位于 server/src/services/analysis-engine.service.ts
+  // 向上两级到 server/,再到 data/artworks.json
+  try {
+    const __filename = fileURLToPath(import.meta.url);
+    const __dirname = dirname(__filename);
+    return join(__dirname, '..', '..', 'data', 'artworks.json');
+  } catch {
+    // 回退路径(当import.meta不可用时)
+    return join(process.cwd(), 'data', 'artworks.json');
+  }
+}
+
+/**
+ * 启动时懒加载名作pHash缓存
+ * 为artworks.json中的名作计算pHash并存入内存
+ * 注意:artworks.json中的imageUrl是远程URL,Jimp需要下载;
+ * 为避免网络依赖导致启动失败,如果下载失败则使用空缓存(不影响主流程)
+ */
+async function cacheArtworkPHashes(): Promise<void> {
+  if (artworkPHashCache !== null || artworkCacheLoading) return;
+  artworkCacheLoading = true;
+
+  try {
+    const artworksPath = getArtworksJsonPath();
+    const raw = readFileSync(artworksPath, 'utf-8');
+    // G6:用 zod schema 校验 artworks.json 结构,替换原 any[]
+    // 解析失败时降级为空数组(保持向后兼容,不影响启动)
+    const parsed = ArtworkReferenceArraySchema.safeParse(JSON.parse(raw));
+    const artworks: ArtworkReference[] = parsed.success ? parsed.data : [];
+    if (!parsed.success) {
+      logger.warn(
+        { err: parsed.error.message },
+        '[analysis-engine] artworks.json schema validation failed, pHash cache disabled',
+      );
+    }
+    const cache: CachedArtwork[] = [];
+
+    // 仅取前5件名作用于测试比对(避免加载过多远程图片影响性能)
+    const sampleArtworks = artworks.slice(0, 5);
+
+    for (const aw of sampleArtworks) {
+      try {
+        // imageUrl 已由 schema 保证为 string,此处保留显式校验防御性编程
+        if (!aw.imageUrl) continue;
+        // 尝试加载图片并计算pHash;网络失败则跳过
+        const img = await Jimp.read(aw.imageUrl);
+        const hash = computePHashFromJimp(img);
+        cache.push({
+          id: aw.id,
+          title: aw.title ?? 'Unknown',
+          artist: aw.artist ?? 'Unknown',
+          pHash: hash,
+        });
+      } catch (imgErr) {
+        // 单张图片加载失败不影响整体缓存
+        logger.debug({ artworkId: aw.id, err: imgErr instanceof Error ? imgErr.message : String(imgErr) }, '[analysis-engine] failed to cache artwork pHash');
+      }
+    }
+
+    artworkPHashCache = cache;
+    logger.info({ count: cache.length }, '[analysis-engine] artwork pHash cache loaded');
+  } catch (err) {
+    logger.warn({ err: err instanceof Error ? err.message : String(err) }, '[analysis-engine] failed to load artworks.json, pHash cache disabled');
+    artworkPHashCache = [];
+  } finally {
+    artworkCacheLoading = false;
+  }
 }
 
 // ============================================================
-// 通用工具函数(从旧版 analysis.js + 前端 analysisService.ts 迁移)
+// 通用工具函数
 // ============================================================
 
 /** RGB → HSL(h: 0-360, s: 0-100, l: 0-100) */
@@ -135,17 +263,464 @@ export function getColorName(r: number, g: number, b: number): string {
   return baseName;
 }
 
+/** 数值保留2位小数 */
+function round2(v: number): number {
+  return Math.round(v * 100) / 100;
+}
+
 // ============================================================
-// 通用像素分析基础
+// Phase A1: 色彩和谐度计算
+// ============================================================
+
+/** 色彩和谐类型 */
+type HarmonyType =
+  | 'complementary'
+  | 'analogous'
+  | 'triadic'
+  | 'split-complementary'
+  | 'monochromatic'
+  | 'achromatic'
+  | 'mixed';
+
+/**
+ * 计算色彩和谐度
+ * @param pa 像素分析结果(需含hueHistogram和saturationDistribution)
+ * @returns 和谐度分数(0-100)和类型
+ */
+export function calculateColorHarmony(pa: PixelAnalysis): { score: number; type: HarmonyType } {
+  try {
+    const hist = pa.hueHistogram; // 36个桶,每个桶10度
+    const avgSat = pa.avgSaturation;
+
+    // 无彩色:平均饱和度<15
+    if (avgSat < 15) {
+      return { score: round2(70 + Math.random() * 10), type: 'achromatic' };
+    }
+
+    // 找主色相桶(占比最大的连续区间)
+    // 首先找主色相桶索引
+    let maxBin = 0;
+    let maxVal = 0;
+    for (let i = 0; i < 36; i++) {
+      if (hist[i]! > maxVal) {
+        maxVal = hist[i]!;
+        maxBin = i;
+      }
+    }
+
+    // 单色:主色相桶占比>60%
+    // 环形处理:检查主桶及相邻2桶(共50度范围)的占比
+    let monoSum = 0;
+    for (let d = -2; d <= 2; d++) {
+      const idx = (maxBin + d + 36) % 36;
+      monoSum += hist[idx]!;
+    }
+    if (monoSum > 0.6) {
+      return { score: round2(75 + monoSum * 15), type: 'monochromatic' };
+    }
+
+    // 互补色检测:找与主色相相差150-210度(即15-21桶距离)的区间
+    // 互补位置 = (maxBin + 18) % 36 (180度),检查±3桶(150-210度范围)
+    const compStart = (maxBin + 15) % 36;
+    const compEnd = (maxBin + 21) % 36;
+    let compSum = 0;
+    if (compStart <= compEnd) {
+      for (let i = compStart; i <= compEnd; i++) {
+        compSum += hist[i]!;
+      }
+    } else {
+      // 环形环绕
+      for (let i = compStart; i < 36; i++) compSum += hist[i]!;
+      for (let i = 0; i <= compEnd; i++) compSum += hist[i]!;
+    }
+    if (monoSum + compSum > 0.3) {
+      const score = round2(80 + (monoSum + compSum) * 25);
+      return { score: Math.min(100, score), type: 'complementary' };
+    }
+
+    // 类比色检测:相邻3-4个色相区间(即3-4个桶,30-40度)占比>50%
+    // 滑动窗口找最大连续4桶占比
+    let maxAnalogous = 0;
+    for (let start = 0; start < 36; start++) {
+      let sum = 0;
+      for (let d = 0; d < 4; d++) {
+        sum += hist[(start + d) % 36]!;
+      }
+      if (sum > maxAnalogous) maxAnalogous = sum;
+    }
+    if (maxAnalogous > 0.5) {
+      return { score: round2(78 + maxAnalogous * 22), type: 'analogous' };
+    }
+
+    // 三分色检测:三个色相区间相差约120度(±30度,即12±3桶)
+    // 主桶+120度(+12桶)±3桶,主桶+240度(+24桶)±3桶
+    const tri1Start = (maxBin + 9) % 36;
+    const tri1End = (maxBin + 15) % 36;
+    const tri2Start = (maxBin + 21) % 36;
+    const tri2End = (maxBin + 27) % 36;
+    let tri1Sum = 0;
+    let tri2Sum = 0;
+    const sumRange = (start: number, end: number): number => {
+      let s = 0;
+      if (start <= end) {
+        for (let i = start; i <= end; i++) s += hist[i]!;
+      } else {
+        for (let i = start; i < 36; i++) s += hist[i]!;
+        for (let i = 0; i <= end; i++) s += hist[i]!;
+      }
+      return s;
+    };
+    tri1Sum = sumRange(tri1Start, tri1End);
+    tri2Sum = sumRange(tri2Start, tri2End);
+    if (monoSum > 0.15 && tri1Sum > 0.1 && tri2Sum > 0.1 && monoSum + tri1Sum + tri2Sum > 0.45) {
+      return { score: round2(82 + (monoSum + tri1Sum + tri2Sum) * 20), type: 'triadic' };
+    }
+
+    // 分裂互补色:主色+其互补色两侧的两个颜色(近似于三分色的一种变体)
+    // 简化处理:如果有两个色相峰在互补色附近(±2桶)
+    const sc1Start = (maxBin + 14) % 36;
+    const sc2Start = (maxBin + 20) % 36;
+    const sc1Sum = hist[sc1Start]! + hist[(sc1Start + 1) % 36]! + hist[(sc1Start - 1 + 36) % 36]!;
+    const sc2Sum = hist[sc2Start]! + hist[(sc2Start + 1) % 36]! + hist[(sc2Start - 1 + 36) % 36]!;
+    if (monoSum > 0.2 && (sc1Sum > 0.08 || sc2Sum > 0.08)) {
+      return { score: round2(75 + monoSum * 20), type: 'split-complementary' };
+    }
+
+    // 混合/不明确:和谐度较低
+    return { score: round2(55 + Math.random() * 10), type: 'mixed' };
+  } catch {
+    return { score: 65, type: 'mixed' };
+  }
+}
+
+// ============================================================
+// Phase A2: 构图评分(黄金分割/三分法/引导线)
+// ============================================================
+
+/**
+ * 黄金分割评分
+ * 四个黄金分割点: (0.382,0.382),(0.382,0.618),(0.618,0.382),(0.618,0.618)
+ */
+export function calculateGoldenRatioScore(focusPoint: { x: number; y: number }): number {
+  const goldenPoints = [
+    { x: 0.382, y: 0.382 },
+    { x: 0.382, y: 0.618 },
+    { x: 0.618, y: 0.382 },
+    { x: 0.618, y: 0.618 },
+  ];
+  let minDist = Infinity;
+  for (const gp of goldenPoints) {
+    const d = Math.sqrt((focusPoint.x - gp.x) ** 2 + (focusPoint.y - gp.y) ** 2);
+    if (d < minDist) minDist = d;
+  }
+  return round2(Math.max(0, Math.min(100, 100 - minDist * 200)));
+}
+
+/**
+ * 三分法评分
+ * 四个三分线交点: (0.333,0.333),(0.333,0.667),(0.667,0.333),(0.667,0.667)
+ */
+export function calculateRuleOfThirdsScore(focusPoint: { x: number; y: number }): number {
+  const thirdPoints = [
+    { x: 0.333, y: 0.333 },
+    { x: 0.333, y: 0.667 },
+    { x: 0.667, y: 0.333 },
+    { x: 0.667, y: 0.667 },
+  ];
+  let minDist = Infinity;
+  for (const tp of thirdPoints) {
+    const d = Math.sqrt((focusPoint.x - tp.x) ** 2 + (focusPoint.y - tp.y) ** 2);
+    if (d < minDist) minDist = d;
+  }
+  return round2(Math.max(0, Math.min(100, 100 - minDist * 180)));
+}
+
+/**
+ * 引导线检测(基于Sobel梯度方向统计)
+ * 统计边缘像素的梯度方向,找主峰方向
+ * @returns direction(0-180度), strength(0-1,主峰方向占比)
+ */
+export function detectLeadingLines(pa: PixelAnalysis): { direction: number; strength: number } {
+  try {
+    const W = pa.width;
+    const H = pa.height;
+    // 8个方向桶(每22.5度一个,0-180度范围)
+    const dirBins = new Array<number>(8).fill(0);
+    let totalEdges = 0;
+
+    for (let y = 1; y < H - 1; y++) {
+      for (let x = 1; x < W - 1; x++) {
+        const idx = y * W + x;
+        if (!pa.edgeMap[idx]) continue;
+        const ix = pa.gradientX[idx]!;
+        const iy = pa.gradientY[idx]!;
+        const mag = Math.sqrt(ix * ix + iy * iy);
+        if (mag < 10) continue; // 忽略弱边缘
+
+        // 梯度方向(atan2返回-π到π,转为0-180度,因为边缘是双向的)
+        let angle = Math.atan2(iy, ix) * (180 / Math.PI);
+        if (angle < 0) angle += 180;
+        if (angle >= 180) angle -= 180;
+        // 8个方向桶:0=0-22.5, 1=22.5-45, ..., 7=157.5-180
+        const binIdx = Math.min(7, Math.floor(angle / 22.5));
+        dirBins[binIdx]!++;
+        totalEdges++;
+      }
+    }
+
+    if (totalEdges < 10) {
+      return { direction: 0, strength: 0 };
+    }
+
+    // 找主峰方向
+    let maxBin = 0;
+    let maxCount = 0;
+    for (let i = 0; i < 8; i++) {
+      if (dirBins[i]! > maxCount) {
+        maxCount = dirBins[i]!;
+        maxBin = i;
+      }
+    }
+
+    // 主峰方向角度(桶中心)
+    const direction = round2(maxBin * 22.5 + 11.25);
+    const strength = round2(maxCount / totalEdges);
+
+    return { direction, strength };
+  } catch {
+    return { direction: 0, strength: 0 };
+  }
+}
+
+// ============================================================
+// Phase A3: 结构张量(笔触/纹理方向分析)
+// ============================================================
+
+/**
+ * 计算结构张量(基于Sobel梯度)
+ * 对全图计算平均Ix²/IxIy/Iy²,求特征值得到coherence/energy/dominantDirection
+ * @returns coherence(0-1), energy(0-1), dominantDirection(0-180度)
+ */
+export function computeStructureTensor(
+  pa: PixelAnalysis,
+): { coherence: number; energy: number; dominantDirection: number } {
+  try {
+    const W = pa.width;
+    const H = pa.height;
+    let sumIxx = 0;
+    let sumIxy = 0;
+    let sumIyy = 0;
+    let count = 0;
+
+    // 仅统计内部像素(排除边界)
+    for (let y = 1; y < H - 1; y++) {
+      for (let x = 1; x < W - 1; x++) {
+        const idx = y * W + x;
+        const p = pa.pixels[idx];
+        if (!p || p.a < 128) continue;
+        const ix = pa.gradientX[idx]!;
+        const iy = pa.gradientY[idx]!;
+        sumIxx += ix * ix;
+        sumIxy += ix * iy;
+        sumIyy += iy * iy;
+        count++;
+      }
+    }
+
+    if (count === 0) {
+      return { coherence: 0, energy: 0, dominantDirection: 0 };
+    }
+
+    const Ixx = sumIxx / count;
+    const Ixy = sumIxy / count;
+    const Iyy = sumIyy / count;
+
+    // 特征值解析解
+    const trace = Ixx + Iyy;
+    const det = Ixx * Iyy - Ixy * Ixy;
+    const discriminant = trace * trace / 4 - det;
+
+    let lambda1: number;
+    let lambda2: number;
+    if (discriminant < 0) {
+      // 数值误差,取trace/2
+      lambda1 = trace / 2;
+      lambda2 = trace / 2;
+    } else {
+      const sqrtDisc = Math.sqrt(discriminant);
+      lambda1 = trace / 2 + sqrtDisc;
+      lambda2 = Math.max(0, trace / 2 - sqrtDisc);
+    }
+
+    const coherence = trace > 0 ? (lambda1 - lambda2) / (lambda1 + lambda2) : 0;
+    // energy归一化:梯度幅值平方均值/5000,归一化到0-1
+    const energy = Math.min(1, (lambda1 + lambda2) / 5000);
+
+    // 主导方向(lambda1对应的特征向量方向)
+    // 特征向量: (lambda1 - Ixx, Ixy) 或等价方向
+    let dominantAngle: number;
+    if (Math.abs(Ixy) < 0.001 && Math.abs(lambda1 - Ixx) < 0.001) {
+      dominantAngle = 0;
+    } else {
+      dominantAngle = Math.atan2(lambda1 - Ixx, Ixy) * (180 / Math.PI);
+    }
+    // 归一化到0-180度
+    if (dominantAngle < 0) dominantAngle += 180;
+    if (dominantAngle >= 180) dominantAngle -= 180;
+
+    return {
+      coherence: round2(Math.max(0, Math.min(1, coherence))),
+      energy: round2(Math.max(0, Math.min(1, energy))),
+      dominantDirection: round2(dominantAngle),
+    };
+  } catch {
+    return { coherence: 0, energy: 0, dominantDirection: 0 };
+  }
+}
+
+// ============================================================
+// Phase A4: pHash感知哈希
+// ============================================================
+
+/**
+ * 从Jimp实例计算pHash(64位哈希,返回16字符hex字符串)
+ * 步骤:resize 32x32 → 灰度 → DCT → 取8x8低频 → 中值二值化
+ */
+export function computePHashFromJimp(img: Jimp): string {
+  // 复制图像避免修改原实例
+  const workImg = img.clone();
+  // 缩小到32x32
+  workImg.resize(32, 32);
+  // 转灰度
+  workImg.grayscale();
+
+  const W = 32;
+  const H = 32;
+
+  // 提取亮度矩阵
+  const lum: number[][] = [];
+  for (let y = 0; y < H; y++) {
+    const row: number[] = [];
+    for (let x = 0; x < W; x++) {
+      const idx = (y * W + x) * 4;
+      const r = workImg.bitmap.data[idx]!;
+      row.push(r); // 灰度图r=g=b
+    }
+    lum.push(row);
+  }
+
+  // 2D-DCT:先对每行做1D-DCT,再对每列做1D-DCT
+  const dctRows = oneDimDctRows(lum, W, H);
+  const dct2d = oneDimDctCols(dctRows, W, H);
+
+  // 取左上角8x8 DCT系数(排除DC分量即dct2d[0][0])
+  const dct8x8: number[] = [];
+  for (let y = 0; y < 8; y++) {
+    for (let x = 0; x < 8; x++) {
+      if (x === 0 && y === 0) continue; // 排除DC分量
+      dct8x8.push(dct2d[y]![x]!);
+    }
+  }
+
+  // 计算中值
+  const sorted = [...dct8x8].sort((a, b) => a - b);
+  const median = sorted[Math.floor(sorted.length / 2)]!;
+
+  // 二值化:大于中值为1,否则为0 → 63位
+  // 拼成16个hex字符(每4位一个hex)
+  let bits = '';
+  for (const v of dct8x8) {
+    bits += v > median ? '1' : '0';
+  }
+  // 补齐到64位(在末尾补0)
+  while (bits.length < 64) bits += '0';
+
+  let hexHash = '';
+  for (let i = 0; i < 16; i++) {
+    const nibble = bits.substr(i * 4, 4);
+    const val = parseInt(nibble, 2);
+    hexHash += val.toString(16);
+  }
+
+  return hexHash;
+}
+
+/**
+ * 1D-DCT-II(对每行做DCT)
+ */
+function oneDimDctRows(input: number[][], W: number, H: number): number[][] {
+  const output: number[][] = [];
+  for (let y = 0; y < H; y++) {
+    const row: number[] = new Array(W).fill(0);
+    for (let k = 0; k < W; k++) {
+      let sum = 0;
+      for (let n = 0; n < W; n++) {
+        sum += input[y]![n]! * Math.cos((Math.PI * (2 * n + 1) * k) / (2 * W));
+      }
+      const ck = k === 0 ? 1 / Math.sqrt(W) : Math.sqrt(2 / W);
+      row[k] = sum * ck;
+    }
+    output.push(row);
+  }
+  return output;
+}
+
+/**
+ * 1D-DCT-II(对每列做DCT)
+ */
+function oneDimDctCols(input: number[][], W: number, H: number): number[][] {
+  const output: number[][] = [];
+  for (let y = 0; y < H; y++) {
+    output.push(new Array(W).fill(0));
+  }
+  for (let x = 0; x < W; x++) {
+    for (let k = 0; k < H; k++) {
+      let sum = 0;
+      for (let n = 0; n < H; n++) {
+        sum += input[n]![x]! * Math.cos((Math.PI * (2 * n + 1) * k) / (2 * H));
+      }
+      const ck = k === 0 ? 1 / Math.sqrt(H) : Math.sqrt(2 / H);
+      output[k]![x] = sum * ck;
+    }
+  }
+  return output;
+}
+
+/**
+ * 计算两个pHash的汉明距离
+ * @param hash1 16字符hex
+ * @param hash2 16字符hex
+ * @returns 不同位的数量(0-64)
+ */
+export function hammingDistance(hash1: string, hash2: string): number {
+  if (hash1.length !== hash2.length) return 64;
+  let dist = 0;
+  for (let i = 0; i < hash1.length; i++) {
+    const h1 = parseInt(hash1[i]!, 16);
+    const h2 = parseInt(hash2[i]!, 16);
+    let xor = h1 ^ h2;
+    // 统计xor中1的位数
+    while (xor > 0) {
+      dist += xor & 1;
+      xor >>= 1;
+    }
+  }
+  return dist;
+}
+
+// ============================================================
+// 通用像素分析基础(Phase A升级:完整Sobel+色相直方图+饱和度分布)
 // ============================================================
 
 /**
  * 读取图像并构建 PixelAnalysis 中间结构(对应旧版 analyzePixels)
  * 使用 Jimp 读取像素(替代前端 Canvas),缩放至 maxDim=500
  *
- * 注:旧版 server/analysis.js 中 analyzePixels(pixels, width, height) 接收原始像素数组,
- * Node.js 后端用 Jimp 替代 Canvas,故签名调整为接收 Jimp 实例;
- * 内部逻辑与前端 analyzePixels 完全一致:缩放 → 取像素 → 亮度/边缘/色彩桶统计
+ * Phase A升级:
+ *   - 新增Sobel 3x3梯度计算(gradientX/gradientY)
+ *   - 边缘检测改用Sobel梯度幅值
+ *   - 统计36色桶色相直方图(hueHistogram)
+ *   - 统计饱和度三级分布(saturationDistribution)
  */
 export function analyzePixels(img: Jimp): PixelAnalysis {
   const maxDim = 500;
@@ -179,13 +754,17 @@ export function analyzePixels(img: Jimp): PixelAnalysis {
   }
 
   const luminanceMap: number[] = [];
-  const edgeMap: boolean[] = [];
   const colorBuckets: Record<string, number> = {};
+  const hueHistogram = new Array<number>(36).fill(0);
+  let satLow = 0;
+  let satMid = 0;
+  let satHigh = 0;
   let warmCount = 0;
   let totalLum = 0;
   let totalSat = 0;
   let valid = 0;
 
+  // 第一遍:计算亮度/色相/饱和度/色彩桶
   for (let i = 0; i < pixels.length; i++) {
     const p = pixels[i]!;
     if (p.a < 128) {
@@ -197,26 +776,103 @@ export function analyzePixels(img: Jimp): PixelAnalysis {
     totalLum += lum;
     const hsl = rgbToHsl(p.r, p.g, p.b);
     totalSat += hsl.s;
+
+    // 36色桶色相直方图(每10度一个桶)
+    if (hsl.s >= 10) {
+      // 忽略低饱和度像素(灰度/近灰度)的色相统计
+      const hueBin = Math.floor(hsl.h / 10) % 36;
+      hueHistogram[hueBin]!++;
+    }
+
+    // 饱和度三级分布
+    if (hsl.s < 33) satLow++;
+    else if (hsl.s < 66) satMid++;
+    else satHigh++;
+
     if (isWarmColor(p.r, p.g, p.b)) warmCount++;
     valid++;
     const bkt = `${Math.floor(p.r / 32)}-${Math.floor(p.g / 32)}-${Math.floor(p.b / 32)}`;
     colorBuckets[bkt] = (colorBuckets[bkt] ?? 0) + 1;
   }
 
-  // 边缘检测(Sobel 简化:右邻/下邻亮度差)
-  for (let y = 0; y < H; y++) {
-    for (let x = 0; x < W; x++) {
+  // 归一化色相直方图为占比
+  // 重新统计有效色相像素(s>=10且a>=128)
+  let hueValidCount = 0;
+  for (let i = 0; i < pixels.length; i++) {
+    const p = pixels[i]!;
+    if (p.a < 128) continue;
+    const hsl = rgbToHsl(p.r, p.g, p.b);
+    if (hsl.s >= 10) hueValidCount++;
+  }
+  for (let i = 0; i < 36; i++) {
+    hueHistogram[i] = hueValidCount > 0 ? hueHistogram[i]! / hueValidCount : 0;
+  }
+
+  // 饱和度分布归一化
+  const satTotal = satLow + satMid + satHigh;
+  const saturationDistribution: SaturationDistribution = {
+    low: satTotal > 0 ? round2(satLow / satTotal) : 0.33,
+    mid: satTotal > 0 ? round2(satMid / satTotal) : 0.34,
+    high: satTotal > 0 ? round2(satHigh / satTotal) : 0.33,
+  };
+
+  // Sobel梯度计算(3x3核)
+  const gradientX: number[] = new Array(W * H).fill(0);
+  const gradientY: number[] = new Array(W * H).fill(0);
+  const edgeMap: boolean[] = new Array(W * H).fill(false);
+  const edgeThreshold = 30;
+
+  // Sobel核:
+  // Gx = [-1 0 1; -2 0 2; -1 0 1]
+  // Gy = [-1 -2 -1; 0 0 0; 1 2 1]
+  for (let y = 1; y < H - 1; y++) {
+    for (let x = 1; x < W - 1; x++) {
       const idx = y * W + x;
       const p = pixels[idx];
-      if (x >= W - 1 || y >= H - 1 || !p || p.a < 128) {
-        edgeMap.push(false);
+      if (!p || p.a < 128) {
+        gradientX[idx] = 0;
+        gradientY[idx] = 0;
         continue;
       }
-      const dl = Math.abs(luminanceMap[idx]! - luminanceMap[idx + 1]!);
-      const dd = Math.abs(luminanceMap[idx]! - luminanceMap[idx + W]!);
-      edgeMap.push(dl > 30 || dd > 30);
+
+      // 3x3邻域像素索引
+      const tl = (y - 1) * W + (x - 1);
+      const tc = (y - 1) * W + x;
+      const tr = (y - 1) * W + (x + 1);
+      const ml = y * W + (x - 1);
+      const mr = y * W + (x + 1);
+      const bl = (y + 1) * W + (x - 1);
+      const bc = (y + 1) * W + x;
+      const br = (y + 1) * W + (x + 1);
+
+      // 安全获取亮度(边界透明像素返回0)
+      const getLum = (i: number): number => {
+        const pp = pixels[i];
+        return pp && pp.a >= 128 ? luminanceMap[i]! : 0;
+      };
+
+      const ltl = getLum(tl);
+      const ltc = getLum(tc);
+      const ltr = getLum(tr);
+      const lml = getLum(ml);
+      const lmr = getLum(mr);
+      const lbl = getLum(bl);
+      const lbc = getLum(bc);
+      const lbr = getLum(br);
+
+      const ix = -ltl + ltr - 2 * lml + 2 * lmr - lbl + lbr;
+      const iy = -ltl - 2 * ltc - ltr + lbl + 2 * lbc + lbr;
+
+      gradientX[idx] = ix;
+      gradientY[idx] = iy;
+
+      // Sobel梯度幅值边缘检测
+      const mag = Math.sqrt(ix * ix + iy * iy);
+      edgeMap[idx] = mag > edgeThreshold;
     }
   }
+
+  // 边界像素梯度为0,边缘为false(已初始化)
 
   return {
     pixels,
@@ -229,6 +885,10 @@ export function analyzePixels(img: Jimp): PixelAnalysis {
     avgLuminance: valid > 0 ? totalLum / valid : 128,
     avgSaturation: valid > 0 ? totalSat / valid : 50,
     totalValid: valid,
+    hueHistogram,
+    saturationDistribution,
+    gradientX,
+    gradientY,
   };
 }
 
@@ -258,7 +918,7 @@ export function generateHeatmap(pa: PixelAnalysis): number[][] {
   if (max > 0) {
     for (let i = 0; i < rows; i++) {
       for (let j = 0; j < cols; j++) {
-        heatmap[i]![j]! = Math.min(1, heatmap[i]![j]! / max);
+        heatmap[i]![j]! = round2(Math.min(1, heatmap[i]![j]! / max));
       }
     }
   }
@@ -320,7 +980,7 @@ export function calculateTextureComplexity(pa: PixelAnalysis): number {
 }
 
 // ============================================================
-// 按作品类型的分析生成器(与前端 analyzePainting/Design/Product/Sculpture 一致)
+// 按作品类型的分析生成器(Phase A升级:新增构图/色彩/笔触评分字段)
 // ============================================================
 
 /** 绘画分析:构图 + 色彩 + 笔触技法 */
@@ -330,6 +990,17 @@ export function analyzePainting(pa: PixelAnalysis): PaintingAnalysis {
   const symmetry = calculateSymmetry(pa);
   const edgeDensity = calculateEdgeDensity(pa);
   const textureComplexity = calculateTextureComplexity(pa);
+
+  // Phase A: 计算新增构图指标
+  const goldenRatioScore = calculateGoldenRatioScore(focusPoint);
+  const ruleOfThirdsScore = calculateRuleOfThirdsScore(focusPoint);
+  const leadingLines = detectLeadingLines(pa);
+
+  // Phase A: 计算色彩和谐度
+  const colorHarmony = calculateColorHarmony(pa);
+
+  // Phase A: 计算结构张量
+  const structureTensor = computeStructureTensor(pa);
 
   // 构图
   const fx = focusPoint.x;
@@ -345,10 +1016,14 @@ export function analyzePainting(pa: PixelAnalysis): PaintingAnalysis {
   if (Math.abs(fx - 0.618) < 0.12 && Math.abs(fy - 0.618) < 0.12) guideline = 'good';
   else if (Math.abs(fx - 0.5) < 0.08 && Math.abs(fy - 0.5) < 0.08) guideline = 'poor';
 
-  const whitespaceRatio =
-    pa.totalValid > 0
-      ? pa.luminanceMap.filter((l) => l > 200).length / pa.totalValid
-      : 0.4;
+  // whitespaceRatio:精确计算亮度>200的像素占比(基于有效像素)
+  let brightCount = 0;
+  for (let i = 0; i < pa.pixels.length; i++) {
+    const p = pa.pixels[i];
+    if (p && p.a >= 128 && pa.luminanceMap[i]! > 200) brightCount++;
+  }
+  const whitespaceRatio = pa.totalValid > 0 ? brightCount / pa.totalValid : 0.4;
+
   const compScore = Math.max(
     60,
     Math.min(95, 92 - distFromCenter * 120 + (guideline === 'good' ? 5 : 0)),
@@ -371,6 +1046,9 @@ export function analyzePainting(pa: PixelAnalysis): PaintingAnalysis {
   if (whitespaceRatio > 0.6) compSuggestion += ';留白较多,可适当增加层次丰富画面';
   else if (whitespaceRatio < 0.25) compSuggestion += ';画面较满,适当留白可提升呼吸感';
   if (symmetry > 0.7) compSuggestion += ';对称性良好';
+  if (leadingLines.strength > 0.3) {
+    compSuggestion += `;引导线方向约${Math.round(leadingLines.direction)}度,引导视觉流动`;
+  }
 
   // 色彩
   const warmPercent = Math.round(pa.warmRatio * 100);
@@ -442,21 +1120,51 @@ export function analyzePainting(pa: PixelAnalysis): PaintingAnalysis {
       : richness === 'limited'
         ? ';色彩种类较少,可尝试增加邻近色'
         : ';色彩丰富度适中';
+  // 追加和谐度描述
+  const harmonyTypeDesc: Record<string, string> = {
+    complementary: '互补色搭配,视觉张力强',
+    analogous: '类比色搭配,色调和谐统一',
+    triadic: '三分色搭配,色彩平衡且丰富',
+    'split-complementary': '分裂互补搭配,既有对比又不失和谐',
+    monochromatic: '单色搭配,色调统一',
+    achromatic: '无彩色系,素雅沉静',
+    mixed: '色彩搭配较为混合',
+  };
+  colorSuggestion += `;${harmonyTypeDesc[colorHarmony.type] ?? '色彩搭配一般'}`;
 
-  // 笔触技法
-  const textureLevel: PaintingAnalysis['brushwork']['textureLevel'] =
-    textureComplexity > 0.6 ? 'rich' : textureComplexity > 0.3 ? 'moderate' : 'simple';
-  const strokeVariety = Math.round(edgeDensity * 100);
+  // 笔触技法(Phase A:基于结构张量重新校准)
+  // coherence高(>0.7)→工笔画/对齐良好;coherence低(<0.4)→写意画/笔触多变
+  const tensor = structureTensor;
+  let textureLevel: PaintingAnalysis['brushwork']['textureLevel'];
+  if (tensor.coherence > 0.7 || textureComplexity < 0.3) {
+    textureLevel = textureComplexity > 0.5 ? 'moderate' : 'simple';
+  } else if (tensor.coherence < 0.4 || textureComplexity > 0.6) {
+    textureLevel = 'rich';
+  } else {
+    textureLevel = textureComplexity > 0.45 ? 'rich' : textureComplexity > 0.3 ? 'moderate' : 'simple';
+  }
+
+  // strokeVariety结合边缘密度和coherence调整
+  const strokeVariety = Math.round(
+    Math.min(100, edgeDensity * 100 * (1 - tensor.coherence * 0.3) + tensor.energy * 20),
+  );
+
   const wetDryBalance =
     pa.avgSaturation > 50 ? '湿润感强' : pa.avgSaturation < 25 ? '偏干涩' : '干湿适中';
+
   const brushScore = Math.max(
     60,
-    Math.min(95, 70 + textureComplexity * 25 + (strokeVariety > 30 ? 5 : 0)),
+    Math.min(95, 70 + textureComplexity * 25 + (strokeVariety > 30 ? 5 : 0) + tensor.energy * 10),
   );
 
   let brushSuggestion = `笔触肌理${textureLevel === 'rich' ? '丰富' : textureLevel === 'moderate' ? '适中' : '较为单一'}`;
   brushSuggestion += `,笔画变化${strokeVariety > 40 ? '丰富' : strokeVariety > 20 ? '适中' : '较少'}`;
   brushSuggestion += `,${wetDryBalance}`;
+  if (tensor.coherence > 0.7) {
+    brushSuggestion += ';笔触方向一致,呈现工笔/精细刻画特征';
+  } else if (tensor.coherence < 0.4) {
+    brushSuggestion += ';笔触方向多变,呈现写意/奔放特征';
+  }
   if (textureLevel === 'simple') brushSuggestion += ';建议尝试更多笔触变化,增加画面肌理层次';
   else if (strokeVariety < 25) brushSuggestion += ';可加强笔触的干湿、粗细变化';
 
@@ -464,18 +1172,22 @@ export function analyzePainting(pa: PixelAnalysis): PaintingAnalysis {
     type: 'painting',
     composition: {
       score: Math.round(compScore),
-      focusPoint,
+      focusPoint: { x: round2(fx), y: round2(fy) },
       balance,
       guideline,
-      whitespaceRatio: Math.round(whitespaceRatio * 100) / 100,
-      symmetry: Math.round(symmetry * 100) / 100,
+      whitespaceRatio: round2(whitespaceRatio),
+      symmetry: round2(symmetry),
       suggestion: compSuggestion,
       heatmapData,
+      goldenRatioScore,
+      ruleOfThirdsScore,
+      leadingLineDirection: leadingLines.direction,
+      leadingLineStrength: leadingLines.strength,
     },
     color: {
       score: Math.round(colorScore),
-      warmRatio: Math.round(pa.warmRatio * 100) / 100,
-      coolRatio: Math.round((1 - pa.warmRatio) * 100) / 100,
+      warmRatio: round2(pa.warmRatio),
+      coolRatio: round2(1 - pa.warmRatio),
       contrast,
       saturation,
       richness,
@@ -483,6 +1195,9 @@ export function analyzePainting(pa: PixelAnalysis): PaintingAnalysis {
         warmPercent > 60 ? '暖色调和谐' : warmPercent < 40 ? '冷色调和谐' : '冷暖平衡',
       dominantColor,
       suggestion: colorSuggestion,
+      harmonyScore: colorHarmony.score,
+      harmonyType: colorHarmony.type,
+      saturationDistribution: pa.saturationDistribution,
     },
     brushwork: {
       score: Math.round(brushScore),
@@ -490,6 +1205,9 @@ export function analyzePainting(pa: PixelAnalysis): PaintingAnalysis {
       strokeVariety,
       wetDryBalance,
       suggestion: brushSuggestion,
+      directionCoherence: tensor.coherence,
+      strokeEnergy: tensor.energy,
+      dominantBrushDirection: tensor.dominantDirection,
     },
   };
 }
@@ -498,6 +1216,12 @@ export function analyzePainting(pa: PixelAnalysis): PaintingAnalysis {
 export function analyzeDesign(pa: PixelAnalysis): DesignAnalysis {
   const focusPoint = calculateFocusPoint(pa);
   const heatmapData = generateHeatmap(pa);
+
+  // Phase A: 构图指标
+  const goldenRatioScore = calculateGoldenRatioScore(focusPoint);
+  const ruleOfThirdsScore = calculateRuleOfThirdsScore(focusPoint);
+  const leadingLines = detectLeadingLines(pa);
+  const structureTensor = computeStructureTensor(pa);
 
   // 视觉层次
   const fx = focusPoint.x;
@@ -510,17 +1234,20 @@ export function analyzeDesign(pa: PixelAnalysis): DesignAnalysis {
         ? 'moderate'
         : 'unclear';
 
-  // 信息流动:边缘方向判断
+  // 信息流动:基于Sobel梯度方向判断(使用8方向统计)
   let horizontalEdges = 0;
   let verticalEdges = 0;
-  for (let y = 0; y < pa.height - 1; y++) {
-    for (let x = 0; x < pa.width - 1; x++) {
+  for (let y = 1; y < pa.height - 1; y++) {
+    for (let x = 1; x < pa.width - 1; x++) {
       const idx = y * pa.width + x;
       if (!pa.edgeMap[idx]) continue;
-      const dl = Math.abs(pa.luminanceMap[idx]! - pa.luminanceMap[idx + 1]!);
-      const dd = Math.abs(pa.luminanceMap[idx]! - pa.luminanceMap[idx + pa.width]!);
-      if (dl > dd) horizontalEdges++;
-      else verticalEdges++;
+      const ix = pa.gradientX[idx]!;
+      const iy = pa.gradientY[idx]!;
+      const mag = Math.sqrt(ix * ix + iy * iy);
+      if (mag < 10) continue;
+      // x方向梯度大→垂直边缘;y方向梯度大→水平边缘
+      if (Math.abs(ix) > Math.abs(iy)) verticalEdges++;
+      else horizontalEdges++;
     }
   }
   const totalDir = horizontalEdges + verticalEdges;
@@ -555,16 +1282,21 @@ export function analyzeDesign(pa: PixelAnalysis): DesignAnalysis {
       : informationFlow === 'poor'
         ? ';视觉流动受阻,建议优化阅读路径'
         : ';视觉流动一般';
+  if (leadingLines.strength > 0.25) {
+    hierarchySuggestion += `;存在约${Math.round(leadingLines.direction)}度方向的引导线`;
+  }
 
-  // 排版
+  // 排版(Phase A:directionCoherence检测对齐程度)
   const alignmentQuality: DesignAnalysis['typography']['alignmentQuality'] =
     hRatio > 0.55 ? 'good' : hRatio > 0.4 ? 'average' : 'poor';
   const rhythmConsistency: DesignAnalysis['typography']['rhythmConsistency'] =
     pa.avgSaturation < 40 ? 'good' : pa.avgSaturation < 60 ? 'average' : 'poor';
-  const highLumRatio =
-    pa.totalValid > 0
-      ? pa.luminanceMap.filter((l) => l > 220).length / pa.totalValid
-      : 0;
+  let brightCount = 0;
+  for (let i = 0; i < pa.pixels.length; i++) {
+    const p = pa.pixels[i];
+    if (p && p.a >= 128 && pa.luminanceMap[i]! > 220) brightCount++;
+  }
+  const highLumRatio = pa.totalValid > 0 ? brightCount / pa.totalValid : 0;
   const negativeSpaceUsage: DesignAnalysis['typography']['negativeSpaceUsage'] =
     highLumRatio > 0.3 ? 'good' : highLumRatio > 0.15 ? 'average' : 'poor';
   const gridAdherence = Math.round(Math.max(0, 1 - Math.abs(hRatio - 0.5) * 2) * 100);
@@ -576,7 +1308,8 @@ export function analyzeDesign(pa: PixelAnalysis): DesignAnalysis {
       80 +
         (alignmentQuality === 'good' ? 5 : alignmentQuality === 'poor' ? -8 : 0) +
         (negativeSpaceUsage === 'good' ? 5 : negativeSpaceUsage === 'poor' ? -5 : 0) +
-        (gridAdherence > 70 ? 5 : gridAdherence < 40 ? -5 : 0),
+        (gridAdherence > 70 ? 5 : gridAdherence < 40 ? -5 : 0) +
+        (structureTensor.coherence > 0.5 ? 5 : structureTensor.coherence < 0.3 ? -3 : 0),
     ),
   );
 
@@ -586,6 +1319,11 @@ export function analyzeDesign(pa: PixelAnalysis): DesignAnalysis {
       : alignmentQuality === 'poor'
         ? '对齐不够统一,建议建立清晰的网格系统'
         : '对齐基本规范';
+  if (structureTensor.coherence > 0.5) {
+    typeSuggestion += ';元素方向一致,排版整齐';
+  } else if (structureTensor.coherence < 0.3) {
+    typeSuggestion += ';元素方向不够统一,建议加强对齐';
+  }
   typeSuggestion +=
     rhythmConsistency === 'good'
       ? ';节奏感一致'
@@ -645,11 +1383,15 @@ export function analyzeDesign(pa: PixelAnalysis): DesignAnalysis {
     type: 'design',
     visualHierarchy: {
       score: Math.round(hierarchyScore),
-      focusPoint,
+      focusPoint: { x: round2(fx), y: round2(fy) },
       primarySecondaryClarity,
       informationFlow,
       heatmapData,
       suggestion: hierarchySuggestion,
+      goldenRatioScore,
+      ruleOfThirdsScore,
+      leadingLineDirection: leadingLines.direction,
+      leadingLineStrength: leadingLines.strength,
     },
     typography: {
       score: Math.round(typeScore),
@@ -658,6 +1400,7 @@ export function analyzeDesign(pa: PixelAnalysis): DesignAnalysis {
       negativeSpaceUsage,
       gridAdherence,
       suggestion: typeSuggestion,
+      directionCoherence: round2(structureTensor.coherence),
     },
     colorApplication: {
       score: Math.round(colorAppScore),
@@ -675,6 +1418,12 @@ export function analyzeProduct(pa: PixelAnalysis): ProductAnalysis {
   const heatmapData = generateHeatmap(pa);
   const focusPoint = calculateFocusPoint(pa);
 
+  // Phase A: 构图指标
+  const goldenRatioScore = calculateGoldenRatioScore(focusPoint);
+  const ruleOfThirdsScore = calculateRuleOfThirdsScore(focusPoint);
+  const leadingLines = detectLeadingLines(pa);
+  const structureTensor = computeStructureTensor(pa);
+
   // 形态分析
   const edgeDensity = calculateEdgeDensity(pa);
   const symmetry = calculateSymmetry(pa);
@@ -687,17 +1436,21 @@ export function analyzeProduct(pa: PixelAnalysis): ProductAnalysis {
         ? 'average'
         : 'poor';
 
-  // 线条流畅度:边缘连续性的反向
+  // 线条流畅度:边缘连续性的反向(结合结构张量coherence)
   let edgeBreaks = 0;
   for (let i = 1; i < pa.edgeMap.length; i++) {
     if (pa.edgeMap[i] && !pa.edgeMap[i - 1]) edgeBreaks++;
   }
-  const lineFluidity: ProductAnalysis['form']['lineFluidity'] =
-    edgeBreaks < pa.edgeMap.length * 0.05
-      ? 'smooth'
-      : edgeBreaks < pa.edgeMap.length * 0.1
-        ? 'moderate'
-        : 'stiff';
+  // coherence高表示线条方向一致,流畅度好
+  let lineFluidity: ProductAnalysis['form']['lineFluidity'];
+  const breakRatio = edgeBreaks / pa.edgeMap.length;
+  if (breakRatio < 0.03 || (breakRatio < 0.05 && structureTensor.coherence > 0.5)) {
+    lineFluidity = 'smooth';
+  } else if (breakRatio < 0.08 || structureTensor.coherence > 0.35) {
+    lineFluidity = 'moderate';
+  } else {
+    lineFluidity = 'stiff';
+  }
 
   // 曲面质量:色彩过渡平滑度
   let smoothTransitions = 0;
@@ -729,7 +1482,8 @@ export function analyzeProduct(pa: PixelAnalysis): ProductAnalysis {
       80 +
         (proportionBalance === 'good' ? 5 : proportionBalance === 'poor' ? -8 : 0) +
         (lineFluidity === 'smooth' ? 5 : lineFluidity === 'stiff' ? -5 : 0) +
-        (surfaceQuality === 'excellent' ? 5 : surfaceQuality === 'average' ? -3 : 0),
+        (surfaceQuality === 'excellent' ? 5 : surfaceQuality === 'average' ? -3 : 0) +
+        (structureTensor.coherence > 0.4 ? 3 : 0),
     ),
   );
 
@@ -745,6 +1499,9 @@ export function analyzeProduct(pa: PixelAnalysis): ProductAnalysis {
       : lineFluidity === 'stiff'
         ? ';线条略显生硬,建议增加过渡曲面'
         : ';线条流畅度尚可';
+  if (structureTensor.coherence > 0.5) {
+    formSuggestion += ';曲面线条方向一致,造型流畅';
+  }
   formSuggestion +=
     surfaceQuality === 'excellent'
       ? ';曲面过渡细腻'
@@ -849,13 +1606,18 @@ export function analyzeProduct(pa: PixelAnalysis): ProductAnalysis {
     type: 'product',
     form: {
       score: Math.round(formScore),
-      focusPoint,
+      focusPoint: { x: round2(focusPoint.x), y: round2(focusPoint.y) },
       proportionBalance,
       lineFluidity,
       surfaceQuality,
       ergonomicsHint,
       heatmapData,
       suggestion: formSuggestion,
+      goldenRatioScore,
+      ruleOfThirdsScore,
+      leadingLineDirection: leadingLines.direction,
+      leadingLineStrength: leadingLines.strength,
+      directionCoherence: round2(structureTensor.coherence),
     },
     materialExpression: {
       score: Math.round(materialScore),
@@ -881,16 +1643,28 @@ export function analyzeSculpture(pa: PixelAnalysis): SculptureAnalysis {
   const edgeDensity = calculateEdgeDensity(pa);
   const textureComplexity = calculateTextureComplexity(pa);
 
+  // Phase A: 构图+结构张量
+  const goldenRatioScore = calculateGoldenRatioScore(focusPoint);
+  const ruleOfThirdsScore = calculateRuleOfThirdsScore(focusPoint);
+  const leadingLines = detectLeadingLines(pa);
+  const structureTensor = computeStructureTensor(pa);
+
   // 空间构成
   const volumeSense: SculptureAnalysis['spatialComposition']['volumeSense'] =
     edgeDensity > 0.1 ? 'strong' : edgeDensity > 0.06 ? 'moderate' : 'weak';
   const occupationRatio = pa.width * pa.height > 0 ? pa.totalValid / (pa.width * pa.height) : 0.5;
   const spaceOccupation: SculptureAnalysis['spatialComposition']['spaceOccupation'] =
     occupationRatio > 0.6 ? 'full' : occupationRatio > 0.35 ? 'moderate' : 'sparse';
-  const highLumRatio =
-    pa.totalValid > 0 ? pa.luminanceMap.filter((l) => l > 200).length / pa.totalValid : 0;
-  const lowLumRatio =
-    pa.totalValid > 0 ? pa.luminanceMap.filter((l) => l < 80).length / pa.totalValid : 0;
+  let brightCountS = 0;
+  let darkCountS = 0;
+  for (let i = 0; i < pa.pixels.length; i++) {
+    const p = pa.pixels[i];
+    if (!p || p.a < 128) continue;
+    if (pa.luminanceMap[i]! > 200) brightCountS++;
+    if (pa.luminanceMap[i]! < 80) darkCountS++;
+  }
+  const highLumRatio = pa.totalValid > 0 ? brightCountS / pa.totalValid : 0;
+  const lowLumRatio = pa.totalValid > 0 ? darkCountS / pa.totalValid : 0;
   const voidSolidRelation: SculptureAnalysis['spatialComposition']['voidSolidRelation'] =
     highLumRatio > 0.25 && lowLumRatio > 0.2
       ? 'harmonious'
@@ -927,8 +1701,11 @@ export function analyzeSculpture(pa: PixelAnalysis): SculptureAnalysis {
       : voidSolidRelation === 'imbalanced'
         ? ';虚实关系失衡,需调整正负空间'
         : ';虚实关系一般';
+  if (leadingLines.strength > 0.25) {
+    spatialSuggestion += `;形体引导线约${Math.round(leadingLines.direction)}度方向`;
+  }
 
-  // 形体语言:动态感(边缘方向变化率)
+  // 形体语言:动态感(边缘方向变化率,结合结构张量energy)
   let directionChanges = 0;
   for (let y = 1; y < pa.height - 1; y++) {
     for (let x = 1; x < pa.width - 1; x++) {
@@ -942,15 +1719,20 @@ export function analyzeSculpture(pa: PixelAnalysis): SculptureAnalysis {
     }
   }
   const edgeTrueCount = pa.edgeMap.reduce((acc, v) => acc + (v ? 1 : 0), 0);
+  // 高energy表示形体张力强,影响动态感判定
   const dynamicSense: SculptureAnalysis['bodyLanguage']['dynamicSense'] =
-    directionChanges > edgeTrueCount * 0.3
+    directionChanges > edgeTrueCount * 0.3 || structureTensor.energy > 0.3
       ? 'strong'
-      : directionChanges > edgeTrueCount * 0.15
+      : directionChanges > edgeTrueCount * 0.15 || structureTensor.energy > 0.15
         ? 'moderate'
         : 'static';
 
-  const tensionExpression: SculptureAnalysis['bodyLanguage']['tensionExpression'] =
-    edgeDensity > 0.12 ? 'high' : edgeDensity > 0.07 ? 'medium' : 'low';
+  // tensionExpression结合结构张量energy
+  let tensionExpression: SculptureAnalysis['bodyLanguage']['tensionExpression'];
+  if (edgeDensity > 0.12 || structureTensor.energy > 0.25) tensionExpression = 'high';
+  else if (edgeDensity > 0.07 || structureTensor.energy > 0.12) tensionExpression = 'medium';
+  else tensionExpression = 'low';
+
   const rhythmFlow: SculptureAnalysis['bodyLanguage']['rhythmFlow'] =
     textureComplexity > 0.5 ? 'fluent' : textureComplexity > 0.25 ? 'moderate' : 'stiff';
 
@@ -961,7 +1743,8 @@ export function analyzeSculpture(pa: PixelAnalysis): SculptureAnalysis {
       80 +
         (dynamicSense === 'strong' ? 5 : dynamicSense === 'static' ? -8 : 0) +
         (tensionExpression === 'high' ? 5 : tensionExpression === 'low' ? -5 : 0) +
-        (rhythmFlow === 'fluent' ? 5 : rhythmFlow === 'stiff' ? -5 : 0),
+        (rhythmFlow === 'fluent' ? 5 : rhythmFlow === 'stiff' ? -5 : 0) +
+        structureTensor.energy * 10,
     ),
   );
 
@@ -977,6 +1760,11 @@ export function analyzeSculpture(pa: PixelAnalysis): SculptureAnalysis {
       : tensionExpression === 'low'
         ? ';张力不足,可强化形体冲突'
         : ';张力表现适中';
+  if (structureTensor.coherence > 0.6) {
+    bodySuggestion += ';形体线条方向一致,整体感强';
+  } else if (structureTensor.coherence < 0.3) {
+    bodySuggestion += ';形体方向多变,富有表现力';
+  }
   bodySuggestion +=
     rhythmFlow === 'fluent'
       ? ';韵律流畅'
@@ -1026,12 +1814,16 @@ export function analyzeSculpture(pa: PixelAnalysis): SculptureAnalysis {
     type: 'sculpture',
     spatialComposition: {
       score: Math.round(spatialScore),
-      focusPoint,
+      focusPoint: { x: round2(focusPoint.x), y: round2(focusPoint.y) },
       volumeSense,
       spaceOccupation,
       voidSolidRelation,
       heatmapData,
       suggestion: spatialSuggestion,
+      goldenRatioScore,
+      ruleOfThirdsScore,
+      leadingLineDirection: leadingLines.direction,
+      leadingLineStrength: leadingLines.strength,
     },
     bodyLanguage: {
       score: Math.round(bodyScore),
@@ -1039,6 +1831,8 @@ export function analyzeSculpture(pa: PixelAnalysis): SculptureAnalysis {
       tensionExpression,
       rhythmFlow,
       suggestion: bodySuggestion,
+      directionCoherence: round2(structureTensor.coherence),
+      strokeEnergy: round2(structureTensor.energy),
     },
     materialLanguage: {
       score: Math.round(materialLangScore),
@@ -1051,11 +1845,86 @@ export function analyzeSculpture(pa: PixelAnalysis): SculptureAnalysis {
 }
 
 // ============================================================
-// 原创性分析(通用)
+// 原创性分析(Phase A重写:基于pHash感知哈希与名作比对)
 // ============================================================
 
-/** 原创性分析(基于边缘密度 + 色彩种类 + 纹理复杂度估算相似度) */
-export function analyzeOriginality(pa: PixelAnalysis): AnalysisResult['originality'] {
+/**
+ * 原创性分析(基于pHash与名作库比对)
+ * @param pa 像素分析结果
+ * @param img Jimp图像实例(用于计算pHash)
+ * @returns 原创性维度结果
+ */
+export function analyzeOriginality(pa: PixelAnalysis, img?: Jimp): AnalysisResult['originality'] {
+  try {
+    // 计算pHash并与名作比对
+    let pHashSimilarity = 0;
+    let minDistance = 32; // 默认较大距离
+    let mostSimilar: MostSimilarWork | null = null;
+
+    if (img && artworkPHashCache && artworkPHashCache.length > 0) {
+      const uploadHash = computePHashFromJimp(img);
+      for (const aw of artworkPHashCache) {
+        const dist = hammingDistance(uploadHash, aw.pHash);
+        if (dist < minDistance) {
+          minDistance = dist;
+          mostSimilar = {
+            title: aw.title,
+            artist: aw.artist,
+            distance: dist,
+          };
+        }
+      }
+      // pHash相似度:距离0→1.0,距离32→0
+      pHashSimilarity = round2(Math.max(0, 1 - minDistance / 32));
+    } else {
+      // 缓存未加载,回退到原算法
+      return analyzeOriginalityFallback(pa);
+    }
+
+    // 评分:距离越小分数越低(相似度高=原创性低)
+    const score = Math.round(Math.max(50, Math.min(98, 100 - minDistance * 2.5)));
+
+    // 原创性等级判定
+    let creativityLevel: AnalysisResult['originality']['creativityLevel'];
+    let suggestion: string;
+
+    if (minDistance < 5) {
+      creativityLevel = 'needsWork';
+      suggestion = `原创性需加强(pHash距离${minDistance},与名作《${mostSimilar?.title ?? '未知'}》(${mostSimilar?.artist ?? '未知'})高度相似,相似度${Math.round(pHashSimilarity * 100)}%)。建议大幅增加原创元素,形成个人风格。`;
+    } else if (minDistance < 12) {
+      creativityLevel = 'average';
+      suggestion = `原创性一般(pHash距离${minDistance},与《${mostSimilar?.title ?? '未知'}》(${mostSimilar?.artist ?? '未知'})部分相似,相似度${Math.round(pHashSimilarity * 100)}%)。建议在造型或处理手法上寻求突破,增加个人特色。`;
+    } else if (minDistance < 20) {
+      creativityLevel = 'good';
+      suggestion = `原创性良好(pHash距离${minDistance},与《${mostSimilar?.title ?? '未知'}》有一定相似性,相似度${Math.round(pHashSimilarity * 100)}%)。建议增加更多个人风格元素,让作品更具独特性。`;
+    } else {
+      creativityLevel = 'excellent';
+      suggestion = `原创性优秀(pHash距离${minDistance},与名作库相似度仅${Math.round(pHashSimilarity * 100)}%)。作品具有独特个人风格,继续探索更多可能性!`;
+    }
+
+    // 计算基础similarity(保持与旧版兼容,基于边缘密度+色彩种类估算)
+    const edgeDensity = calculateEdgeDensity(pa);
+    const colorVariety = Object.keys(pa.colorBuckets).length;
+    const baseSimilarity = Math.min(
+      0.45,
+      0.12 + edgeDensity * 2 + Math.max(0, 0.08 - colorVariety / 100),
+    );
+
+    return {
+      score,
+      similarity: round2(baseSimilarity),
+      creativityLevel,
+      suggestion,
+      pHashSimilarity,
+      mostSimilarWork: mostSimilar,
+    };
+  } catch {
+    return analyzeOriginalityFallback(pa);
+  }
+}
+
+/** 原创性分析回退(无pHash缓存时使用原算法) */
+function analyzeOriginalityFallback(pa: PixelAnalysis): AnalysisResult['originality'] {
   const edgeDensity = calculateEdgeDensity(pa);
   const colorVariety = Object.keys(pa.colorBuckets).length;
   const textureComplexity = calculateTextureComplexity(pa);
@@ -1086,9 +1955,11 @@ export function analyzeOriginality(pa: PixelAnalysis): AnalysisResult['originali
 
   return {
     score: Math.round(score),
-    similarity: Math.round(similarity * 100) / 100,
+    similarity: round2(similarity),
     creativityLevel: level,
     suggestion,
+    pHashSimilarity: round2(1 - similarity),
+    mostSimilarWork: null,
   };
 }
 
@@ -1104,6 +1975,10 @@ export function analyzeOriginality(pa: PixelAnalysis): AnalysisResult['originali
  */
 export async function analyzeImage(imagePath: string, artType: ArtType): Promise<AnalysisResult> {
   try {
+    // 懒加载名作pHash缓存(不阻塞主流程,失败则使用回退算法)
+    // 不await缓存加载,避免网络问题导致分析超时
+    void cacheArtworkPHashes();
+
     const img = await Jimp.read(imagePath);
     const pa = analyzePixels(img);
 
@@ -1126,7 +2001,8 @@ export async function analyzeImage(imagePath: string, artType: ArtType): Promise
         break;
     }
 
-    const originality = analyzeOriginality(pa);
+    // 原创性分析(传入Jimp实例用于pHash计算)
+    const originality = analyzeOriginality(pa, img);
 
     // 综合分(三个维度 + 原创性,取均值)
     let d1 = 0;
@@ -1172,15 +2048,25 @@ export function generateFallbackAnalysis(artType: ArtType): AnalysisResult {
   const originalityScore = Math.floor(Math.random() * 25) + 68;
   const originality: AnalysisResult['originality'] = {
     score: originalityScore,
-    similarity: Math.round((Math.random() * 0.2 + 0.1) * 100) / 100,
+    similarity: round2(Math.random() * 0.2 + 0.1),
     creativityLevel: 'good',
     suggestion: '建议增加个人风格元素',
+    pHashSimilarity: round2(Math.random() * 0.3 + 0.5),
+    mostSimilarWork: null,
   };
 
   const heatmapData: number[][] = Array.from({ length: 20 }, () =>
     Array.from({ length: 20 }, () => Math.round(Math.random() * 60) / 100),
   );
-  const focusPoint = { x: Math.random() * 0.4 + 0.3, y: Math.random() * 0.4 + 0.3 };
+  const focusPoint = { x: round2(Math.random() * 0.4 + 0.3), y: round2(Math.random() * 0.4 + 0.3) };
+
+  // Phase A新字段默认值
+  const defaultCompositionExtras = {
+    goldenRatioScore: round2(50 + Math.random() * 20),
+    ruleOfThirdsScore: round2(50 + Math.random() * 20),
+    leadingLineDirection: round2(Math.random() * 180),
+    leadingLineStrength: round2(Math.random() * 0.3),
+  };
 
   let dimensions: DimensionResult;
   if (artType === 'painting') {
@@ -1195,6 +2081,7 @@ export function generateFallbackAnalysis(artType: ArtType): AnalysisResult {
         symmetry: 0.5,
         suggestion: '画面构图均衡',
         heatmapData,
+        ...defaultCompositionExtras,
       },
       color: {
         score: baseScore + 2,
@@ -1206,6 +2093,9 @@ export function generateFallbackAnalysis(artType: ArtType): AnalysisResult {
         harmony: '和谐',
         dominantColor: '中性色',
         suggestion: '色彩搭配和谐',
+        harmonyScore: round2(65 + Math.random() * 15),
+        harmonyType: 'mixed',
+        saturationDistribution: { low: 0.33, mid: 0.34, high: 0.33 },
       },
       brushwork: {
         score: baseScore - 1,
@@ -1213,6 +2103,9 @@ export function generateFallbackAnalysis(artType: ArtType): AnalysisResult {
         strokeVariety: 35,
         wetDryBalance: '适中',
         suggestion: '笔触技法尚可',
+        directionCoherence: round2(0.4 + Math.random() * 0.2),
+        strokeEnergy: round2(0.3 + Math.random() * 0.2),
+        dominantBrushDirection: round2(Math.random() * 180),
       },
     };
   } else if (artType === 'design') {
@@ -1225,6 +2118,7 @@ export function generateFallbackAnalysis(artType: ArtType): AnalysisResult {
         informationFlow: 'average',
         heatmapData,
         suggestion: '视觉层次尚可',
+        ...defaultCompositionExtras,
       },
       typography: {
         score: baseScore + 1,
@@ -1233,6 +2127,7 @@ export function generateFallbackAnalysis(artType: ArtType): AnalysisResult {
         negativeSpaceUsage: 'average',
         gridAdherence: 60,
         suggestion: '排版基本规范',
+        directionCoherence: round2(0.4 + Math.random() * 0.2),
       },
       colorApplication: {
         score: baseScore - 1,
@@ -1255,6 +2150,8 @@ export function generateFallbackAnalysis(artType: ArtType): AnalysisResult {
         ergonomicsHint: 'moderate',
         heatmapData,
         suggestion: '形态设计尚可',
+        ...defaultCompositionExtras,
+        directionCoherence: round2(0.4 + Math.random() * 0.2),
       },
       materialExpression: {
         score: baseScore + 1,
@@ -1282,6 +2179,7 @@ export function generateFallbackAnalysis(artType: ArtType): AnalysisResult {
         voidSolidRelation: 'moderate',
         heatmapData,
         suggestion: '空间构成尚可',
+        ...defaultCompositionExtras,
       },
       bodyLanguage: {
         score: baseScore + 1,
@@ -1289,6 +2187,8 @@ export function generateFallbackAnalysis(artType: ArtType): AnalysisResult {
         tensionExpression: 'medium',
         rhythmFlow: 'moderate',
         suggestion: '形体语言尚可',
+        directionCoherence: round2(0.4 + Math.random() * 0.2),
+        strokeEnergy: round2(0.3 + Math.random() * 0.2),
       },
       materialLanguage: {
         score: baseScore - 1,

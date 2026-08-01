@@ -47,6 +47,26 @@ export class SessionRepository {
   }
 
   /**
+   * 原子更新会话的 refresh_token_hash(乐观锁,滚动刷新使用)
+   * 仅当 DB 中当前 refreshTokenHash == oldHash 时才更新为 newHash
+   * 通过 updateMany WHERE id+tenantId+refreshTokenHash 实现原子语义,
+   * 避免并发刷新下 findFirst+update 拆分导致的 TOCTOU
+   * @returns 是否更新成功(affectedRows > 0)
+   */
+  async updateRefreshTokenHashWithCheck(
+    tenantId: string,
+    sessionId: string,
+    oldHash: string,
+    newHash: string,
+  ): Promise<boolean> {
+    const result = await prisma().session.updateMany({
+      where: { id: sessionId, tenantId, refreshTokenHash: oldHash },
+      data: { refreshTokenHash: newHash },
+    });
+    return result.count > 0;
+  }
+
+  /**
    * 撤销会话(登出 / 强制下线)
    * @param sessionId 会话 ID
    * @param tenantId 当前租户(强制校验)

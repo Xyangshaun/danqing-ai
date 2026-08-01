@@ -37,6 +37,10 @@ const { aiEnvState } = vi.hoisted(() => ({
     aiApiUrl: 'https://test-ai-api.example.com/v1/chat/completions',
     aiApiTimeout: 2500,
     aiApiModel: 'glm-4v-flash-test',
+    traeApiKey: '',
+    traeApiUrl: '',
+    traeApiModel: '',
+    aiProvider: 'glm' as const,
   },
 }));
 
@@ -102,10 +106,14 @@ vi.mock('../src/config/env.js', () => {
     return {
       ...staticConfig,
       aiEnabled: aiEnvState.aiEnabled,
+      aiProvider: aiEnvState.aiProvider,
       aiApiKey: aiEnvState.aiApiKey,
       aiApiUrl: aiEnvState.aiApiUrl,
       aiApiTimeout: aiEnvState.aiApiTimeout,
       aiApiModel: aiEnvState.aiApiModel,
+      traeApiKey: aiEnvState.traeApiKey,
+      traeApiUrl: aiEnvState.traeApiUrl,
+      traeApiModel: aiEnvState.traeApiModel,
     };
   }
 
@@ -442,10 +450,14 @@ function buildAiVisionResult(overrides?: Partial<AIVisionResult>): AIVisionResul
 beforeEach(() => {
   // 重置 AI env 覆盖为默认值
   aiEnvState.aiEnabled = false;
+  aiEnvState.aiProvider = 'glm';
   aiEnvState.aiApiKey = '';
   aiEnvState.aiApiUrl = 'https://test-ai-api.example.com/v1/chat/completions';
   aiEnvState.aiApiTimeout = 2500;
   aiEnvState.aiApiModel = 'glm-4v-flash-test';
+  aiEnvState.traeApiKey = '';
+  aiEnvState.traeApiUrl = '';
+  aiEnvState.traeApiModel = '';
 
   // 重置 axios.post mock
   vi.mocked(axios.post).mockReset();
@@ -486,7 +498,12 @@ describe('ai-vision.service', () => {
       const prompt = buildSystemPrompt('design');
       expect(prompt).toContain('校准总则');
       expect(prompt).toContain('术语专业');
-      expect(prompt).toContain('建议可执行');
+      expect(prompt).toContain('ArtCoT证据锚定');
+      expect(prompt).toContain('数值引用');
+      expect(prompt).toContain('精确优先');
+      expect(prompt).toContain('八条底线');
+      expect(prompt).toContain('"evidence"');
+      expect(prompt).toContain('"priority"');
     });
 
     it('should_include_delta_range_constraint', () => {
@@ -1188,7 +1205,10 @@ describe('ai-analysis.service (hybrid orchestration)', () => {
       });
 
       expect(result.aiEnhanced).toBe(false);
-      expect(result.aiVisionResult).toBeNull();
+      // Phase B5: AI 禁用时 aiVisionResult 不再为 null,而是包含模板降级建议
+      expect(result.aiVisionResult).not.toBeNull();
+      expect(result.aiVisionResult!.professionalSuggestions.length).toBeGreaterThanOrEqual(3);
+      expect(result.aiVisionResult!.professionalSuggestions.length).toBeLessThanOrEqual(5);
       expect(result.aiMeta.aiSuccess).toBe(false);
       expect(result.aiMeta.aiFailureReason).toBe('AI_DISABLED');
       expect(result.aiMeta.aiDurationMs).toBe(0);
@@ -1283,7 +1303,9 @@ describe('ai-analysis.service (hybrid orchestration)', () => {
       });
 
       expect(result.aiEnhanced).toBe(false);
-      expect(result.aiVisionResult).toBeNull();
+      // Phase B5: AI 超时时 aiVisionResult 不再为 null,而是包含模板降级建议
+      expect(result.aiVisionResult).not.toBeNull();
+      expect(result.aiVisionResult!.professionalSuggestions.length).toBeGreaterThanOrEqual(3);
       expect(result.aiMeta.aiSuccess).toBe(false);
       expect(result.aiMeta.aiFailureReason).toBe('AI_TIMEOUT');
       // Jimp 结果仍然存在
