@@ -23,6 +23,11 @@ import { env } from '../config/env.js';
 import { success, error } from '../utils/response.js';
 import { ErrorCode } from '../types/api-contract.js';
 import { isAIEnabled, analyzeWithAI } from '../services/ai-vision.service.js';
+import {
+  aiUsageRepository,
+  estimateCostYuan,
+  resolveEffectiveProvider,
+} from '../repositories/ai-usage.repository.js';
 import { logger } from '../utils/logger.js';
 
 // ============================================================
@@ -288,6 +293,41 @@ export const testAiConfig: RequestHandler = async (req, res, next) => {
       },
       '[admin-ai-config] AI connectivity test completed',
     );
+
+    // 异步记录 AI 用量日志(连通性测试,analysisId 留空),不阻塞响应
+    const providerInfo = resolveEffectiveProvider(cfg);
+    if (providerInfo && req.tenantId && req.userId) {
+      const tokenUsage = result.success ? result.tokenUsage : undefined;
+      aiUsageRepository
+        .create({
+          tenantId: req.tenantId,
+          userId: req.userId,
+          analysisId: null, // 连通性测试无关联 Analysis
+          provider: providerInfo.provider,
+          model: providerInfo.model,
+          apiUrl: providerInfo.apiUrl,
+          success: result.success,
+          durationMs: result.durationMs,
+          promptTokens: tokenUsage?.promptTokens ?? null,
+          completionTokens: tokenUsage?.completionTokens ?? null,
+          totalTokens: tokenUsage?.totalTokens ?? null,
+          costYuan: result.success
+            ? estimateCostYuan(
+                providerInfo.model,
+                tokenUsage?.promptTokens,
+                tokenUsage?.completionTokens,
+              )
+            : null,
+          failureReason: result.success ? null : result.failureReason,
+        })
+        .catch((err) => {
+          const msg = err instanceof Error ? err.message : String(err);
+          logger.warn(
+            { err: msg, userId: req.userId },
+            '[admin-ai-config] record AI usage log failed (non-blocking)',
+          );
+        });
+    }
 
     return success(res, response, result.success ? 'AI 连通性测试通过' : 'AI 连通性测试失败');
   } catch (err) {

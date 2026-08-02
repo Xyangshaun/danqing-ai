@@ -686,3 +686,48 @@ model DisputeCase {
   @@index([status], map: "dispute_cases_status_idx")
   @@map("dispute_cases")
 }
+
+// ============================================================
+// 17. AI 用量日志表(AiUsageLog,用量统计模块)
+// 每次 AI 调用(成功/失败均记录)异步落库一条
+// 用于管理后台 GET /api/admin/stats/ai-usage/* 系列统计接口
+// 设计要点:
+//   - tenant_id 强制,符合多租户隔离规范
+//   - analysis_id 可空(连通性测试无关联 Analysis)
+//   - provider/model/api_url 记录实际使用的 Provider(支持 glm/trae/aliyun 等)
+//   - cost_yuan 基于模型定价表估算(参考阿里云百炼 qwen-vl-plus:0.8元/百万输入 + 2元/百万输出)
+//   - 索引设计覆盖按租户+时间 / 按用户 / 按 Provider / 按成功状态 4 个查询模式
+// ============================================================
+
+model AiUsageLog {
+  id               String   @id @default(uuid()) @map("id")
+  tenantId         String   @map("tenant_id")
+  userId           String   @map("user_id")
+  // 关联 Analysis,可空(连通性测试无关联)
+  analysisId       String?  @map("analysis_id")
+  // AI Provider 标识(glm / trae / aliyun / openai 等)
+  provider         String   @map("provider") @db.VarChar(16)
+  // 实际调用的模型名(如 qwen-vl-plus)
+  model            String   @map("model") @db.VarChar(64)
+  // API 端点 URL(用于审计与排查)
+  apiUrl           String   @map("api_url") @db.Text
+  // 调用是否成功
+  success          Boolean  @map("success")
+  // 调用耗时(毫秒)
+  durationMs       Int      @map("duration_ms")
+  // Token 用量(成功时填,失败时通常为 null)
+  promptTokens     Int?     @map("prompt_tokens")
+  completionTokens Int?     @map("completion_tokens")
+  totalTokens      Int?     @map("total_tokens")
+  // 估算成本(元),基于模型定价表计算;精度 10,6(最小 0.000001 元)
+  costYuan         Decimal? @map("cost_yuan") @db.Decimal(10, 6)
+  // 失败原因(成功时为 null)
+  failureReason    String?  @map("failure_reason") @db.Text
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  @@index([tenantId, createdAt], map: "ai_usage_logs_tenant_id_created_at_idx")
+  @@index([userId], map: "ai_usage_logs_user_id_idx")
+  @@index([provider], map: "ai_usage_logs_provider_idx")
+  @@index([success], map: "ai_usage_logs_success_idx")
+  @@map("ai_usage_logs")
+}

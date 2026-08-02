@@ -2966,3 +2966,109 @@ export type AdminPresetListItem = EvaluationPresetDetail;
 
 /** GET /admin/presets 响应 */
 export type ListAdminPresetsResponse = AdminPresetListItem[];
+
+// ---------- 3.12.6 AI 用量统计类型(用量统计模块) ----------
+
+/**
+ * AI 用量统计通用查询参数
+ *   - startDate / endDate:YYYY-MM-DD 闭区间,可空表示不限
+ *   - days:trend 专用,最近 N 天(1-90,默认 7)
+ *   - limit:by-user 专用,Top N(1-100,默认 10)
+ */
+export interface AdminAiUsageQuery {
+  startDate?: string;
+  endDate?: string;
+  days?: number;
+  limit?: number;
+}
+
+/** GET /api/admin/stats/ai-usage/overview 响应 */
+export interface AdminAiUsageOverviewResponse {
+  startDate: string | null;
+  endDate: string | null;
+  /** 总调用次数 */
+  totalCount: number;
+  /** 成功次数 */
+  successCount: number;
+  /** 失败次数 */
+  failedCount: number;
+  /** 成功率(0-1) */
+  successRate: number;
+  /** 总输入 token 数 */
+  totalPromptTokens: number;
+  /** 总输出 token 数 */
+  totalCompletionTokens: number;
+  /** 总 token 数 */
+  totalTokens: number;
+  /** 总成本(元) */
+  totalCostYuan: number;
+  /** 平均耗时(ms) */
+  avgDurationMs: number;
+}
+
+/** GET /api/admin/stats/ai-usage/by-provider 单项 */
+export interface AdminAiUsageProviderStat {
+  provider: string;
+  totalCount: number;
+  successCount: number;
+  failedCount: number;
+  successRate: number;
+  totalPromptTokens: number;
+  totalCompletionTokens: number;
+  totalTokens: number;
+  totalCostYuan: number;
+  avgDurationMs: number;
+}
+
+/** GET /api/admin/stats/ai-usage/by-provider 响应 */
+export interface AdminAiUsageByProviderResponse {
+  startDate: string | null;
+  endDate: string | null;
+  stats: AdminAiUsageProviderStat[];
+  totalCostYuan: number;
+}
+
+/** GET /api/admin/stats/ai-usage/by-user 单项 */
+export interface AdminAiUsageUserStat {
+  userId: string;
+  userName: string;
+  userEmail: string | null;
+  userRole: UserRole | null;
+  tenantId: string | null;
+  tenantName: string | null;
+  totalCount: number;
+  successCount: number;
+  failedCount: number;
+  successRate: number;
+  totalTokens: number;
+  totalCostYuan: number;
+  avgDurationMs: number;
+}
+
+/** GET /api/admin/stats/ai-usage/by-user 响应 */
+export interface AdminAiUsageByUserResponse {
+  startDate: string | null;
+  endDate: string | null;
+  limit: number;
+  stats: AdminAiUsageUserStat[];
+  totalCostYuan: number;
+}
+
+/** GET /api/admin/stats/ai-usage/trend 单日数据点 */
+export interface AdminAiUsageTrendPoint {
+  /** YYYY-MM-DD */
+  date: string;
+  totalCount: number;
+  successCount: number;
+  failedCount: number;
+  successRate: number;
+  totalTokens: number;
+  totalCostYuan: number;
+}
+
+/** GET /api/admin/stats/ai-usage/trend 响应 */
+export interface AdminAiUsageTrendResponse {
+  days: number;
+  dataPoints: AdminAiUsageTrendPoint[];
+  totalCostYuan: number;
+}

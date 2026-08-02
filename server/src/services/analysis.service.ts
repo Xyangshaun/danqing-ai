@@ -43,6 +43,11 @@ import { isAIEnabled } from './ai-vision.service.js';
 import { analysisCacheService } from './analysis-cache.service.js';
 import { logger } from '../utils/logger.js';
 import { env } from '../config/env.js';
+import {
+  aiUsageRepository,
+  estimateCostYuan,
+  resolveEffectiveProvider,
+} from '../repositories/ai-usage.repository.js';
 import type { Analysis, Tenant } from '@prisma/client';
 import type { HybridAnalysisResult } from '../types/ai-analysis.js';
 
@@ -391,6 +396,46 @@ class AnalysisServiceClass {
             // jimpDurationMs 近似为 (混合分析总耗时 - AI 耗时),包含 Jimp + 合并开销
             aiDurationMs = hybridResult.aiMeta.aiDurationMs;
             jimpDurationMs = Math.max(0, (Date.now() - hybridStartMs) - aiDurationMs);
+
+            // 异步记录 AI 用量日志(成功/失败均记录),不阻塞主流程
+            // 仅当 AI 实际被调用时记录(aiDurationMs > 0 表示发起了 AI 请求)
+            if (aiDurationMs > 0) {
+              const providerInfo = resolveEffectiveProvider(env());
+              if (providerInfo) {
+                const aiMeta = hybridResult.aiMeta;
+                const tokenUsage = aiMeta.aiTokenUsage;
+                aiUsageRepository
+                  .create({
+                    tenantId,
+                    userId,
+                    analysisId: analysis.id,
+                    provider: providerInfo.provider,
+                    model: providerInfo.model,
+                    apiUrl: providerInfo.apiUrl,
+                    success: aiMeta.aiSuccess,
+                    durationMs: aiMeta.aiDurationMs,
+                    promptTokens: tokenUsage?.promptTokens ?? null,
+                    completionTokens: tokenUsage?.completionTokens ?? null,
+                    totalTokens: tokenUsage?.totalTokens ?? null,
+                    costYuan: aiMeta.aiSuccess
+                      ? estimateCostYuan(
+                          providerInfo.model,
+                          tokenUsage?.promptTokens,
+                          tokenUsage?.completionTokens,
+                        )
+                      : null,
+                    failureReason: aiMeta.aiFailureReason,
+                  })
+                  .catch((err) => {
+                    const msg = err instanceof Error ? err.message : String(err);
+                    logger.warn(
+                      { err: msg, analysisId: analysis.id },
+                      '[analysis] record AI usage log failed (non-blocking)',
+                    );
+                  });
+              }
+            }
+
             return {
               result: hybridResult,
               aiEnhanced: hybridResult.aiEnhanced,

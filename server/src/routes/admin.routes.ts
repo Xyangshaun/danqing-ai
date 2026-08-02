@@ -101,6 +101,14 @@ import {
 // AI 生产化:AI 配置管理(查看 / 测试)
 import { getAiConfig, testAiConfig } from '../controllers/admin-ai-config.controller.js';
 
+// AI 用量统计模块(每次 AI 调用日志的聚合统计)
+import {
+  getAiUsageOverview,
+  getAiUsageByProvider,
+  getAiUsageByUser,
+  getAiUsageTrend,
+} from '../controllers/admin-ai-usage.controller.js';
+
 export const adminRouter: Router = Router();
 
 // ---------- 全局中间件(所有 /api/admin/* 路由必须经过鉴权 + 租户校验 + 限流)----------
@@ -214,6 +222,30 @@ adminRouter.get('/stats/retention', requirePermission('admin:stats:read'), getSt
 
 // GET /api/admin/stats/ai-cost - AI 成本统计(Redis 缓存 5 分钟)
 adminRouter.get('/stats/ai-cost', requirePermission('admin:stats:read'), getStatsAiCost);
+
+// ============================================================
+// AI 用量统计模块(基于 ai_usage_logs 表的精细统计)
+// 权限:admin:stats:read(与数据看板共用)
+// 缓存:Redis 5 分钟(由 service 层 getCached/setCached 实现)
+//
+// 4 个接口:
+//   GET /stats/ai-usage/overview      总览(总次数/成功/失败/token/成本/平均耗时/成功率)
+//   GET /stats/ai-usage/by-provider   按 Provider 分组(glm/trae/aliyun 等)
+//   GET /stats/ai-usage/by-user       按用户分组 Top N(关联 users 表补姓名)
+//   GET /stats/ai-usage/trend         按日期趋势(最近 N 天)
+// ============================================================
+
+// GET /api/admin/stats/ai-usage/overview - 总览统计
+adminRouter.get('/stats/ai-usage/overview', requirePermission('admin:stats:read'), getAiUsageOverview);
+
+// GET /api/admin/stats/ai-usage/by-provider - 按 Provider 分组
+adminRouter.get('/stats/ai-usage/by-provider', requirePermission('admin:stats:read'), getAiUsageByProvider);
+
+// GET /api/admin/stats/ai-usage/by-user - 按用户分组 Top N
+adminRouter.get('/stats/ai-usage/by-user', requirePermission('admin:stats:read'), getAiUsageByUser);
+
+// GET /api/admin/stats/ai-usage/trend - 按日期趋势(最近 N 天)
+adminRouter.get('/stats/ai-usage/trend', requirePermission('admin:stats:read'), getAiUsageTrend);
 
 // GET /api/admin/stats/realtime - 实时监控(不缓存)
 adminRouter.get('/stats/realtime', requirePermission('admin:stats:read'), getStatsRealtime);
