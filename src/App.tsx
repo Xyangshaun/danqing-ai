@@ -11,6 +11,7 @@ import { AuthProvider } from './context/AuthContext';
 import RequireAuth from './components/auth/RequireAuth';
 import PermissionToast from './components/auth/PermissionToast';
 import LoginPage from './pages/LoginPage';
+import OnboardingPage from './pages/OnboardingPage';
 /* 首页直接加载(首屏优先级最高) */
 import HomePage from './pages/HomePage';
 
@@ -200,10 +201,16 @@ function AppLayout() {
  *
  * 路由结构:
  * - /login          公开路由(登录页)
+ * - /onboarding     受保护路由(首次登录选职业身份,RequireAuth 守卫但不走 AppLayout)
  * - /*              受保护路由(RequireAuth 包裹 AppLayout)
  *
  * 注:/auth/feishu/callback 不在此处路由,由 main.tsx 检测 pathname 独立渲染
  * AuthCallbackPage(HashRouter 兼容方案,见 auth-design.md §1.2 步骤 5)
+ *
+ * /onboarding 设计:
+ *   - 由 RequireAuth 守卫(必须已登录才能选角色)
+ *   - 不走 AppLayout(无 Header/Sidebar/StatusBar,全屏引导)
+ *   - OnboardingPage 内部守卫:若用户 role≠student(已 onboarding)自动跳首页
  */
 function App() {
   return (
@@ -212,6 +219,16 @@ function App() {
         <Routes>
           {/* 公开路由:登录页(无需鉴权) */}
           <Route path="/login" element={<LoginPage />} />
+
+          {/* 受保护路由:新手引导(全屏,不走 AppLayout) */}
+          <Route
+            path="/onboarding"
+            element={
+              <RequireAuth>
+                <OnboardingPage />
+              </RequireAuth>
+            }
+          />
 
           {/* 受保护路由:所有业务页面(RequireAuth 守卫) */}
           <Route

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { ArrowRight, X, ExternalLink, Heart, Globe, BookMarked, Brush, PenTool, Box, Layers, Loader2, ImageOff } from 'lucide-react';
 import { styleCategories, type ArtworkItem } from '../services/artworksDatabase';
 import { getBuiltinArtworkItems } from '../services/materialService';
+import { placeholderImage } from '../services/placeholderImage';
 import { SkeletonBox, SkeletonStyle } from '../components/PageSkeleton';
 import { useToast } from '../components/ToastProvider';
 
@@ -10,25 +11,25 @@ const styleConfigs = {
     name: '绘画',
     icon: Brush,
     description: '中国画与西方绘画的经典流派',
-    coverImage: 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=A%20Thousand%20Li%20of%20Rivers%20and%20Mountains%20chinese%20ink%20landscape%20painting&image_size=landscape_4_3',
+    coverImage: placeholderImage('painting-styles-cover', { size: 'landscape_4_3', title: '绘画' }),
   },
   design: {
     name: '设计',
     icon: PenTool,
     description: '视觉传达与平面设计流派',
-    coverImage: 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=Mondrian%20Composition%20with%20Red%20Blue%20and%20Yellow%20abstract%20painting&image_size=landscape_4_3',
+    coverImage: placeholderImage('design-styles-cover', { size: 'landscape_4_3', title: '设计' }),
   },
   product: {
     name: '产品设计',
     icon: Box,
     description: '工业设计与家具设计经典',
-    coverImage: 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=Rietveld%20Red%20Blue%20Chair%20modern%20furniture%20design&image_size=landscape_4_3',
+    coverImage: placeholderImage('product-styles-cover', { size: 'landscape_4_3', title: '产品设计' }),
   },
   sculpture: {
     name: '雕塑',
     icon: Layers,
     description: '古今中外的雕塑艺术杰作',
-    coverImage: 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=Michelangelo%20David%20sculpture%20renaissance%20marble%20statue&image_size=landscape_4_3',
+    coverImage: placeholderImage('sculpture-styles-cover', { size: 'landscape_4_3', title: '雕塑' }),
   },
 };
 

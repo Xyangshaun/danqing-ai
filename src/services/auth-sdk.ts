@@ -16,9 +16,11 @@ import type {
   SwitchTenantResponse,
   TenantInfo,
   TenantMembership,
+  UpdateRoleRequest,
+  UpdateRoleResponse,
   UserProfile,
 } from '../types/api-contract';
-import { get, post } from './api';
+import { get, patch, post } from './api';
 import { clearAccessToken, setAccessToken } from './token-store';
 
 /** 飞书重定向 URI(从 env 读取,默认本地开发地址) */
@@ -155,6 +157,21 @@ export async function switchTenant(
   // 更新本地 access_token
   setAccessToken(result.accessToken, result.accessTokenExpiresAt);
   return result;
+}
+
+/* ============================================================
+ * 8. 设置用户角色(首次登录新手引导 onboarding)
+ * 对应:PATCH /users/role
+ * 业务规则(后端强制):
+ *   - 仅允许当前 role='student'(首次登录默认)的用户自选一次
+ *   - 已切换到 teacher/admin 的账户调用会返回 403 FORBIDDEN
+ * 成功后返回更新后的完整 UserProfile,调用方需更新 AuthContext 的 user 状态
+ * ============================================================ */
+export async function setUserRole(
+  role: UpdateRoleRequest['role']
+): Promise<UpdateRoleResponse> {
+  const body: UpdateRoleRequest = { role };
+  return patch<UpdateRoleResponse>('/users/role', body);
 }
 
 /* ============================================================

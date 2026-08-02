@@ -1,4 +1,5 @@
 import type { AnalysisResult, HistoryRecord, GrowthData, ArtType } from '../types';
+import { placeholderImage } from './placeholderImage';
 
 const artTypes: ArtType[] = ['painting', 'design', 'product', 'sculpture'];
 
@@ -222,7 +223,7 @@ export function generateMockHistory(): HistoryRecord[] {
     const d1 = randomInRange(65, 95), d2 = randomInRange(68, 92), d3 = randomInRange(72, 98);
     records.push({
       id: `history-${i + 1}`,
-      imageUrl: `https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=beautiful%20artwork%20${i + 1}&image_size=square`,
+      imageUrl: placeholderImage(`beautiful artwork ${i + 1}`, { size: 'square' }),
       createdAt: date.toISOString(),
       artType: artTypes[i % artTypes.length],
       overallScore: Math.round((d1 + d2 + d3) / 3),

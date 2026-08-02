@@ -110,6 +110,36 @@ export class UserRepository {
   }
 
   /**
+   * 设置用户角色(新手引导 onboarding 用)
+   * 事务内同时更新 User.role(冗余字段)与 TenantMember.role(权威字段),
+   * 保证两者一致性(对应 schema.prisma 中 User.role 注释"冗余,与 TenantMember.role 一致")。
+   *
+   * @param userId 用户 ID
+   * @param tenantId 当前激活租户 ID(仅更新该租户的 TenantMember)
+   * @param role 新角色(admin/teacher/student,不允许 owner)
+   * @returns 更新后的 User
+   */
+  async setRole(
+    userId: string,
+    tenantId: string,
+    role: 'admin' | 'teacher' | 'student',
+  ): Promise<User> {
+    return prisma().$transaction(async (tx) => {
+      // 1. 更新 TenantMember(权威字段)
+      await tx.tenantMember.update({
+        where: { userId_tenantId: { userId, tenantId } },
+        data: { role },
+      });
+      // 2. 同步更新 User.role(冗余字段,与 TenantMember.role 一致)
+      const updated = await tx.user.update({
+        where: { id: userId },
+        data: { role },
+      });
+      return updated;
+    });
+  }
+
+  /**
    * 切换用户激活租户(同时更新冗余 role 字段)
    * @param userId 用户 ID
    * @param tenantId 新激活租户 ID

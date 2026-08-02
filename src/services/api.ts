@@ -28,9 +28,19 @@ import {
  *   - traceId 透传:响应头/体的 traceId 用于排查,前端不处理
  * ============================================================ */
 
-/** Base URL,优先 env,降级到本地后端 */
+/**
+ * Base URL,优先 env,降级到同源相对路径 /api/v1
+ *
+ * 用相对路径而非绝对 URL(http://localhost:3000)的原因:
+ *   - 生产环境:浏览器从 https://www.danqing.site 加载,请求自动命中
+ *     https://www.danqing.site/api/v1/...(同源,无 CORS)
+ *   - 开发环境:vite.config.ts 的 server.proxy['/api'] 会把 /api 代理到
+ *     http://localhost:3000,无需硬编码 host
+ *   - 避免构建时漏配 VITE_API_BASE_URL 导致线上请求到用户本机 localhost:3000
+ *     (net::ERR_FAILED 故障)
+ */
 const BASE_URL =
-  import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000/api/v1';
+  import.meta.env.VITE_API_BASE_URL ?? '/api/v1';
 
 /** 默认客户端标识 */
 const DEFAULT_CLIENT: ClientType = 'web';
@@ -157,6 +167,17 @@ function buildUrl(path: string, query?: RequestOptions['query']): string {
   return qs ? `${url}?${qs}` : url;
 }
 
+/**
+ * 读取 Cookie 值(用于 CSRF 双提交 Cookie 模式)
+ * 后端 setCsrfTokenCookie 下发非 HttpOnly 的 csrf_token Cookie,
+ * 前端 JS 必须读后以 X-CSRF-Token 头回传,否则被 csrfMiddleware 拒 403。
+ */
+function getCookie(name: string): string | null {
+  if (typeof document === 'undefined') return null;
+  const match = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'));
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
 /** 构建请求头(请求拦截器) */
 function buildHeaders(options: RequestOptions): Record<string, string> {
   const headers: Record<string, string> = {
@@ -168,6 +189,15 @@ function buildHeaders(options: RequestOptions): Record<string, string> {
     }),
     ...options.headers,
   };
+
+  // CSRF 双提交 Cookie 模式(对应 server/src/middlewares/csrf.ts):
+  // 后端对带 refresh_token Cookie 的 POST/PATCH/PUT/DELETE 强制校验 X-CSRF-Token 头,
+  // 缺失或不等 → 403 FORBIDDEN。此处从 csrf_token Cookie 读值并回传头。
+  // 纯 Bearer token 调用(无 Cookie)时 csrf_token 不存在,自然不注入,后端也跳过校验。
+  const csrfToken = getCookie('csrf_token');
+  if (csrfToken && !headers['X-CSRF-Token']) {
+    headers['X-CSRF-Token'] = csrfToken;
+  }
 
   // 注入 Authorization(对应 auth-design.md §1.2 步骤 11d)
   if (!options.skipAuth) {

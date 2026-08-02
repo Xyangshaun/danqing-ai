@@ -319,6 +319,21 @@ export type GetProfileResponse = UserProfile;
 /** PATCH /users/profile 响应(返回更新后的完整资料) */
 export type UpdateProfileResponse = UserProfile;
 
+/**
+ * PATCH /users/role 请求
+ * 用于首次登录后的新手引导(onboarding)选择职业身份。
+ * 业务规则:
+ *   - 仅允许当前 role='student'(首次登录默认角色)的用户自选一次
+ *   - 已选过(已切换到 teacher/admin)的账户无法再次自选,需管理员介入
+ *   - 不允许选 'owner'(owner 由系统在创建个人租户时隐式赋值)
+ */
+export interface UpdateRoleRequest {
+  role: 'admin' | 'teacher' | 'student';
+}
+
+/** PATCH /users/role 响应(返回更新后的完整资料) */
+export type UpdateRoleResponse = UserProfile;
+
 /** 租户类型 */
 export type TenantType = 'school' | 'college' | 'class' | 'individual';
 

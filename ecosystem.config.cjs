@@ -10,6 +10,7 @@ module.exports = {
       name: 'danqing-api',
       script: 'server/dist/index.js',
       cwd: __dirname,
+      node_args: '--env-file=server/.env',
       instances: 1,
       exec_mode: 'fork',
       env: {

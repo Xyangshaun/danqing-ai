@@ -49,6 +49,11 @@ function redirectToHome(): void {
   window.location.replace('/#/');
 }
 
+/** 跳转到新手引导页(首次登录选职业身份) */
+function redirectToOnboarding(): void {
+  window.location.replace('/#/onboarding');
+}
+
 /** 跳转到登录页 */
 function redirectToLogin(): void {
   window.location.replace('/#/login');
@@ -93,10 +98,13 @@ export default function AuthCallbackPage() {
 
       // 调用后端处理 code/state
       try {
-        await handleFeishuCallback(query);
+        const result = await handleFeishuCallback(query);
         setStatus('success');
-        // 短暂展示成功态后跳转首页
-        setTimeout(redirectToHome, 800);
+        // 短暂展示成功态后跳转:
+        //   - 首次登录(isFirstLogin=true)→ /onboarding 选职业身份
+        //   - 非首次登录 → /#/(首页)
+        const target = result.isFirstLogin ? redirectToOnboarding : redirectToHome;
+        setTimeout(target, 800);
       } catch (err) {
         setStatus('error');
         if (err instanceof ApiError) {

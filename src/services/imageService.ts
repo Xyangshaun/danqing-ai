@@ -2,6 +2,12 @@
 // 支持两种模式：1. 使用内置佔位图（默认） 2. 调用外部API（需配置）
 // 可通过调用 setUseExternalApi(true) 切换为API模式
 // API key可通过 setApiKey() 配置
+//
+// 注:历史上 generateImage 返回 `trae-api-cn.mchost.guru` IDE 内部 URL,
+// 该 URL 仅在 Trae IDE 沙箱内可用,部署到生产后无法访问。
+// 现统一改用本地 SVG 占位图(placeholderImage),零外部依赖。
+
+import { placeholderImage } from './placeholderImage';
 
 let useExternalApi = false;
 let apiKey = '';
@@ -161,11 +167,11 @@ export async function generateClassMaterial(
 }
 
 export function generateImage(prompt: string, size: string = 'square'): string {
-  if (useExternalApi && apiKey) {
-    // 实际API调用逻辑（佔位）
-    return `https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=${encodeURIComponent(prompt)}&image_size=${size}`;
-  }
-  return `https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=${encodeURIComponent(prompt)}&image_size=${size}`;
+  // 不再使用外部 IDE 沙箱 URL,改用本地内联 SVG 占位图(零外部依赖)
+  return placeholderImage(prompt, {
+    size: size as Parameters<typeof placeholderImage>[1] extends { size?: infer S } ? S : never,
+    title: prompt.slice(0, 12),
+  });
 }
 
 export async function applyStyle(imageUrl: string, styleId: string): Promise<string> {
