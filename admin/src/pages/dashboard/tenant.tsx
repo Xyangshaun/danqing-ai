@@ -114,7 +114,7 @@ export default function TenantDrilldownPage() {
                               ? 'exception'
                               : 'normal'
                         }
-                        format={(p) =>
+                        format={() =>
                           s.monthlyQuota === -1 ? '无限' : `${formatNumber(s.monthlyAiCalls)} / ${s.monthlyQuota === -1 ? '∞' : s.monthlyQuota}`
                         }
                       />

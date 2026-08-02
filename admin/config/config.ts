@@ -22,12 +22,10 @@ export default defineConfig({
    * @name antd 5 插件
    */
   antd: {
-    importTransformer: true,
-    config: {
+    theme: {
       token: defaultSettings.antdToken,
     },
     // 暗色主题由运行时 ConfigProvider 切换
-    darkCssVars: true,
     appConfig: {
       message: { maxCount: 3 },
       notification: { maxCount: 3 },

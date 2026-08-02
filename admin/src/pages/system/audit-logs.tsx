@@ -117,7 +117,7 @@ export default function AuditLogsPage() {
       width: 180,
       valueType: 'dateRange',
       sorter: true,
-      defaultSortOrder: 'desc',
+      defaultSortOrder: 'descend',
       render: (_, r) => (
         <div>
           <div>{formatDateTime(r.createdAt)}</div>

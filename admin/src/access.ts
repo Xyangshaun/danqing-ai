@@ -5,7 +5,6 @@
 // 此处仅做"是否包含某权限码"的判定,不硬编码角色映射
 // ============================================================
 
-import type { AccessFn } from '@umijs/max';
 import { PERM } from '@/constants';
 
 export interface InitialStateWithAuth {
@@ -23,7 +22,7 @@ const has = (perms: string[] | undefined, code: string): boolean => {
   return perms.includes(code);
 };
 
-const access: AccessFn<InitialStateWithAuth> = (initialState) => {
+const access = (initialState?: InitialStateWithAuth) => {
   const perms = initialState?.permissions;
   return {
     // 数据看板

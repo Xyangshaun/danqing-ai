@@ -5,12 +5,10 @@
 
 import { useEffect, useState } from 'react';
 import { history, useSearchParams } from '@umijs/max';
-import { Button, Spin, App, Result } from 'antd';
+import { Button, App } from 'antd';
 import { SafetyCertificateOutlined } from '@ant-design/icons';
-import { getFeishuAuthorizeUrl, handleFeishuCallback } from '@/services/auth';
-import { setAccessToken, isAuthenticated } from '@/utils/auth';
-import { getCurrentUser } from '@/services/auth';
-import { listRoles } from '@/services/user';
+import { getFeishuAuthorizeUrl } from '@/services/auth';
+import { isAuthenticated } from '@/utils/auth';
 
 export default function LoginPage() {
   const [params] = useSearchParams();

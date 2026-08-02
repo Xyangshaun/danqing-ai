@@ -187,7 +187,7 @@ export async function request<T>(config: AxiosRequestConfig): Promise<T> {
 }
 
 /** GET */
-export function get<T>(url: string, params?: Record<string, unknown>, config?: AxiosRequestConfig): Promise<T> {
+export function get<T>(url: string, params?: object, config?: AxiosRequestConfig): Promise<T> {
   return request<T>({ method: 'GET', url, params, ...config });
 }
 

@@ -11,7 +11,6 @@ import type {
   FeishuAuthorizeResponse,
   FeishuCallbackQuery,
   FeishuCallbackResponse,
-  ClientType,
 } from '@/types/api';
 
 type ClientTypeLike = 'web' | 'admin' | 'mobile' | 'marketing';
@@ -51,5 +50,3 @@ export function logoutApi(revokeAll = false): Promise<AuthLogoutResponse> {
 export function getCurrentUser(): Promise<AuthMeResponse> {
   return get<AuthMeResponse>('/api/v1/auth/me');
 }
-
-export type { ClientType };

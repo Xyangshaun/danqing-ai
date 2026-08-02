@@ -85,7 +85,7 @@ export default function UserListPage() {
           <div>
             将对 <b>{selectedKeys.length}</b> 个用户执行
             <b style={{ color: '#c8392e' }}>
-              {action === 'updateRole' ? `角色变更为 ${ROLE_LABEL[values.role]}` : '删除'}
+              {action === 'updateRole' ? `角色变更为 ${ROLE_LABEL[values.role as UserRole]}` : '删除'}
             </b>
             ,此操作不可撤销。
           </div>

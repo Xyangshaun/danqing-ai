@@ -3,16 +3,15 @@
 // 基本信息 + 角色 + 操作日志(审计)+ 关联作品
 // ============================================================
 
-import { useState } from 'react';
 import { useParams, history } from '@umijs/max';
 import { PageContainer, ProDescriptions, ProCard } from '@ant-design/pro-components';
-import { Avatar, Tag as AntdTag, Button, Spin, Tabs, Empty, App as AntdApp } from 'antd';
-import { ArrowLeftOutlined, EditOutlined, LockOutlined, UnlockOutlined } from '@ant-design/icons';
+import { Avatar, Tag as AntdTag, Button, Spin, Tabs, Empty } from 'antd';
+import { ArrowLeftOutlined, LockOutlined, UnlockOutlined } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
 import { getUser } from '@/services/user';
 import { listAuditLogs } from '@/services/system';
 import { listArtworks } from '@/services/content';
-import { lockUser, updateUser } from '@/services/user';
+import { lockUser } from '@/services/user';
 import { useConfirmAction } from '@/components/ConfirmAction';
 import MaskedText from '@/components/MaskedText';
 import {
@@ -32,9 +31,7 @@ import type { AuditLogInfo } from '@/types/api';
 export default function UserDetailPage() {
   const params = useParams();
   const userId = params.id as string;
-  const { message } = AntdApp.useApp();
   const { confirm } = useConfirmAction();
-  const [editOpen, setEditOpen] = useState(false);
 
   const userQ = useQuery({
     queryKey: ['user', userId],

@@ -5,7 +5,6 @@
 // - rootContainer:注入 React Query + 主题 + 空闲登出
 // ============================================================
 
-import type { RunTimeLayoutConfig } from '@umijs/max';
 import { history } from '@umijs/max';
 import {
   QuestionCircleOutlined,
@@ -31,7 +30,7 @@ const queryClient = new QueryClient({
       retry: 1,
       refetchOnWindowFocus: false,
       staleTime: 60_000,
-      cacheTime: 5 * 60_000,
+      gcTime: 5 * 60_000,
     },
   },
 });
@@ -39,14 +38,32 @@ const queryClient = new QueryClient({
 /** 非登录/layout-free 路径 */
 const PUBLIC_PATHS = ['/login', '/auth/feishu/callback'];
 
+type CurrentUser = {
+  id: string;
+  name: string;
+  avatar: string;
+  role: string;
+  email?: string | null;
+  phone?: string | null;
+  tenantId: string;
+  permissions?: string[];
+  tenant?: { id: string; name: string; plan: string };
+};
+
+type InitialState = {
+  currentUser?: CurrentUser;
+  permissions?: string[];
+  fetchUser?: () => Promise<CurrentUser | undefined>;
+};
+
 /**
  * 初始状态:当前用户 + 权限码集合
  * 权限码由后端 /api/admin/roles 返回的角色矩阵匹配得出(非前端硬编码)
  */
 export async function getInitialState(): Promise<{
-  currentUser?: API.CurrentUser;
+  currentUser?: CurrentUser;
   permissions?: string[];
-  fetchUser?: () => Promise<API.CurrentUser | undefined>;
+  fetchUser?: () => Promise<CurrentUser | undefined>;
 }> {
   const fetchUser = async () => {
     try {
@@ -75,7 +92,7 @@ export async function getInitialState(): Promise<{
 }
 
 /** 顶栏右侧操作区 */
-function RightContent({ initialState }: { initialState: API.InitialState }) {
+function RightContent({ initialState }: { initialState: InitialState }) {
   const currentUser = initialState?.currentUser;
   if (!currentUser) return null;
 
@@ -129,7 +146,7 @@ function RightContent({ initialState }: { initialState: API.InitialState }) {
 }
 
 /** ProLayout 运行时配置 */
-export const layout: RunTimeLayoutConfig = ({ initialState }) => {
+export const layout = ({ initialState }: { initialState?: InitialState }) => {
   return {
     title: '丹青有AI · 管理后台',
     logo: false,

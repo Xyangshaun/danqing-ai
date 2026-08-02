@@ -30,7 +30,6 @@ export const antdToken: ThemeConfig['token'] = {
   colorLink: INK_COLORS.stone,
   colorLinkHover: '#3a6f82',
   colorError: INK_COLORS.cinnabar,
-  colorDanger: INK_COLORS.cinnabar,
   colorWarning: '#c9a961',
   colorSuccess: '#3e7d5a',
   colorInfo: INK_COLORS.stone,
@@ -89,15 +88,12 @@ export const proLayout: ProLayoutProps = {
   layout: 'mix',
   splitMenus: false,
   navTheme: 'light',
-  headerHeight: 52,
   fixedHeader: true,
   fixSiderbar: true,
   contentWidth: 'Fluid',
   siderWidth: 220,
-  collapsedWidth: 56,
   colorPrimary: INK_COLORS.stone,
   token: {
-    color: 'transparent',
     header: {
       colorBgHeader: '#ffffff',
       colorHeaderTitle: INK_COLORS.ink,
@@ -105,7 +101,7 @@ export const proLayout: ProLayoutProps = {
       colorTextMenuSecondary: INK_COLORS.inkSub,
       heightLayoutHeader: 52,
       colorBgMenuItemSelected: 'rgba(46, 92, 110, 0.08)',
-      colorTextMenuItemSelected: INK_COLORS.stone,
+      colorTextMenuSelected: INK_COLORS.stone,
     },
     sider: {
       colorMenuBackground: '#ffffff',
@@ -114,12 +110,8 @@ export const proLayout: ProLayoutProps = {
       colorTextMenuSelected: INK_COLORS.stone,
       colorBgMenuItemSelected: 'rgba(46, 92, 110, 0.10)',
       colorBgMenuItemHover: 'rgba(46, 92, 110, 0.06)',
-      widthSider: 220,
     },
-    page: {
-      colorBgPage: '#f3efe6',
-      colorBgLayout: '#f3efe6',
-    },
+    bgLayout: '#f3efe6',
   },
 };
 
