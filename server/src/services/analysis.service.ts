@@ -41,6 +41,7 @@ import { analyzeImage } from './analysis-engine.service.js';
 import { runHybridAnalysis } from './ai-analysis.service.js';
 import { isAIEnabled } from './ai-vision.service.js';
 import { analysisCacheService } from './analysis-cache.service.js';
+import { notificationService } from './notification.service.js';
 import { logger } from '../utils/logger.js';
 import { env } from '../config/env.js';
 import {
@@ -521,6 +522,34 @@ class AnalysisServiceClass {
       );
       // 不抛错:结果已计算,返回给前端;DB 状态留 pending,后台任务可补偿
     }
+
+    // 6.5 异步创建通知(不阻塞主流程,失败仅记录日志)
+    // 通知触发点:分析完成/失败 → 通知作品所有者(userId)
+    notificationService
+      .createNotification({
+        tenantId,
+        userId,
+        type: analysisStatus === 'success' ? 'ANALYSIS_DONE' : 'ANALYSIS_FAIL',
+        title: analysisStatus === 'success' ? '作品分析完成' : '作品分析失败',
+        content:
+          analysisStatus === 'success'
+            ? `《${analysis.title ?? '未命名作品'}》分析完成,综合评分 ${result.overallScore}`
+            : `《${analysis.title ?? '未命名作品'}》分析失败${failureReason ? ':' + failureReason : ''}`,
+        level: analysisStatus === 'success' ? 'SUCCESS' : 'ERROR',
+        linkUrl: `/analysis/${analysis.id}`,
+        metadata: {
+          analysisId: analysis.id,
+          artType: body.artType,
+          overallScore: result.overallScore,
+        },
+      })
+      .catch((err) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        logger.warn(
+          { err: msg, analysisId: analysis.id, tenantId, userId },
+          '[analysis] create notification failed (non-blocking)',
+        );
+      });
 
     // 7. 清理临时文件(仅当上传目录为非持久化本地目录时删除)
     // COS 挂载路径(如 /lhcos-data/uploads)是持久化存储,文件需要保留供前端访问

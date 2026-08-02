@@ -106,13 +106,50 @@ function readIndex(): string[] {
   }
 }
 
-/** 写入索引,失败静默 */
-function writeIndex(ids: string[]): void {
+/** 写入索引,失败返回 false */
+function writeIndex(ids: string[]): boolean {
   try {
     localStorage.setItem(DRAFT_INDEX_KEY, JSON.stringify(ids));
+    return true;
   } catch {
-    /* 静默 */
+    return false;
   }
+}
+
+/**
+ * 模块级 flag:控制 reconcileIndex 在首次 listDrafts 时惰性触发一次
+ * 避免每次列表都扫描 localStorage(仅在会话首次补全历史孤儿)
+ */
+let reconcileDone = false;
+
+/**
+ * 扫描 LocalStorage 中所有草稿 key,补全索引中缺失的 id(修复历史孤儿)
+ * 场景:历史版本 createDraft 索引写入失败导致的孤儿草稿(本体存在但不在索引中)
+ * @returns 补全的条数(0 表示无需补全或 localStorage 不可用)
+ */
+export function reconcileIndex(): number {
+  let added = 0;
+  try {
+    const existingIds = new Set(readIndex());
+    const missing: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key || !key.startsWith(DRAFT_KEY_PREFIX)) continue;
+      const id = key.slice(DRAFT_KEY_PREFIX.length);
+      if (id && !existingIds.has(id)) {
+        missing.push(id);
+      }
+    }
+    if (missing.length > 0) {
+      const merged = [...existingIds, ...missing];
+      if (writeIndex(merged)) {
+        added = missing.length;
+      }
+    }
+  } catch {
+    /* localStorage 不可用,静默 */
+  }
+  return added;
 }
 
 /** 类型守卫:校验对象是否为合法 Draft */
@@ -176,14 +213,18 @@ export function createDraft(input: CreateDraftInput): Draft | null {
   // 先写草稿本体,失败直接返回 null
   if (!writeDraftRaw(draft)) return null;
 
-  // 再追加索引,失败时回滚草稿本体 (保持一致性)
+  // 再追加索引,失败时回滚草稿本体(避免孤儿草稿:listDrafts 只遍历索引,不在索引中的草稿无法被发现)
   const ids = readIndex();
   if (ids.includes(draft.id)) {
     // 理论上不会出现,防御性处理
     return draft;
   }
   ids.push(draft.id);
-  writeIndex(ids); // 索引写入失败不回滚草稿 (草稿仍存在,后续 listDrafts 自愈)
+  if (!writeIndex(ids)) {
+    // 索引写入失败:回滚草稿本体,保持索引与数据一致
+    removeDraftRaw(draft.id);
+    return null;
+  }
 
   return draft;
 }
@@ -194,6 +235,12 @@ export function createDraft(input: CreateDraftInput): Draft | null {
  * - 修复索引中失效的 id 引用 (草稿已被外部删除的情况)
  */
 export function listDrafts(tenantId: string, userId: string): Draft[] {
+  // 0. 惰性触发一次索引补全(修复历史孤儿草稿,会话内仅执行一次)
+  if (!reconcileDone) {
+    reconcileDone = true;
+    reconcileIndex();
+  }
+
   // 1. 全局清理过期草稿
   deleteDraftsByAge(AUTO_CLEAN_MAX_AGE_MS);
 

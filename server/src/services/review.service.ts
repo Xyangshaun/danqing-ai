@@ -19,6 +19,7 @@ import { reviewRepository } from '../repositories/review.repository.js';
 import { analysisRepository } from '../repositories/analysis.repository.js';
 import { userRepository } from '../repositories/user.repository.js';
 import { arbitrationService } from './arbitration.service.js';
+import { notificationService } from './notification.service.js';
 import { BusinessError } from '../middlewares/error-handler.js';
 import {
   ErrorCode,
@@ -78,6 +79,30 @@ class ReviewServiceClass {
       { reviewId: record.id, analysisId, reviewerType: body.reviewerType, status },
       '[review] created',
     );
+
+    // 异步通知作品所有者:作品收到新评审(不阻塞评审提交,失败仅记录日志)
+    notificationService
+      .createNotification({
+        tenantId,
+        userId: analysis.userId,
+        type: 'REVIEW',
+        title: '作品收到新评审',
+        content: `您的作品《${analysis.title ?? '未命名作品'}》收到${body.reviewerType === 'ai' ? 'AI' : '人工'}评审`,
+        level: 'INFO',
+        linkUrl: `/analysis/${analysisId}`,
+        metadata: {
+          reviewId: record.id,
+          analysisId,
+          reviewerType: body.reviewerType,
+        },
+      })
+      .catch((err) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        logger.warn(
+          { err: msg, reviewId: record.id, analysisId, ownerId: analysis.userId },
+          '[review] create notification failed (non-blocking)',
+        );
+      });
 
     return this.toSummary(record);
   }
