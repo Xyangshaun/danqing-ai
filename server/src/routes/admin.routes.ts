@@ -98,6 +98,9 @@ import {
   overridePreset,
 } from '../controllers/admin-phase5.controller.js';
 
+// AI 生产化:AI 配置管理(查看 / 测试)
+import { getAiConfig, testAiConfig } from '../controllers/admin-ai-config.controller.js';
+
 export const adminRouter: Router = Router();
 
 // ---------- 全局中间件(所有 /api/admin/* 路由必须经过鉴权 + 租户校验 + 限流)----------
@@ -248,6 +251,35 @@ adminRouter.delete('/system/api-keys/:id', requirePermission('admin:apikey:write
 
 // GET /api/admin/system/health - 系统健康检查
 adminRouter.get('/system/health', requirePermission('admin:system:health'), getSystemHealth);
+
+// ============================================================
+// AI 生产化:AI 配置管理模块(查看 / 测试)
+// ============================================================
+// 权限:admin:system:health(与系统健康检查共用,仅 ADMIN/OWNER)
+//
+// 设计说明:
+//   - GET  /system/ai-config      查看当前 AI 配置状态(Key 脱敏,不返回完整凭据)
+//   - POST /system/ai-config/test 测试 AI 连通性(发送 1x1 测试图片,验证配置可用)
+//
+// 配置更新流程:
+//   1. 管理员 SSH 到服务器,编辑 /var/www/danqing-ai/server/.env
+//   2. 修改 AI_API_KEY / AI_API_URL / AI_API_MODEL / AI_ENABLED / AI_PROVIDER
+//   3. 执行 `pm2 restart danqing-api`
+//   4. 调用 GET /system/ai-config 验证配置已生效
+//   5. 调用 POST /system/ai-config/test 验证 AI 可正常调用
+//
+// 支持的 AI Provider(任意 OpenAI 兼容端点):
+//   - 智谱 GLM-4V     AI_API_URL=https://open.bigmodel.cn/api/paas/v4/chat/completions
+//   - TRAE 内置 AI    AI_PROVIDER=trae + TRAE_API_KEY + TRAE_API_URL
+//   - OpenAI          AI_API_URL=https://api.openai.com/v1/chat/completions
+//   - Azure OpenAI    AI_API_URL=https://{resource}.openai.azure.com/openai/deployments/{deploy}/chat/completions?api-version=...
+//   - 自部署 vLLM     AI_API_URL=http://your-host:8000/v1/chat/completions
+
+// GET /api/admin/system/ai-config - 查看 AI 配置状态(Key 脱敏)
+adminRouter.get('/system/ai-config', requirePermission('admin:system:health'), getAiConfig);
+
+// POST /api/admin/system/ai-config/test - 测试 AI 连通性(发送最小化请求)
+adminRouter.post('/system/ai-config/test', requirePermission('admin:system:health'), testAiConfig);
 
 // ============================================================
 // 3.10.6 Phase 5 院校管理扩展模块(邀请码 / 批量导入 / 预设覆盖)
