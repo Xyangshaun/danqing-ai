@@ -583,6 +583,8 @@ describe('draft-service', () => {
     });
 
     it('写入失败时紧急 LRU 淘汰后重试', () => {
+      // 先预置草稿供 LRU 淘汰(在 mock 应用前,seedDraft 的 setItem 正常执行)
+      seedDraft({ id: 'victim', tenantId: TENANT_A, userId: USER_1, updatedAt: Date.now() - 99999 });
       // 模拟首次 setItem 抛 QuotaExceededError,重试时成功
       let callCount = 0;
       const origSetItem = Storage.prototype.setItem;
@@ -598,8 +600,6 @@ describe('draft-service', () => {
         }
         origSetItem.call(this, key, value);
       });
-      // 预置一些草稿供 LRU 淘汰
-      seedDraft({ id: 'victim', tenantId: TENANT_A, userId: USER_1, updatedAt: Date.now() - 99999 });
       const result = createDraft(makeInput({ title: 'retry-success' }));
       expect(result).not.toBeNull();
     });
