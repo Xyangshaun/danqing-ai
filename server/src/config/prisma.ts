@@ -38,7 +38,9 @@ export function initPrisma(): PrismaClient {
   // 日志输出(脱敏:Prisma 默认 query 日志可能含参数,生产环境关闭)
   // Prisma 5: $on 类型仅暴露 'query'/'beforeExit' 重载,warn/error 事件需通过
   // Prisma.LogLevel 类型转换(参见 PrismaClient 源码 LogDefinition)
-  const onLogEvent = prismaInstance.$on as (
+  // 注意:必须 .bind(prismaInstance) 保留 this 上下文,否则 $on 内部访问
+  // this._engineConfig 时报 "Cannot read properties of undefined"
+  const onLogEvent = prismaInstance.$on.bind(prismaInstance) as (
     event: Prisma.LogLevel,
     listener: (e: PrismaLogEventPayload) => void,
   ) => void;
