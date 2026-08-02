@@ -1,10 +1,68 @@
 # 丹青有AI 项目上下文日志
 
 > **生成时间**: 2026-08-02 17:50 (GMT+8)
+> **更新时间**: 2026-08-02 20:57 (GMT+8)
 > **用途**: 任务交接快照,供后续任务直接消费
 > **仓库**: `Xyangshaun/danqing-ai` (main)
 > **生产**: https://www.danqing.site (43.128.25.202)
-> **当前 HEAD**: `0fc6530 feat: 新增职业选择 onboarding 流程 + 本地化外网资源`
+> **当前 HEAD**: `8e7f4fb feat: AI 用量统计模块 - 4 个统计接口 + 用量日志记录 + DB 迁移`
+
+---
+
+## 零、更新日志(2026-08-02 20:57)
+
+### 本次上线内容(3 个提交)
+
+| Commit | 说明 | 变更 |
+|--------|------|------|
+| `0fc6530` | Onboarding 职业选择 + 外网资源本地化 | 25 文件 |
+| `68b9025` | AI 生产化启用 - admin AI 配置查看/测试接口 + 多 Provider | 3 文件 |
+| `8e7f4fb` | AI 用量统计模块 - 4 个统计接口 + 用量日志记录 + DB 迁移 | 10 文件 |
+
+### 功能变更点
+
+#### 1. Onboarding 职业选择流程
+- 飞书首次登录 → `/onboarding` 页面 → 选角色 → `PATCH /api/v1/users/role`
+- 仅 `role='student'` 可自选一次,已选返回 403
+- 事务同时更新 `User.role` + `TenantMember.role`
+
+#### 2. AI 生产化管理
+- `GET /api/admin/system/ai-config` — 查看当前 AI 配置(Key 脱敏)
+- `POST /api/admin/system/ai-config/test` — 测试 AI 连通性(1x1 测试图片)
+- 多 Provider 支持:GLM / OpenAI / Azure / vLLM / TRAE
+- 设计原则:运行时只读 + .env 编辑 + PM2 restart
+
+#### 3. AI 用量统计模块(核心新增)
+- **数据模型**: `AiUsageLog` 表(tenant_id 多租户隔离, 4 索引)
+- **4 个统计接口**(admin:stats:read 权限, Redis 5分钟缓存):
+  - `GET /api/admin/stats/ai-usage/overview` — 总览(次数/成功率/token/成本/耗时)
+  - `GET /api/admin/stats/ai-usage/by-provider` — 按 Provider 分组
+  - `GET /api/admin/stats/ai-usage/by-user` — 按用户 Top N(关联 users 表)
+  - `GET /api/admin/stats/ai-usage/trend` — 按日期趋势(最近 N 天)
+- **用量日志记录**: AI 分析服务和连通性测试均异步记录用量(非阻塞)
+- **成本估算**: 多模型定价表(qwen-vl-plus/max, glm-4v-flash, doubao-vision)
+- **参数钳制**: limit 1-100, days 1-90, 非法日期优雅降级
+- **专项测试**: 79/79 通过(鉴权+集成+边界+性能+单元+一致性)
+
+### 回归测试
+
+| 项 | 结果 |
+|----|------|
+| 后端类型检查 | tsc --noEmit 零错误 |
+| 后端测试 | **839/839 通过** (100%) |
+| 前端类型检查 | tsc --noEmit 零错误 |
+| 前端构建 | vite build 成功 (3.77s) |
+| 生产健康 | HTTPS 200 OK |
+
+### 测试修复
+- `analysis.service.test.ts:858` — 修复 imageUrl 期望: `upload://` → `/uploads/`(Nginx 静态服务)
+- `tenant-isolation.test.ts:147-172` — 修复 createdAt 固定日期为动态当前月,保障 countMonthlyUsage 测试稳定
+
+### 部署状态
+- PM2 `danqing-api`: online (ubuntu 用户, pid 803164)
+- PM2 进程列表已保存 (`pm2 save`)
+- 健康检查 cron(每分钟)运行正常
+- 公网 `/health`: HTTP 200
 
 ---
 

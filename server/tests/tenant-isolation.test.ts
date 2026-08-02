@@ -134,7 +134,8 @@ describe('tenant-isolation (多租户数据隔离)', () => {
       role: 'student',
     });
 
-    // 租户 A 的分析记录(学生A1 创建)
+    // 租户 A 的分析记录(学生A1 创建)— createdAt 使用当前月,保障 countMonthlyUsage 测试稳定
+    const nowDate = new Date();
     prismaMock.__insertAnalysis({
       id: ANALYSIS_ID_A1,
       tenantId: TEST_TENANT_ID_A,
@@ -144,7 +145,7 @@ describe('tenant-isolation (多租户数据隔离)', () => {
       title: 'A1作品',
       status: 'success',
       overallScore: 85,
-      createdAt: new Date('2026-07-01T10:00:00Z'),
+      createdAt: new Date(Date.UTC(nowDate.getUTCFullYear(), nowDate.getUTCMonth(), 1, 10, 0, 0)),
     });
     // 租户 A 的另一条(学生A2 创建)
     prismaMock.__insertAnalysis({
@@ -156,7 +157,7 @@ describe('tenant-isolation (多租户数据隔离)', () => {
       title: 'A2作品',
       status: 'success',
       overallScore: 78,
-      createdAt: new Date('2026-07-02T10:00:00Z'),
+      createdAt: new Date(Date.UTC(nowDate.getUTCFullYear(), nowDate.getUTCMonth(), 2, 10, 0, 0)),
     });
     // 租户 B 的分析记录(学生B1 创建)
     prismaMock.__insertAnalysis({
@@ -168,7 +169,7 @@ describe('tenant-isolation (多租户数据隔离)', () => {
       title: 'B1作品',
       status: 'success',
       overallScore: 92,
-      createdAt: new Date('2026-07-03T10:00:00Z'),
+      createdAt: new Date(Date.UTC(nowDate.getUTCFullYear(), nowDate.getUTCMonth(), 3, 10, 0, 0)),
     });
   });
 

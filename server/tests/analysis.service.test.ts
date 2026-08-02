@@ -854,8 +854,8 @@ describe('analysisService.createAnalysisFromUpload 上传模式', () => {
     expect(res.result).not.toBeNull();
     expect(res.result!.title).toBe('上传作品');
     expect(res.result!.remark).toBe('测试备注');
-    // 上传模式 imageUrl 为 upload:// 格式
-    expect(res.result!.imageUrl).toContain('upload://');
+    // 上传模式 imageUrl 为 /uploads/ 路径(Nginx 静态服务)
+    expect(res.result!.imageUrl).toContain('/uploads/');
     // workType 应与传入的 artType 一致
     expect(res.result!.workType).toBe('painting');
     // DB 中记录的 tenantId/userId 正确归属
