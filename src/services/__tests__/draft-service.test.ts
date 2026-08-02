@@ -29,6 +29,7 @@ import {
   subscribeDrafts,
   DRAFT_CONSTANTS,
   type CreateDraftInput,
+  type DraftChange,
 } from '../draft-service';
 
 const { KEY_PREFIX, INDEX_KEY } = DRAFT_CONSTANTS;
@@ -434,22 +435,56 @@ describe('draft-service', () => {
   });
 
   /* ============================================================
-   * 9. subscribeDrafts (跨标签 storage 事件)
+   * 9. subscribeDrafts (跨标签 storage 事件,增量通知)
    * ============================================================ */
   describe('subscribeDrafts', () => {
-    it('草稿相关 key 变更应触发回调', () => {
-      const cb = vi.fn();
+    it('新建草稿(oldValue=null)应触发 add 增量通知', () => {
+      const cb = vi.fn<(change: DraftChange) => void>();
       const unsub = subscribeDrafts(cb);
-
-      // 模拟其他标签写入草稿本体 (storage 事件 key 为草稿 key)
+      // oldValue 未传(默认 null)→ add
       window.dispatchEvent(
         new StorageEvent('storage', { key: KEY_PREFIX + 'abc', newValue: '{}' })
       );
-      // 模拟其他标签写入索引
+      expect(cb).toHaveBeenCalledTimes(1);
+      expect(cb).toHaveBeenCalledWith({ type: 'add', id: 'abc' });
+      unsub();
+    });
+
+    it('更新草稿(oldValue 和 newValue 均非 null)应触发 update 增量通知', () => {
+      const cb = vi.fn<(change: DraftChange) => void>();
+      const unsub = subscribeDrafts(cb);
+      window.dispatchEvent(
+        new StorageEvent('storage', {
+          key: KEY_PREFIX + 'xyz',
+          oldValue: '{"old":true}',
+          newValue: '{"new":true}',
+        })
+      );
+      expect(cb).toHaveBeenCalledWith({ type: 'update', id: 'xyz' });
+      unsub();
+    });
+
+    it('删除草稿(newValue=null)应触发 delete 增量通知', () => {
+      const cb = vi.fn<(change: DraftChange) => void>();
+      const unsub = subscribeDrafts(cb);
+      window.dispatchEvent(
+        new StorageEvent('storage', {
+          key: KEY_PREFIX + 'gone',
+          oldValue: '{}',
+          newValue: null,
+        })
+      );
+      expect(cb).toHaveBeenCalledWith({ type: 'delete', id: 'gone' });
+      unsub();
+    });
+
+    it('索引 key 变更不应触发回调(与草稿 key 事件冗余)', () => {
+      const cb = vi.fn();
+      const unsub = subscribeDrafts(cb);
       window.dispatchEvent(
         new StorageEvent('storage', { key: INDEX_KEY, newValue: '["abc"]' })
       );
-      expect(cb).toHaveBeenCalledTimes(2);
+      expect(cb).not.toHaveBeenCalled();
       unsub();
     });
 
@@ -476,9 +511,106 @@ describe('draft-service', () => {
       const unsub = subscribeDrafts(cb);
       unsub();
       window.dispatchEvent(
-        new StorageEvent('storage', { key: INDEX_KEY, newValue: '[]' })
+        new StorageEvent('storage', { key: KEY_PREFIX + 'abc', newValue: '{}' })
       );
       expect(cb).not.toHaveBeenCalled();
+    });
+  });
+
+  /* ============================================================
+   * 10. LocalStorage 配额检测与 LRU 淘汰
+   * ============================================================ */
+  describe('配额检测与 LRU 淘汰', () => {
+    it('配额未超阈值时不触发 LRU 淘汰', () => {
+      const d1 = createDraft(makeInput({ title: 'keep-1' }));
+      const d2 = createDraft(makeInput({ title: 'keep-2' }));
+      expect(d1).not.toBeNull();
+      expect(d2).not.toBeNull();
+      // 正常写入不会触发淘汰(占用远低于 80% 高水位)
+      expect(getDraft(d1!.id)).not.toBeNull();
+      expect(getDraft(d2!.id)).not.toBeNull();
+    });
+
+    it('写入超 80% 高水位时 LRU 淘汰最旧草稿', () => {
+      // 通过大 imagePreview 模拟高占用
+      const bigPreview = 'data:image/jpeg;base64,' + 'A'.repeat(200_000); // ~200KB
+      // 预置 20 条大草稿(总占用 ~4MB,接近高水位)
+      for (let i = 0; i < 20; i++) {
+        seedDraft({
+          id: `old-${i}`,
+          tenantId: TENANT_A,
+          userId: USER_1,
+          title: `old-${i}`,
+          updatedAt: Date.now() - (20 - i) * 1000, // 越早越旧
+        });
+        // 手动写入大 imagePreview
+        const raw = JSON.parse(localStorage.getItem(KEY_PREFIX + `old-${i}`)!);
+        raw.imagePreview = bigPreview;
+        localStorage.setItem(KEY_PREFIX + `old-${i}`, JSON.stringify(raw));
+      }
+      // 再创建一条新草稿,预估超 80% → 触发 LRU 淘汰至 60%
+      const newDraft = createDraft(
+        makeInput({ title: 'new', imagePreview: bigPreview })
+      );
+      expect(newDraft).not.toBeNull();
+      // 最旧的几条应被淘汰(old-0, old-1, ...)
+      const idx = JSON.parse(localStorage.getItem(INDEX_KEY)!);
+      expect(idx).toContain(newDraft!.id);
+      // 至少淘汰了部分旧草稿
+      const remaining = idx.filter((id: string) => id.startsWith('old-'));
+      expect(remaining.length).toBeLessThan(20);
+    });
+
+    it('LRU 淘汰不删除正在写入的草稿(excludeId)', () => {
+      const bigPreview = 'data:image/jpeg;base64,' + 'B'.repeat(200_000);
+      // 预置大占用草稿
+      for (let i = 0; i < 20; i++) {
+        seedDraft({
+          id: `pre-${i}`,
+          tenantId: TENANT_A,
+          userId: USER_1,
+          updatedAt: Date.now() - i * 1000,
+        });
+        const raw = JSON.parse(localStorage.getItem(KEY_PREFIX + `pre-${i}`)!);
+        raw.imagePreview = bigPreview;
+        localStorage.setItem(KEY_PREFIX + `pre-${i}`, JSON.stringify(raw));
+      }
+      // updateDraft 一个已存在的大草稿 → 不应淘汰它自身
+      const target = 'pre-10';
+      const updated = updateDraft(target, { title: 'updated' });
+      expect(updated).not.toBeNull();
+      expect(getDraft(target)).not.toBeNull();
+    });
+
+    it('写入失败时紧急 LRU 淘汰后重试', () => {
+      // 模拟首次 setItem 抛 QuotaExceededError,重试时成功
+      let callCount = 0;
+      const origSetItem = Storage.prototype.setItem;
+      vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (
+        this: Storage,
+        key: string,
+        value: string,
+      ) {
+        callCount++;
+        // 对草稿 key 的写入:首次抛错,第二次成功
+        if (key.startsWith(KEY_PREFIX) && callCount === 1) {
+          throw new DOMException('QuotaExceededError');
+        }
+        origSetItem.call(this, key, value);
+      });
+      // 预置一些草稿供 LRU 淘汰
+      seedDraft({ id: 'victim', tenantId: TENANT_A, userId: USER_1, updatedAt: Date.now() - 99999 });
+      const result = createDraft(makeInput({ title: 'retry-success' }));
+      expect(result).not.toBeNull();
+    });
+
+    it('配额极小/隐私模式时 LRU 淘汰后仍失败返回 null', () => {
+      // setItem 始终抛错(模拟隐私模式)
+      vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+        throw new DOMException('QuotaExceededError');
+      });
+      const result = createDraft(makeInput());
+      expect(result).toBeNull();
     });
   });
 });

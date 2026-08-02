@@ -196,8 +196,13 @@ class NotificationServiceClass {
   /**
    * 标记单条通知为已读
    *
-   * 幂等性:已读通知再次标记返回当前通知状态(不报错,不更新 readAt)
+   * 幂等性:已读通知再次标记返回当前通知状态(不报错,不更新 readAt,跳过写操作)
    * 不存在/不属于当前用户:返回 RESOURCE_NOT_FOUND(不泄露存在性)
+   *
+   * 实现说明:
+   *   - 先查 existing.readAt 直接判断 wasAlreadyRead(语义清晰)
+   *   - 已读时直接返回 existing,跳过 repository.markRead 的 updateMany(减少一次写)
+   *   - 替代原方案:markRead 后通过 updated.readAt !== readAt 时间戳比较推断 wasAlreadyRead
    *
    * @param tenantId 租户 ID
    * @param userId 接收者用户 ID
@@ -213,6 +218,39 @@ class NotificationServiceClass {
       throw new BusinessError(ErrorCode.PARAM_MISSING, '通知 ID 不能为空', 400);
     }
 
+    // 先查询现有通知:判断是否存在 + 是否已读(双过滤拦截跨租户/跨用户访问)
+    const existing = await notificationRepository.findByIdAndOwner(
+      tenantId,
+      userId,
+      notificationId,
+    );
+
+    if (!existing) {
+      // 通知不存在或不属于当前用户
+      throw new BusinessError(
+        ErrorCode.RESOURCE_NOT_FOUND,
+        '通知不存在',
+        404,
+      );
+    }
+
+    // 已读:幂等返回当前状态,跳过 updateMany(减少一次写操作)
+    if (existing.readAt !== null) {
+      logger.info(
+        {
+          action: 'notification.markRead',
+          tenantId,
+          userId,
+          notificationId,
+          readAt: existing.readAt.toISOString(),
+          wasAlreadyRead: true,
+        },
+        '[notification] mark single read (idempotent)',
+      );
+      return this.toNotification(existing);
+    }
+
+    // 未读:执行更新
     const readAt = new Date();
     const updated = await notificationRepository.markRead(
       tenantId,
@@ -222,7 +260,7 @@ class NotificationServiceClass {
     );
 
     if (!updated) {
-      // 通知不存在或不属于当前用户(双过滤已拦截跨租户/跨用户访问)
+      // 极端情况:existing 查到但 markRead 返回 null(并发删除等)
       throw new BusinessError(
         ErrorCode.RESOURCE_NOT_FOUND,
         '通知不存在',
@@ -230,8 +268,7 @@ class NotificationServiceClass {
       );
     }
 
-    // 审计日志:写操作记录(结构化日志,便于 ELK 采集)
-    // 不记录通知内容(可能含用户业务数据),仅记录操作维度
+    // 审计日志:wasAlreadyRead=false 由 existing.readAt === null 语义直接得出
     logger.info(
       {
         action: 'notification.markRead',
@@ -239,7 +276,7 @@ class NotificationServiceClass {
         userId,
         notificationId,
         readAt: updated.readAt?.toISOString() ?? null,
-        wasAlreadyRead: updated.readAt !== null && updated.readAt.getTime() !== readAt.getTime(),
+        wasAlreadyRead: false,
       },
       '[notification] mark single read',
     );

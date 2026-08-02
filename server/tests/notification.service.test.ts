@@ -359,10 +359,13 @@ describe('NotificationService.markRead', () => {
   it('成功标记未读通知为已读', async () => {
     const original = makeNotification({ id: 'n-0001', readAt: null });
     const updated = makeNotification({ id: 'n-0001', readAt: new Date('2026-08-01T12:00:00Z') });
+    mockNotifRepo.findByIdAndOwner.mockResolvedValue(original);
     mockNotifRepo.markRead.mockResolvedValue(updated);
 
     const result = await notificationService.markRead(TENANT_A, USER_A, 'n-0001');
 
+    // 先查 existing 判断是否已读(语义重构:替代原时间戳比较)
+    expect(mockNotifRepo.findByIdAndOwner).toHaveBeenCalledWith(TENANT_A, USER_A, 'n-0001');
     // 验证 Repository 收到正确参数(tenantId + userId + notificationId + readAt Date)
     expect(mockNotifRepo.markRead).toHaveBeenCalledWith(
       TENANT_A,
@@ -375,30 +378,33 @@ describe('NotificationService.markRead', () => {
   });
 
   it('通知不存在 → RESOURCE_NOT_FOUND 404', async () => {
-    mockNotifRepo.markRead.mockResolvedValue(null);
+    mockNotifRepo.findByIdAndOwner.mockResolvedValue(null);
 
     await expectBusinessError(
       () => notificationService.markRead(TENANT_A, USER_A, 'n-non-existent'),
       ErrorCode.RESOURCE_NOT_FOUND,
       404,
     );
+    // 不存在时跳过 markRead 写操作
+    expect(mockNotifRepo.markRead).not.toHaveBeenCalled();
   });
 
   it('跨租户通知(双过滤返回 null)→ RESOURCE_NOT_FOUND 404(不泄露存在性)', async () => {
-    mockNotifRepo.markRead.mockResolvedValue(null);
+    mockNotifRepo.findByIdAndOwner.mockResolvedValue(null);
 
     await expectBusinessError(
       () => notificationService.markRead(TENANT_B, USER_B, 'n-0001'),
       ErrorCode.RESOURCE_NOT_FOUND,
       404,
     );
-    // 验证 Repository 被传入 TENANT_B + USER_B(隔离在 Repository 层强制)
-    expect(mockNotifRepo.markRead).toHaveBeenCalledWith(
+    // 验证 findByIdAndOwner 被传入 TENANT_B + USER_B(隔离在 Repository 层强制)
+    expect(mockNotifRepo.findByIdAndOwner).toHaveBeenCalledWith(
       TENANT_B,
       USER_B,
       'n-0001',
-      expect.any(Date),
     );
+    // 跨租户查不到 → 跳过 markRead 写操作
+    expect(mockNotifRepo.markRead).not.toHaveBeenCalled();
   });
 
   it('通知 ID 为空 → PARAM_MISSING 400', async () => {
@@ -407,6 +413,7 @@ describe('NotificationService.markRead', () => {
       ErrorCode.PARAM_MISSING,
       400,
     );
+    expect(mockNotifRepo.findByIdAndOwner).not.toHaveBeenCalled();
     expect(mockNotifRepo.markRead).not.toHaveBeenCalled();
   });
 
@@ -416,19 +423,22 @@ describe('NotificationService.markRead', () => {
       ErrorCode.PARAM_MISSING,
       400,
     );
+    expect(mockNotifRepo.findByIdAndOwner).not.toHaveBeenCalled();
     expect(mockNotifRepo.markRead).not.toHaveBeenCalled();
   });
 
-  it('幂等:已读通知再次标记返回当前状态(不报错)', async () => {
-    // 模拟已读通知(Repository 的 markRead 返回已读记录,readAt 已有值)
+  it('幂等:已读通知再次标记返回当前状态(不报错,跳过写操作)', async () => {
+    // 模拟已读通知(findByIdAndOwner 返回已读记录,readAt 已有值)
     const alreadyRead = makeNotification({ id: 'n-0001', readAt: new Date('2026-08-01T11:00:00Z') });
-    mockNotifRepo.markRead.mockResolvedValue(alreadyRead);
+    mockNotifRepo.findByIdAndOwner.mockResolvedValue(alreadyRead);
 
     const result = await notificationService.markRead(TENANT_A, USER_A, 'n-0001');
 
     // 不抛错,返回当前已读状态
     expect(result.id).toBe('n-0001');
     expect(result.readAt).toBe('2026-08-01T11:00:00.000Z');
+    // 已读通知不再调用 markRead(跳过 updateMany 写操作)
+    expect(mockNotifRepo.markRead).not.toHaveBeenCalled();
   });
 });
 
