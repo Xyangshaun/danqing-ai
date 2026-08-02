@@ -8,6 +8,7 @@ import type { ErrorRequestHandler, RequestHandler } from 'express';
 import { ErrorCode } from '../types/api-contract.js';
 import { error } from '../utils/response.js';
 import { logger } from '../utils/logger.js';
+import { generateUuid } from '../utils/crypto.js';
 import { ZodError } from 'zod';
 
 /**
@@ -35,9 +36,10 @@ export const errorHandler: ErrorRequestHandler = (
   res,
   _next,
 ) => {
-  // 确保 traceId 已注入(trace 中间件若未跑过则补一个)
+  // 确保 traceId 已注入(trace 中间件若未跑过则现场生成 UUID,避免 'unknown' 断链)
   if (!req.traceId) {
-    req.traceId = 'unknown';
+    req.traceId = generateUuid();
+    logger.warn({ traceId: req.traceId }, '[error] trace middleware skipped, generated fallback traceId');
   }
 
   // 1. Zod 校验错误 → 1001 PARAM_INVALID
@@ -90,6 +92,8 @@ export const errorHandler: ErrorRequestHandler = (
  * 404 兜底处理(无匹配路由)
  */
 export const notFoundHandler: RequestHandler = (req, res) => {
-  if (!req.traceId) req.traceId = 'unknown';
+  if (!req.traceId) {
+    req.traceId = generateUuid();
+  }
   return error(res, ErrorCode.RESOURCE_NOT_FOUND, '资源不存在', 404);
 };

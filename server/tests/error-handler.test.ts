@@ -141,6 +141,41 @@ describe('error-handler (统一错误处理中间件)', () => {
       expect(res.status).toHaveBeenCalledWith(401);
     });
 
+    it('should_return_400_with_UUID_traceId_when_body_parse_failed', async () => {
+      // P2-6 回归测试:body parser 失败时 traceId 应为 UUID 而非 'unknown'
+      // 场景:express.json 解析畸形 JSON 抛 entity.parse.failed
+      const parseErr = new SyntaxError('Unexpected token in JSON');
+      (parseErr as { type?: string }).type = 'entity.parse.failed';
+      const req = createMockReq({ traceId: undefined }); // 模拟 trace 中间件未跑
+      const res = createMockRes(req);
+      const next = vi.fn();
+
+      await runErrorHandler(errorHandler, parseErr, req, res, next);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      const body = (res.json as ReturnType<typeof vi.fn>).mock.calls[0]?.[0];
+      expect(body.code).toBe(ErrorCode.PARAM_INVALID);
+      expect(body.message).toBe('请求体 JSON 格式错误');
+      // 关键断言:traceId 必须是 UUID,不能是 'unknown'
+      expect(body.traceId).not.toBe('unknown');
+      expect(body.traceId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+    });
+
+    it('should_return_413_with_FILE_TOO_LARGE_when_body_too_large', async () => {
+      // body parser 超限抛 entity.too.large
+      const largeErr = new Error('request entity too large');
+      (largeErr as { type?: string }).type = 'entity.too.large';
+      const req = createMockReq();
+      const res = createMockRes();
+      const next = vi.fn();
+
+      await runErrorHandler(errorHandler, largeErr, req, res, next);
+
+      expect(res.status).toHaveBeenCalledWith(413);
+      const body = (res.json as ReturnType<typeof vi.fn>).mock.calls[0]?.[0];
+      expect(body.code).toBe(ErrorCode.FILE_TOO_LARGE);
+    });
+
     it('should_return_500_with_DATABASE_ERROR_when_prisma_error', async () => {
       // 模拟 Prisma 错误(类名以 PrismaClient 开头)
       const prismaErr = new Error('Unique constraint failed');
@@ -186,7 +221,7 @@ describe('error-handler (统一错误处理中间件)', () => {
       expect(body.code).toBe(ErrorCode.INTERNAL_ERROR);
     });
 
-    it('should_use_unknown_traceId_when_req_missing_traceId', async () => {
+    it('should_generate_fallback_traceId_when_req_missing_traceId', async () => {
       const bizErr = new BusinessError(ErrorCode.FORBIDDEN, '禁止', 403);
       const req = createMockReq({ traceId: undefined });
       const res = createMockRes(req); // 必须传入 req 以保证 res.req === req
@@ -195,7 +230,9 @@ describe('error-handler (统一错误处理中间件)', () => {
       await runErrorHandler(errorHandler, bizErr, req, res, next);
 
       const body = (res.json as ReturnType<typeof vi.fn>).mock.calls[0]?.[0];
-      expect(body.traceId).toBe('unknown');
+      // P2-6 修复:trace 中间件提前后,errorHandler 兜底也现场生成 UUID,杜绝 'unknown'
+      expect(body.traceId).not.toBe('unknown');
+      expect(body.traceId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
     });
 
     it('should_extract_field_path_from_zod_error', async () => {
@@ -241,7 +278,7 @@ describe('error-handler (统一错误处理中间件)', () => {
       expect(body.data).toBeNull();
     });
 
-    it('should_use_unknown_traceId_when_req_missing_traceId', async () => {
+    it('should_generate_fallback_traceId_when_req_missing_traceId', async () => {
       const req = createMockReq({ traceId: undefined });
       const res = createMockRes(req); // 必须传入 req 以保证 res.req === req
       const next = vi.fn();
@@ -249,7 +286,9 @@ describe('error-handler (统一错误处理中间件)', () => {
       await runHandler(notFoundHandler, req, res, next);
 
       const body = (res.json as ReturnType<typeof vi.fn>).mock.calls[0]?.[0];
-      expect(body.traceId).toBe('unknown');
+      // P2-6 修复:notFoundHandler 兜底也现场生成 UUID,杜绝 'unknown'
+      expect(body.traceId).not.toBe('unknown');
+      expect(body.traceId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
     });
   });
 

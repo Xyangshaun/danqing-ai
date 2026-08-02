@@ -118,15 +118,18 @@ export function createApp(): Express {
     }),
   );
 
+  // ---------- traceId 注入(必须在 body parser 之前)----------
+  // 原因:body parser 解析失败时(express.json 抛 entity.parse.failed)需先有 traceId
+  // 才能通过 errorHandler 返回带 UUID 的错误响应,避免 traceId='unknown' 断链
+  // trace 中间件仅读 header / 生成 UUID,不依赖 body 或 cookie,顺序提前无副作用
+  app.use(traceMiddleware);
+
   // ---------- 请求体解析 ----------
-  // 文件上传上限 10MB(对应技术约束:file upload limit ≤10MB)
+  // JSON/URL-encoded body 上限 1MB(文件上传走 multer,另有限制)
   app.use(express.json({ limit: '1mb' }));
   app.use(express.urlencoded({ extended: true, limit: '1mb' }));
   // Cookie 解析(refresh_token HttpOnly)
   app.use(cookieParser());
-
-  // ---------- traceId 注入(必须在路由前)----------
-  app.use(traceMiddleware);
 
   // ---------- 多端适配中间件(Phase 3)----------
   // 1. clientIdentification:为未鉴权路由(/auth/feishu/authorize 等)注入 req.client
