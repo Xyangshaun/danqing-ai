@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect, useCallback, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, Filter, X, ExternalLink, Heart, Download, Grid3X3, List, Globe, RefreshCw, Tag, ChevronDown, Check, Loader2, ImageOff, ChevronUp, Sparkles, Package, PackagePlus, Trash2 } from 'lucide-react';
 import { getFilterOptions, type ArtworkItem } from '../services/artworksDatabase';
@@ -16,6 +16,7 @@ import {
 } from '../services/materialService';
 import { SkeletonBox } from '../components/PageSkeleton';
 import EmptyState from '../components/EmptyState';
+import { useLazyImage } from '../hooks/useLazyImage';
 
 const categoryNames: Record<string, string> = {
   painting: '绘画',
@@ -34,6 +35,197 @@ const regionNames: Record<string, string> = {
   other: '其他',
 };
 
+/* ============================================================
+ * ArtworkCard / ArtworkRow — 素材卡片(memo + useLazyImage)
+ *
+ * 提取为独立组件以:
+ *   1. 通过 React.memo 跳过未变化卡片的重渲染(筛选/收藏切换时仅重渲染变化项)
+ *   2. 使用 useLazyImage 实现图片懒加载(IntersectionObserver + 占位图)
+ *   3. 图片加载失败时显示 ImageOff 占位,加载中显示骨架屏
+ * ============================================================ */
+
+interface ArtworkCardProps {
+  artwork: ArtworkItem;
+  isFavorite: boolean;
+  onSelect: (artwork: ArtworkItem) => void;
+  onSendToFuse: (artwork: ArtworkItem) => void;
+  onPickPack: (artwork: ArtworkItem) => void;
+  onToggleFavorite: (id: string) => void;
+}
+
+/* 网格视图卡片 */
+const ArtworkCard = memo(function ArtworkCard({
+  artwork,
+  isFavorite,
+  onSelect,
+  onSendToFuse,
+  onPickPack,
+  onToggleFavorite,
+}: ArtworkCardProps) {
+  const { imgRef, loadedSrc, isLoaded, isError } = useLazyImage(artwork.imageUrl);
+
+  return (
+    <div
+      className="bg-rice-50 rounded-2xl overflow-hidden shadow-card hover:shadow-card-hover transition-all group cursor-pointer"
+      onClick={() => onSelect(artwork)}
+    >
+      <div className="aspect-[4/3] overflow-hidden relative bg-ink-100">
+        {!isLoaded && !isError && (
+          <SkeletonBox className="absolute inset-0 z-10" />
+        )}
+        {isError ? (
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-rice-100">
+            <ImageOff className="w-10 h-10 text-ink-300 mb-2" />
+            <p className="text-xs text-ink-400">加载失败</p>
+          </div>
+        ) : (
+          <img
+            ref={imgRef}
+            src={loadedSrc}
+            alt={artwork.title}
+            className={`w-full h-full object-cover group-hover:scale-105 transition-all duration-500 ${
+              isLoaded ? 'opacity-100' : 'opacity-0'
+            }`}
+          />
+        )}
+        <div className="absolute inset-0 bg-gradient-to-t from-ink-900/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+        <div className="absolute top-3 left-3 flex gap-2">
+          <span className="px-2 py-0.5 bg-cinnabar/90 text-white text-xs rounded-full">
+            {categoryNames[artwork.category] || artwork.category}
+          </span>
+          <span className="px-2 py-0.5 bg-ink-900/70 text-white text-xs rounded-full">
+            {regionNames[artwork.region] || artwork.region}
+          </span>
+        </div>
+        <div className="absolute bottom-3 left-3 right-3 flex items-end justify-between opacity-0 group-hover:opacity-100 transition-opacity">
+          <div className="flex gap-1 flex-wrap">
+            {artwork.tags.slice(0, 3).map((tag) => (
+              <span key={tag} className="px-2 py-0.5 bg-white/80 backdrop-blur-sm text-xs rounded-full text-ink-700">
+                {tag}
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+      <div className="p-4">
+        <div className="flex items-start justify-between mb-2">
+          <div>
+            <h3 className="font-serif text-lg font-bold text-ink-900">{artwork.title}</h3>
+            <p className="text-sm text-ink-500">{artwork.artist} · {artwork.era}</p>
+          </div>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={(e) => { e.stopPropagation(); onSendToFuse(artwork); }}
+              className="p-1.5 rounded-full hover:bg-cinnabar/10 hover:text-cinnabar text-ink-400 transition-all"
+              title="用于嫁接"
+            >
+              <Sparkles className="w-4 h-4" />
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); onPickPack(artwork); }}
+              className="p-1.5 rounded-full hover:bg-cinnabar/10 hover:text-cinnabar text-ink-400 transition-all"
+              title="加入素材包"
+            >
+              <PackagePlus className="w-4 h-4" />
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); onToggleFavorite(artwork.id); }}
+              className="p-1.5 rounded-full hover:bg-rice-100 transition-all"
+              aria-label={isFavorite ? '取消收藏' : '收藏'}
+              aria-pressed={isFavorite}
+            >
+              <Heart className={`w-4 h-4 ${isFavorite ? 'text-cinnabar fill-cinnabar' : 'text-ink-400'}`} />
+            </button>
+          </div>
+        </div>
+        <p className="text-sm text-ink-600 line-clamp-2">{artwork.description}</p>
+        <div className="flex gap-2 mt-3 flex-wrap">
+          <span className="px-2 py-0.5 bg-rice-100 text-xs rounded-full text-ink-600">{artwork.style}</span>
+          {artwork.medium && <span className="px-2 py-0.5 bg-rice-100 text-xs rounded-full text-ink-600">{artwork.medium}</span>}
+        </div>
+      </div>
+    </div>
+  );
+});
+
+/* 列表视图行卡片 */
+const ArtworkRow = memo(function ArtworkRow({
+  artwork,
+  isFavorite,
+  onSelect,
+  onSendToFuse,
+  onPickPack,
+  onToggleFavorite,
+}: ArtworkCardProps) {
+  const { imgRef, loadedSrc, isLoaded, isError } = useLazyImage(artwork.imageUrl);
+
+  return (
+    <div
+      className="bg-rice-50 rounded-2xl overflow-hidden shadow-card hover:shadow-card-hover transition-all cursor-pointer flex"
+      onClick={() => onSelect(artwork)}
+    >
+      <div className="w-48 h-36 flex-shrink-0 overflow-hidden bg-ink-100 relative">
+        {!isLoaded && !isError && (
+          <SkeletonBox className="absolute inset-0 z-10" />
+        )}
+        {isError ? (
+          <div className="w-full h-full flex flex-col items-center justify-center">
+            <ImageOff className="w-6 h-6 text-ink-300 mb-1" />
+            <p className="text-xs text-ink-400">加载失败</p>
+          </div>
+        ) : (
+          <img
+            ref={imgRef}
+            src={loadedSrc}
+            alt={artwork.title}
+            className={`w-full h-full object-cover transition-opacity duration-300 ${
+              isLoaded ? 'opacity-100' : 'opacity-0'
+            }`}
+          />
+        )}
+      </div>
+      <div className="p-4 flex-1">
+        <div className="flex items-start justify-between">
+          <div>
+            <h3 className="font-serif text-lg font-bold text-ink-900">{artwork.title}</h3>
+            <p className="text-sm text-ink-500">{artwork.artist} · {artwork.era} · {artwork.style}</p>
+          </div>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={(e) => { e.stopPropagation(); onSendToFuse(artwork); }}
+              className="p-1.5 rounded-full hover:bg-cinnabar/10 hover:text-cinnabar text-ink-400 transition-all"
+              title="用于嫁接"
+            >
+              <Sparkles className="w-4 h-4" />
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); onPickPack(artwork); }}
+              className="p-1.5 rounded-full hover:bg-cinnabar/10 hover:text-cinnabar text-ink-400 transition-all"
+              title="加入素材包"
+            >
+              <PackagePlus className="w-4 h-4" />
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); onToggleFavorite(artwork.id); }}
+              className="p-1.5 rounded-full hover:bg-rice-100 transition-all"
+              aria-label={isFavorite ? '取消收藏' : '收藏'}
+              aria-pressed={isFavorite}
+            >
+              <Heart className={`w-4 h-4 ${isFavorite ? 'text-cinnabar fill-cinnabar' : 'text-ink-400'}`} />
+            </button>
+          </div>
+        </div>
+        <p className="text-sm text-ink-600 mt-2 line-clamp-2">{artwork.description}</p>
+        <div className="flex gap-2 mt-3 flex-wrap">
+          {artwork.tags.slice(0, 5).map((tag) => (
+            <span key={tag} className="px-2 py-0.5 bg-rice-100 text-xs rounded-full text-ink-600">{tag}</span>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+});
+
 export default function MaterialsPage() {
   const navigate = useNavigate();
   const toast = useToast();
@@ -46,7 +238,6 @@ export default function MaterialsPage() {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [selectedArtwork, setSelectedArtwork] = useState<ArtworkItem | null>(null);
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
-  const [imageLoadStates, setImageLoadStates] = useState<Record<string, 'loading' | 'loaded' | 'error'>>({});
   const [showAllTags, setShowAllTags] = useState(false);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [groupBy, setGroupBy] = useState<'none' | 'style' | 'era' | 'region'>('none');
@@ -144,13 +335,13 @@ export default function MaterialsPage() {
     }
   }, [packPickerArtwork, toast]);
 
-  // 跳转到灵感嫁接页面，携带素材信息
-  const handleSendToFuse = (artwork: ArtworkItem) => {
+  // 跳转到灵感嫁接页面，携带素材信息 — useCallback 稳定引用,供 memo 化卡片使用
+  const handleSendToFuse = useCallback((artwork: ArtworkItem) => {
     toast.info('已选择素材，前往嫁接页面');
     navigate(
       `/fuse?src=material&imageUrl=${encodeURIComponent(artwork.imageUrl)}&title=${encodeURIComponent(artwork.title)}`
     );
-  };
+  }, [navigate, toast]);
 
   const filterOptions = useMemo(() => getFilterOptions(), []);
 
@@ -215,14 +406,6 @@ export default function MaterialsPage() {
     return results;
   }, [searchQuery, selectedCategories, selectedStyles, selectedEras, selectedRegions, selectedTags]);
 
-  const handleImageError = (id: string) => {
-    setImageLoadStates((prev) => ({ ...prev, [id]: 'error' }));
-  };
-
-  const handleImageLoad = (id: string) => {
-    setImageLoadStates((prev) => ({ ...prev, [id]: 'loaded' }));
-  };
-
   // 切换收藏：通过 data-service 异步落库,本地状态同步更新
   const toggleFavorite = useCallback(async (id: string) => {
     try {
@@ -238,6 +421,15 @@ export default function MaterialsPage() {
       toast.error('操作失败', '请稍后重试');
     }
   }, [toast]);
+
+  /* 详情弹窗图片懒加载:useLazyImage 在 selectedArtwork 变化时自动加载,
+     弹窗打开时图片在视口内,IntersectionObserver 立即触发加载 */
+  const {
+    imgRef: detailImgRef,
+    loadedSrc: detailLoadedSrc,
+    isLoaded: detailIsLoaded,
+    isError: detailIsError,
+  } = useLazyImage(selectedArtwork?.imageUrl);
 
   const toggleSet = (
     value: string,
@@ -704,156 +896,29 @@ export default function MaterialsPage() {
                       {viewMode === 'grid' ? (
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                           {artworks.map((artwork) => (
-                            <div
+                            <ArtworkCard
                               key={artwork.id}
-                              className="bg-rice-50 rounded-2xl overflow-hidden shadow-card hover:shadow-card-hover transition-all group cursor-pointer"
-                              onClick={() => setSelectedArtwork(artwork)}
-                            >
-                              <div className="aspect-[4/3] overflow-hidden relative bg-ink-100">
-                                {imageLoadStates[artwork.id] === 'loading' && (
-                                  <SkeletonBox className="absolute inset-0 z-10" />
-                                )}
-                                {imageLoadStates[artwork.id] === 'error' ? (
-                                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-rice-100">
-                                    <ImageOff className="w-10 h-10 text-ink-300 mb-2" />
-                                    <p className="text-xs text-ink-400">加载失败</p>
-                                  </div>
-                                ) : (
-                                  <img
-                                    src={artwork.imageUrl}
-                                    alt={artwork.title}
-                                    className={`w-full h-full object-cover group-hover:scale-105 transition-all duration-500 ${
-                                      imageLoadStates[artwork.id] === 'loaded' ? 'opacity-100' : 'opacity-0'
-                                    }`}
-                                    loading="lazy"
-                                    onLoad={() => handleImageLoad(artwork.id)}
-                                    onError={() => handleImageError(artwork.id)}
-                                  />
-                                )}
-                                <div className="absolute inset-0 bg-gradient-to-t from-ink-900/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-                                <div className="absolute top-3 left-3 flex gap-2">
-                                  <span className="px-2 py-0.5 bg-cinnabar/90 text-white text-xs rounded-full">
-                                    {categoryNames[artwork.category] || artwork.category}
-                                  </span>
-                                  <span className="px-2 py-0.5 bg-ink-900/70 text-white text-xs rounded-full">
-                                    {regionNames[artwork.region] || artwork.region}
-                                  </span>
-                                </div>
-                                <div className="absolute bottom-3 left-3 right-3 flex items-end justify-between opacity-0 group-hover:opacity-100 transition-opacity">
-                                  <div className="flex gap-1 flex-wrap">
-                                    {artwork.tags.slice(0, 3).map((tag) => (
-                                      <span key={tag} className="px-2 py-0.5 bg-white/80 backdrop-blur-sm text-xs rounded-full text-ink-700">
-                                        {tag}
-                                      </span>
-                                    ))}
-                                  </div>
-                                </div>
-                              </div>
-                              <div className="p-4">
-                                <div className="flex items-start justify-between mb-2">
-                                  <div>
-                                    <h3 className="font-serif text-lg font-bold text-ink-900">{artwork.title}</h3>
-                                    <p className="text-sm text-ink-500">{artwork.artist} · {artwork.era}</p>
-                                  </div>
-                                  <div className="flex items-center gap-1">
-                                    <button
-                                      onClick={(e) => { e.stopPropagation(); handleSendToFuse(artwork); }}
-                                      className="p-1.5 rounded-full hover:bg-cinnabar/10 hover:text-cinnabar text-ink-400 transition-all"
-                                      title="用于嫁接"
-                                    >
-                                      <Sparkles className="w-4 h-4" />
-                                    </button>
-                                    <button
-                                      onClick={(e) => { e.stopPropagation(); setPackPickerArtwork(artwork); }}
-                                      className="p-1.5 rounded-full hover:bg-cinnabar/10 hover:text-cinnabar text-ink-400 transition-all"
-                                      title="加入素材包"
-                                    >
-                                      <PackagePlus className="w-4 h-4" />
-                                    </button>
-                                    <button
-                                      onClick={(e) => { e.stopPropagation(); toggleFavorite(artwork.id); }}
-                                      className="p-1.5 rounded-full hover:bg-rice-100 transition-all"
-                                    >
-                                      <Heart className={`w-4 h-4 ${favorites.has(artwork.id) ? 'text-cinnabar fill-cinnabar' : 'text-ink-400'}`} />
-                                    </button>
-                                  </div>
-                                </div>
-                                <p className="text-sm text-ink-600 line-clamp-2">{artwork.description}</p>
-                                <div className="flex gap-2 mt-3 flex-wrap">
-                                  <span className="px-2 py-0.5 bg-rice-100 text-xs rounded-full text-ink-600">{artwork.style}</span>
-                                  {artwork.medium && <span className="px-2 py-0.5 bg-rice-100 text-xs rounded-full text-ink-600">{artwork.medium}</span>}
-                                </div>
-                              </div>
-                            </div>
+                              artwork={artwork}
+                              isFavorite={favorites.has(artwork.id)}
+                              onSelect={setSelectedArtwork}
+                              onSendToFuse={handleSendToFuse}
+                              onPickPack={setPackPickerArtwork}
+                              onToggleFavorite={toggleFavorite}
+                            />
                           ))}
                         </div>
                       ) : (
                         <div className="space-y-4">
                           {artworks.map((artwork) => (
-                            <div
+                            <ArtworkRow
                               key={artwork.id}
-                              className="bg-rice-50 rounded-2xl overflow-hidden shadow-card hover:shadow-card-hover transition-all cursor-pointer flex"
-                              onClick={() => setSelectedArtwork(artwork)}
-                            >
-                              <div className="w-48 h-36 flex-shrink-0 overflow-hidden bg-ink-100 relative">
-                                {imageLoadStates[artwork.id] === 'loading' && (
-                                  <SkeletonBox className="absolute inset-0 z-10" />
-                                )}
-                                {imageLoadStates[artwork.id] === 'error' ? (
-                                  <div className="w-full h-full flex flex-col items-center justify-center">
-                                    <ImageOff className="w-6 h-6 text-ink-300 mb-1" />
-                                    <p className="text-xs text-ink-400">加载失败</p>
-                                  </div>
-                                ) : (
-                                  <img
-                                    src={artwork.imageUrl}
-                                    alt={artwork.title}
-                                    className={`w-full h-full object-cover transition-opacity duration-300 ${
-                                      imageLoadStates[artwork.id] === 'loaded' ? 'opacity-100' : 'opacity-0'
-                                    }`}
-                                    loading="lazy"
-                                    onLoad={() => handleImageLoad(artwork.id)}
-                                    onError={() => handleImageError(artwork.id)}
-                                  />
-                                )}
-                              </div>
-                              <div className="p-4 flex-1">
-                                <div className="flex items-start justify-between">
-                                  <div>
-                                    <h3 className="font-serif text-lg font-bold text-ink-900">{artwork.title}</h3>
-                                    <p className="text-sm text-ink-500">{artwork.artist} · {artwork.era} · {artwork.style}</p>
-                                  </div>
-                                  <div className="flex items-center gap-1">
-                                    <button
-                                      onClick={(e) => { e.stopPropagation(); handleSendToFuse(artwork); }}
-                                      className="p-1.5 rounded-full hover:bg-cinnabar/10 hover:text-cinnabar text-ink-400 transition-all"
-                                      title="用于嫁接"
-                                    >
-                                      <Sparkles className="w-4 h-4" />
-                                    </button>
-                                    <button
-                                      onClick={(e) => { e.stopPropagation(); setPackPickerArtwork(artwork); }}
-                                      className="p-1.5 rounded-full hover:bg-cinnabar/10 hover:text-cinnabar text-ink-400 transition-all"
-                                      title="加入素材包"
-                                    >
-                                      <PackagePlus className="w-4 h-4" />
-                                    </button>
-                                    <button
-                                      onClick={(e) => { e.stopPropagation(); toggleFavorite(artwork.id); }}
-                                      className="p-1.5 rounded-full hover:bg-rice-100 transition-all"
-                                    >
-                                      <Heart className={`w-4 h-4 ${favorites.has(artwork.id) ? 'text-cinnabar fill-cinnabar' : 'text-ink-400'}`} />
-                                    </button>
-                                  </div>
-                                </div>
-                                <p className="text-sm text-ink-600 mt-2 line-clamp-2">{artwork.description}</p>
-                                <div className="flex gap-2 mt-3 flex-wrap">
-                                  {artwork.tags.slice(0, 5).map((tag) => (
-                                    <span key={tag} className="px-2 py-0.5 bg-rice-100 text-xs rounded-full text-ink-600">{tag}</span>
-                                  ))}
-                                </div>
-                              </div>
-                            </div>
+                              artwork={artwork}
+                              isFavorite={favorites.has(artwork.id)}
+                              onSelect={setSelectedArtwork}
+                              onSendToFuse={handleSendToFuse}
+                              onPickPack={setPackPickerArtwork}
+                              onToggleFavorite={toggleFavorite}
+                            />
                           ))}
                         </div>
                       )}
@@ -870,25 +935,24 @@ export default function MaterialsPage() {
           <div className="fixed inset-0 bg-ink-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setSelectedArtwork(null)}>
             <div className="bg-rice-50 rounded-2xl overflow-hidden max-w-5xl w-full max-h-[90vh] flex flex-col md:flex-row" onClick={(e) => e.stopPropagation()}>
               <div className="md:w-3/5 relative bg-ink-900 flex items-center justify-center min-h-[300px]">
-                {imageLoadStates[selectedArtwork.id] === 'loading' && (
+                {!detailIsLoaded && !detailIsError && (
                   <div className="absolute inset-0 flex items-center justify-center z-10">
                     <Loader2 className="w-10 h-10 text-ink-500 animate-spin" />
                   </div>
                 )}
-                {imageLoadStates[selectedArtwork.id] === 'error' ? (
+                {detailIsError ? (
                   <div className="flex flex-col items-center justify-center py-16">
                     <ImageOff className="w-12 h-12 text-ink-600 mb-3" />
                     <p className="text-sm text-ink-400">图片加载失败</p>
                   </div>
                 ) : (
                   <img
-                    src={selectedArtwork.imageUrl}
+                    ref={detailImgRef}
+                    src={detailLoadedSrc}
                     alt={selectedArtwork.title}
                     className={`w-full h-full object-contain max-h-[60vh] md:max-h-[80vh] transition-opacity duration-500 ${
-                      imageLoadStates[selectedArtwork.id] === 'loaded' ? 'opacity-100' : 'opacity-0'
+                      detailIsLoaded ? 'opacity-100' : 'opacity-0'
                     }`}
-                    onLoad={() => handleImageLoad(selectedArtwork.id)}
-                    onError={() => handleImageError(selectedArtwork.id)}
                   />
                 )}
                 <div className="absolute top-3 left-3 flex gap-2">

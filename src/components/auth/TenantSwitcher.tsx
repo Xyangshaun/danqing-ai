@@ -62,6 +62,7 @@ const ROLE_META: Record<UserRole, RoleMeta> = {
 };
 
 /** 获取角色元数据(未知角色降级为 student) */
+// eslint-disable-next-line react-refresh/only-export-components -- 角色元数据查询与 RoleBadge 组件强耦合,同文件便于维护
 export function getRoleMeta(role: UserRole): RoleMeta {
   return ROLE_META[role] ?? ROLE_META.student;
 }

@@ -32,6 +32,14 @@ function generateFocusPoint() {
   return { x: randomFloatInRange(0.3, 0.7), y: randomFloatInRange(0.3, 0.7) };
 }
 
+/**
+ * 从只读字符串元组中随机选取一个元素(类型安全,替代 `as any` 写法)。
+ * 配合 `as const` 使用可保留字面量联合类型,满足各维度枚举字段类型约束。
+ */
+function pick<T extends readonly string[]>(options: T): T[number] {
+  return options[Math.floor(Math.random() * options.length)];
+}
+
 /* ============================================================
    按类型生成模拟分析结果
    ============================================================ */
@@ -51,8 +59,8 @@ export function generateAnalysisResult(imageUrl: string, artType: ArtType = 'pai
       type: 'painting',
       composition: {
         score: d1, focusPoint,
-        balance: ['balanced', 'left-heavy', 'right-heavy', 'top-heavy', 'bottom-heavy'][Math.floor(Math.random() * 5)] as any,
-        guideline: ['good', 'average', 'poor'][Math.floor(Math.random() * 3)] as any,
+        balance: pick(['balanced', 'left-heavy', 'right-heavy', 'top-heavy', 'bottom-heavy'] as const),
+        guideline: pick(['good', 'average', 'poor'] as const),
         whitespaceRatio: randomFloatInRange(0.2, 0.7),
         symmetry: randomFloatInRange(0.3, 0.9),
         suggestion: '画面构图均衡，视觉重心位置合理，黄金分割运用得当。',
@@ -60,14 +68,14 @@ export function generateAnalysisResult(imageUrl: string, artType: ArtType = 'pai
       },
       color: {
         score: d2, warmRatio: randomFloatInRange(0.3, 0.7), coolRatio: randomFloatInRange(0.3, 0.7),
-        contrast: ['high', 'medium', 'low'][Math.floor(Math.random() * 3)] as any,
-        saturation: ['high', 'medium', 'low'][Math.floor(Math.random() * 3)] as any,
-        richness: ['rich', 'moderate', 'limited'][Math.floor(Math.random() * 3)] as any,
+        contrast: pick(['high', 'medium', 'low'] as const),
+        saturation: pick(['high', 'medium', 'low'] as const),
+        richness: pick(['rich', 'moderate', 'limited'] as const),
         harmony: '和谐', dominantColor: '中性色',
         suggestion: '色彩搭配和谐，冷暖对比适中，建议保持当前用色风格。',
       },
       brushwork: {
-        score: d3, textureLevel: ['rich', 'moderate', 'simple'][Math.floor(Math.random() * 3)] as any,
+        score: d3, textureLevel: pick(['rich', 'moderate', 'simple'] as const),
         strokeVariety: randomInRange(20, 70), wetDryBalance: '适中',
         suggestion: '笔触技法表现良好，肌理层次丰富，干湿变化自然。',
       },
@@ -77,23 +85,23 @@ export function generateAnalysisResult(imageUrl: string, artType: ArtType = 'pai
       type: 'design',
       visualHierarchy: {
         score: d1, focusPoint,
-        primarySecondaryClarity: ['clear', 'moderate', 'unclear'][Math.floor(Math.random() * 3)] as any,
-        informationFlow: ['good', 'average', 'poor'][Math.floor(Math.random() * 3)] as any,
+        primarySecondaryClarity: pick(['clear', 'moderate', 'unclear'] as const),
+        informationFlow: pick(['good', 'average', 'poor'] as const),
         heatmapData,
         suggestion: '视觉层次清晰，主次关系明确，信息流动顺畅。',
       },
       typography: {
         score: d2,
-        alignmentQuality: ['good', 'average', 'poor'][Math.floor(Math.random() * 3)] as any,
-        rhythmConsistency: ['good', 'average', 'poor'][Math.floor(Math.random() * 3)] as any,
-        negativeSpaceUsage: ['good', 'average', 'poor'][Math.floor(Math.random() * 3)] as any,
+        alignmentQuality: pick(['good', 'average', 'poor'] as const),
+        rhythmConsistency: pick(['good', 'average', 'poor'] as const),
+        negativeSpaceUsage: pick(['good', 'average', 'poor'] as const),
         gridAdherence: randomInRange(40, 95),
         suggestion: '排版规范，对齐统一，节奏感一致，负空间运用得当。',
       },
       colorApplication: {
         score: d3,
-        contrast: ['high', 'medium', 'low'][Math.floor(Math.random() * 3)] as any,
-        brandConsistency: ['strong', 'moderate', 'weak'][Math.floor(Math.random() * 3)] as any,
+        contrast: pick(['high', 'medium', 'low'] as const),
+        brandConsistency: pick(['strong', 'moderate', 'weak'] as const),
         colorPsychology: '暖色调传递活力与热情',
         paletteHarmony: '色彩和谐',
         suggestion: '色彩应用得当，品牌色一致，对比度适中，视觉张力良好。',
@@ -105,25 +113,25 @@ export function generateAnalysisResult(imageUrl: string, artType: ArtType = 'pai
       form: {
         score: d1,
         focusPoint: { x: 0.5, y: 0.5 },
-        proportionBalance: ['good', 'average', 'poor'][Math.floor(Math.random() * 3)] as any,
-        lineFluidity: ['smooth', 'moderate', 'stiff'][Math.floor(Math.random() * 3)] as any,
-        surfaceQuality: ['excellent', 'good', 'average'][Math.floor(Math.random() * 3)] as any,
-        ergonomicsHint: ['strong', 'moderate', 'weak'][Math.floor(Math.random() * 3)] as any,
+        proportionBalance: pick(['good', 'average', 'poor'] as const),
+        lineFluidity: pick(['smooth', 'moderate', 'stiff'] as const),
+        surfaceQuality: pick(['excellent', 'good', 'average'] as const),
+        ergonomicsHint: pick(['strong', 'moderate', 'weak'] as const),
         heatmapData,
         suggestion: '形态比例协调，线条流畅，曲面过渡自然，人机工学暗示良好。',
       },
       materialExpression: {
         score: d2,
-        textureRealism: ['high', 'medium', 'low'][Math.floor(Math.random() * 3)] as any,
-        lightShadowPerformance: ['excellent', 'good', 'average'][Math.floor(Math.random() * 3)] as any,
-        surfaceTreatment: ['refined', 'moderate', 'rough'][Math.floor(Math.random() * 3)] as any,
+        textureRealism: pick(['high', 'medium', 'low'] as const),
+        lightShadowPerformance: pick(['excellent', 'good', 'average'] as const),
+        surfaceTreatment: pick(['refined', 'moderate', 'rough'] as const),
         suggestion: '材质表现优秀，光影还原真实，表面处理细腻。',
       },
       functionExpression: {
         score: d3,
-        structureClarity: ['clear', 'moderate', 'unclear'][Math.floor(Math.random() * 3)] as any,
-        functionImplication: ['strong', 'moderate', 'weak'][Math.floor(Math.random() * 3)] as any,
-        detailRefinement: ['excellent', 'good', 'average'][Math.floor(Math.random() * 3)] as any,
+        structureClarity: pick(['clear', 'moderate', 'unclear'] as const),
+        functionImplication: pick(['strong', 'moderate', 'weak'] as const),
+        detailRefinement: pick(['excellent', 'good', 'average'] as const),
         suggestion: '功能表达清晰，结构分区明确，细节处理精致。',
       },
     };
@@ -133,24 +141,24 @@ export function generateAnalysisResult(imageUrl: string, artType: ArtType = 'pai
       spatialComposition: {
         score: d1,
         focusPoint: { x: 0.5, y: 0.5 },
-        volumeSense: ['strong', 'moderate', 'weak'][Math.floor(Math.random() * 3)] as any,
-        spaceOccupation: ['full', 'moderate', 'sparse'][Math.floor(Math.random() * 3)] as any,
-        voidSolidRelation: ['harmonious', 'moderate', 'imbalanced'][Math.floor(Math.random() * 3)] as any,
+        volumeSense: pick(['strong', 'moderate', 'weak'] as const),
+        spaceOccupation: pick(['full', 'moderate', 'sparse'] as const),
+        voidSolidRelation: pick(['harmonious', 'moderate', 'imbalanced'] as const),
         heatmapData,
         suggestion: '空间构成饱满，体积感强烈，虚实关系和谐。',
       },
       bodyLanguage: {
         score: d2,
-        dynamicSense: ['strong', 'moderate', 'static'][Math.floor(Math.random() * 3)] as any,
-        tensionExpression: ['high', 'medium', 'low'][Math.floor(Math.random() * 3)] as any,
-        rhythmFlow: ['fluent', 'moderate', 'stiff'][Math.floor(Math.random() * 3)] as any,
+        dynamicSense: pick(['strong', 'moderate', 'static'] as const),
+        tensionExpression: pick(['high', 'medium', 'low'] as const),
+        rhythmFlow: pick(['fluent', 'moderate', 'stiff'] as const),
         suggestion: '形体语言生动，动态感强烈，张力十足，韵律流畅。',
       },
       materialLanguage: {
         score: d3,
-        materialCharacter: ['distinct', 'moderate', 'obscure'][Math.floor(Math.random() * 3)] as any,
-        textureExpression: ['rich', 'moderate', 'simple'][Math.floor(Math.random() * 3)] as any,
-        qualityLayering: ['rich', 'moderate', 'simple'][Math.floor(Math.random() * 3)] as any,
+        materialCharacter: pick(['distinct', 'moderate', 'obscure'] as const),
+        textureExpression: pick(['rich', 'moderate', 'simple'] as const),
+        qualityLayering: pick(['rich', 'moderate', 'simple'] as const),
         suggestion: '材料语言鲜明，肌理表现丰富，质感层次清晰。',
       },
     };

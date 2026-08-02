@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   Search, Bell, Settings, HelpCircle, Cloud, CloudOff,
   ChevronRight, ChevronDown, Home, Command, X, ArrowRight,
@@ -13,6 +13,13 @@ import { useAuth } from '../hooks/useAuth';
 import TenantSwitcher, { RoleBadge } from './auth/TenantSwitcher';
 import { getAnalysisHistory, clearAnalysisHistory } from '../services/data-service';
 import type { HistoryRecord, ArtType } from '../types';
+import {
+  listNotifications,
+  getUnreadNotificationCount,
+  markNotificationRead,
+  markAllNotificationsRead,
+} from '../services/api';
+import type { Notification as ApiNotification, NotificationType, NotificationLevel } from '../types/api-contract';
 
 /* 路由 → 页面标题映射 */
 const routeMeta: Record<string, { title: string; subtitle: string; category: string }> = {
@@ -57,6 +64,19 @@ type NotificationItem = {
   time: string;
 };
 
+/**
+ * 通知面板统一展示类型
+ * - 基础字段来自 NotificationItem(mock 与 API 映射项均含)
+ * - 扩展字段(apiId/linkUrl/read/level)仅在已登录使用 API 数据时存在;
+ *   mock(未登录回退)不提供这些字段,故设为可选,渲染时通过 isAuthenticated 分支区分
+ */
+type DisplayNotification = NotificationItem & {
+  apiId?: string;
+  linkUrl?: string | null;
+  read?: boolean;
+  level?: NotificationLevel;
+};
+
 const mockNotifications: NotificationItem[] = [
   {
     id: 1,
@@ -83,6 +103,80 @@ const mockNotifications: NotificationItem[] = [
     time: '昨天',
   },
 ];
+
+/* ====== 通知系统:类型 → 图标/样式映射 + 相对时间格式化(任务包 B)====== */
+
+/**
+ * 通知类型 → 图标 + 样式映射
+ * 与后端 NotificationType 枚举一一对应(SYSTEM/ANALYSIS_DONE/ANALYSIS_FAIL/REVIEW/SUBSCRIPTION/INVITATION)
+ */
+const notificationTypeMeta: Record<NotificationType, { icon: LucideIcon; iconClass: string }> = {
+  SYSTEM: { icon: Sparkles, iconClass: 'text-stone bg-stone/10' },
+  ANALYSIS_DONE: { icon: CheckCircle2, iconClass: 'text-jade bg-jade/10' },
+  ANALYSIS_FAIL: { icon: RefreshCw, iconClass: 'text-cinnabar bg-cinnabar/10' },
+  REVIEW: { icon: TrendingUp, iconClass: 'text-stone bg-stone/10' },
+  SUBSCRIPTION: { icon: Cloud, iconClass: 'text-jade bg-jade/10' },
+  INVITATION: { icon: User, iconClass: 'text-gold-dark bg-gold/10' },
+};
+
+/**
+ * 通知级别 → 边框/强调色(用于未读项左侧色条,可选增强)
+ * INFO/SUCCESS/WARN/ERROR 与后端 NotificationLevel 枚举一一对应
+ */
+const notificationLevelAccent: Record<NotificationLevel, string> = {
+  INFO: '',
+  SUCCESS: 'border-l-2 border-l-jade',
+  WARN: 'border-l-2 border-l-gold-dark',
+  ERROR: 'border-l-2 border-l-cinnabar',
+};
+
+/**
+ * 将 ISO 时间字符串格式化为中文相对时间(如"2 分钟前""1 小时前""昨天")
+ * @param iso ISO 8601 时间字符串
+ * @returns 中文相对时间描述
+ */
+function formatRelativeTime(iso: string): string {
+  const date = new Date(iso);
+  const now = Date.now();
+  const diffMs = now - date.getTime();
+  if (Number.isNaN(diffMs)) return '';
+  const diffSec = Math.floor(diffMs / 1000);
+  if (diffSec < 60) return '刚刚';
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin} 分钟前`;
+  const diffHour = Math.floor(diffMin / 60);
+  if (diffHour < 24) return `${diffHour} 小时前`;
+  const diffDay = Math.floor(diffHour / 24);
+  if (diffDay === 1) return '昨天';
+  if (diffDay < 7) return `${diffDay} 天前`;
+  return date.toLocaleDateString('zh-CN');
+}
+
+/**
+ * 将 API 通知条目映射为面板展示项
+ * @param n API 契约 Notification
+ * @returns 面板展示项(含图标/样式/相对时间)
+ */
+function mapApiNotificationToDisplay(n: ApiNotification): NotificationItem & {
+  apiId: string;
+  linkUrl?: string | null;
+  read: boolean;
+  level: NotificationLevel;
+} {
+  const meta = notificationTypeMeta[n.type] ?? notificationTypeMeta.SYSTEM;
+  return {
+    id: 0, // 占位,实际用 apiId
+    apiId: n.id,
+    icon: meta.icon,
+    iconClass: meta.iconClass,
+    title: n.title,
+    desc: n.content,
+    time: formatRelativeTime(n.createdAt),
+    linkUrl: n.linkUrl,
+    read: n.readAt !== null,
+    level: n.level,
+  };
+}
 
 /* 运行模式选项 */
 type OnlineMode = 'local' | 'cloud' | 'auto';
@@ -159,7 +253,13 @@ export default function Header() {
   const [userOpen, setUserOpen] = useState(false);
   const [modeOpen, setModeOpen] = useState(false);
   const [onlineMode, setOnlineMode] = useState<OnlineMode>('auto');
-  const [unreadCount, setUnreadCount] = useState(3);
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  /* 任务包 B:通知系统真实数据状态 */
+  // apiNotifications:从后端拉取的通知列表(已登录时);未登录时为空,回退到 mock
+  const [apiNotifications, setApiNotifications] = useState<ApiNotification[]>([]);
+  // notifLoading:防止重复拉取 + 面板打开时显示轻量加载态
+  const [notifLoading, setNotifLoading] = useState(false);
 
   /* 各面板外层容器 ref，用于点击外部关闭 */
   const notifRef = useRef<HTMLDivElement>(null);
@@ -167,6 +267,53 @@ export default function Header() {
   const modeRef = useRef<HTMLDivElement>(null);
 
   const meta = routeMeta[location.pathname] || routeMeta['/'];
+
+  /* 任务包 B:拉取未读计数(已登录时,30 秒轮询)
+   * - 仅在 isAuthenticated 时启动轮询,登出时停止
+   * - silent: true(api.ts 已配置),401/网络错误不弹 Toast
+   * - 组件卸载时清理定时器,避免内存泄漏
+   */
+  const fetchUnreadCount = useCallback(async () => {
+    if (!isAuthenticated) {
+      setUnreadCount(0);
+      return;
+    }
+    try {
+      const res = await getUnreadNotificationCount();
+      setUnreadCount(res.count);
+    } catch {
+      // 静默失败:不影响主界面,下次轮询重试
+    }
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    void fetchUnreadCount();
+    if (!isAuthenticated) return;
+    const timer = window.setInterval(() => void fetchUnreadCount(), 30_000);
+    return () => window.clearInterval(timer);
+  }, [fetchUnreadCount, isAuthenticated]);
+
+  /* 任务包 B:通知面板打开时拉取通知列表(已登录时)
+   * - 仅在 notifOpen 切换为 true 且已登录时拉取(惰性加载,减少无效请求)
+   * - 拉取最近 20 条(limit=20),游标分页后续可扩展"加载更多"
+   * - 拉取失败时保持空列表,面板显示"暂无通知"兜底
+   */
+  useEffect(() => {
+    if (!notifOpen || !isAuthenticated) return;
+    let cancelled = false;
+    (async () => {
+      setNotifLoading(true);
+      try {
+        const res = await listNotifications({ limit: 20 });
+        if (!cancelled) setApiNotifications(res.items);
+      } catch {
+        if (!cancelled) setApiNotifications([]);
+      } finally {
+        if (!cancelled) setNotifLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [notifOpen, isAuthenticated]);
 
   /* 全局快捷键：⌘K / Ctrl+K 打开命令面板；Esc 关闭；监听 / 键触发的 open-command-palette 事件 */
   useEffect(() => {
@@ -185,6 +332,15 @@ export default function Header() {
       window.removeEventListener('open-command-palette', openPalette as EventListener);
     };
   }, [cmdOpen]);
+
+  /* 监听全局 close-notification-panel 事件以关闭通知面板。
+   * App.tsx 在按 Esc 时派发该事件(与命令面板对称),此处补齐监听器,
+   * 让 Esc 能关闭通知面板(无障碍:弹层应支持 Esc 关闭,符合 WAI-ARIA 模态对话框约定)。 */
+  useEffect(() => {
+    const closeNotif = () => setNotifOpen(false);
+    window.addEventListener('close-notification-panel', closeNotif);
+    return () => window.removeEventListener('close-notification-panel', closeNotif);
+  }, []);
 
   /* 命令面板打开时聚焦输入框、重置状态、异步读取历史作品 */
   useEffect(() => {
@@ -242,8 +398,8 @@ export default function Header() {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  /* 构建各分类命令项 */
-  const functionItems: CommandItem[] = [
+  /* 构建各分类命令项 — useMemo 避免每次渲染重建大数组 */
+  const functionItems = useMemo<CommandItem[]>(() => [
     ...searchItems.map((it, idx) => ({
       id: `fn-${it.path}`,
       category: 'function' as const,
@@ -312,9 +468,9 @@ export default function Header() {
       },
       keywords: '切换 类型 雕塑 sculpture ds qh lx',
     },
-  ];
+  ], [navigate, toast]);
 
-  const recentItems: CommandItem[] = recentVisits.flatMap((path) => {
+  const recentItems = useMemo<CommandItem[]>(() => recentVisits.flatMap((path) => {
     const found = searchItems.find((it) => it.path === path);
     if (!found) return [];
     return [{
@@ -327,9 +483,9 @@ export default function Header() {
       action: () => { navigate(found.path); setCmdOpen(false); },
       keywords: found.keywords,
     }];
-  });
+  }), [recentVisits, navigate]);
 
-  const workItems: CommandItem[] = historyWorks.map((rec) => {
+  const workItems = useMemo<CommandItem[]>(() => historyWorks.map((rec) => {
     const meta = artTypeMeta[rec.artType] || artTypeMeta.painting;
     const dateStr = new Date(rec.createdAt).toLocaleDateString('zh-CN');
     return {
@@ -342,9 +498,9 @@ export default function Header() {
       action: () => { navigate('/history'); setCmdOpen(false); },
       keywords: `${meta.label} 作品 ${rec.overallScore} 分 zp`,
     };
-  });
+  }), [historyWorks, navigate]);
 
-  const actionItems: CommandItem[] = [
+  const actionItems = useMemo<CommandItem[]>(() => [
     {
       id: 'ac-clear',
       category: 'action',
@@ -427,29 +583,31 @@ export default function Header() {
       action: () => { navigate('/history'); setCmdOpen(false); },
       keywords: '查看 分析 历史 记录 ck ls jl',
     },
-  ];
+  ], [navigate, toast]);
 
-  /* 按分类与关键词过滤，构建分段结果（每类最多 3 条） */
+  /* 按分类与关键词过滤，构建分段结果（每类最多 3 条）— useMemo 避免每次渲染重新过滤 */
   const q = query.trim().toLowerCase();
-  const allSections: { category: CommandCategory; items: CommandItem[] }[] = [
-    { category: 'function', items: functionItems },
-    { category: 'recent', items: recentItems },
-    { category: 'work', items: workItems },
-    { category: 'action', items: actionItems },
-  ];
-  const filteredSections = allSections
-    .filter((sec) => activeCategory === 'all' || sec.category === activeCategory)
-    .map((sec) => ({
-      category: sec.category,
-      items: sec.items
-        .filter((it) => !q
-          || it.title.toLowerCase().includes(q)
-          || it.desc.toLowerCase().includes(q)
-          || (it.keywords || '').toLowerCase().includes(q))
-        .slice(0, 3),
-    }))
-    .filter((sec) => sec.items.length > 0);
-  const flatItems = filteredSections.flatMap((sec) => sec.items);
+  const flatItems = useMemo(() => {
+    const allSections: { category: CommandCategory; items: CommandItem[] }[] = [
+      { category: 'function', items: functionItems },
+      { category: 'recent', items: recentItems },
+      { category: 'work', items: workItems },
+      { category: 'action', items: actionItems },
+    ];
+    const filtered = allSections
+      .filter((sec) => activeCategory === 'all' || sec.category === activeCategory)
+      .map((sec) => ({
+        category: sec.category,
+        items: sec.items
+          .filter((it) => !q
+            || it.title.toLowerCase().includes(q)
+            || it.desc.toLowerCase().includes(q)
+            || (it.keywords || '').toLowerCase().includes(q))
+          .slice(0, 3),
+      }))
+      .filter((sec) => sec.items.length > 0);
+    return filtered.flatMap((sec) => sec.items);
+  }, [functionItems, recentItems, workItems, actionItems, activeCategory, q]);
 
   const handleCmdKey = (e: React.KeyboardEvent) => {
     if (e.key === 'ArrowDown') {
@@ -480,8 +638,71 @@ export default function Header() {
     setUserOpen(false);
   };
 
-  /* 标记全部已读 */
-  const markAllRead = () => setUnreadCount(0);
+  /* 任务包 B:标记全部已读(已登录走真实 API,未登录本地置零)
+   * - 调用 POST /notifications/read-all,后端返回本次标记条数
+   * - 成功后本地同步:apiNotifications 全部置已读 + unreadCount 归零
+   * - 失败时 Toast 提示(silent 模式下 401 不弹,仅网络错误弹)
+   */
+  const markAllRead = async () => {
+    if (!isAuthenticated) {
+      setUnreadCount(0);
+      return;
+    }
+    try {
+      const res = await markAllNotificationsRead();
+      setApiNotifications((prev) =>
+        prev.map((n) => (n.readAt === null ? { ...n, readAt: new Date().toISOString() } : n)),
+      );
+      setUnreadCount(0);
+      if (res.count > 0) {
+        toast.success(`已标记 ${res.count} 条通知为已读`);
+      }
+    } catch {
+      toast.error('操作失败', '请稍后重试');
+    }
+  };
+
+  /* 任务包 B:单条通知标记已读 + 跳转(若有 linkUrl)
+   * - 仅未读通知调用 API(已读的不再重复请求,减少无效调用)
+   * - 成功后本地同步该条 readAt + unreadCount 递减
+   * - 若通知含 linkUrl,标记成功后导航到目标路径
+   */
+  const handleNotificationClick = async (n: ApiNotification) => {
+    // 有 linkUrl 的优先跳转(分析完成 → /history 等)
+    const shouldNavigate = typeof n.linkUrl === 'string' && n.linkUrl.length > 0;
+
+    if (n.readAt === null && isAuthenticated) {
+      try {
+        await markNotificationRead(n.id);
+        // 本地同步:标记该条已读 + 未读数 -1
+        setApiNotifications((prev) =>
+          prev.map((item) => (item.id === n.id ? { ...item, readAt: new Date().toISOString() } : item)),
+        );
+        setUnreadCount((c) => Math.max(0, c - 1));
+      } catch {
+        // 标记失败不阻塞跳转(silent 模式下不弹 Toast)
+      }
+    }
+
+    setNotifOpen(false);
+    if (shouldNavigate && n.linkUrl) {
+      navigate(n.linkUrl);
+    }
+  };
+
+  /* 任务包 B:计算面板展示列表
+   * - 已登录:用真实 API 数据映射为展示项(含 apiId/read/level)
+   * - 未登录:回退到 mockNotifications(仅基础字段,保持未登录态视觉完整性)
+   * 统一为 DisplayNotification[]:扩展字段可选,渲染时按 isAuthenticated 分支取用
+   */
+  const displayNotifications: DisplayNotification[] =
+    isAuthenticated && apiNotifications.length > 0
+      ? apiNotifications.map(mapApiNotificationToDisplay)
+      : isAuthenticated && apiNotifications.length === 0 && !notifLoading
+        ? [] // 已登录但无通知:显示空态
+        : isAuthenticated
+          ? [] // 已登录加载中:暂显示空(避免闪烁)
+          : mockNotifications; // 未登录:回退 mock
 
   /* 选择运行模式 */
   const selectMode = (m: OnlineMode) => {
@@ -557,6 +778,7 @@ export default function Header() {
               onClick={toggleMode}
               className="flex items-center gap-1.5 px-2 h-8 rounded-md text-2xs hover:bg-ink-900/5 transition-colors"
               title="切换运行模式"
+              aria-expanded={modeOpen}
             >
               <ModeIcon className={`w-3.5 h-3.5 ${modeDisplay.color}`} />
               <span className={modeDisplay.color}>{modeDisplay.label}</span>
@@ -614,6 +836,8 @@ export default function Header() {
                 notifOpen ? 'bg-ink-900/5 text-ink-900' : 'text-ink-500 hover:text-ink-900 hover:bg-ink-900/5'
               }`}
               title="通知"
+              aria-label={notifOpen ? '关闭通知面板' : '打开通知面板'}
+              aria-expanded={notifOpen}
             >
               <Bell className="w-4 h-4" />
               {unreadCount > 0 && (
@@ -628,10 +852,13 @@ export default function Header() {
                 {/* 面板头部 */}
                 <div className="flex items-center justify-between px-3 h-10 border-b border-ink-900/8">
                   <p className="text-sm font-medium text-ink-900">
-                    通知<span className="ml-1 text-2xs text-ink-400 font-normal">({mockNotifications.length})</span>
+                    通知
+                    <span className="ml-1 text-2xs text-ink-400 font-normal">
+                      ({isAuthenticated ? apiNotifications.length : mockNotifications.length})
+                    </span>
                   </p>
                   <button
-                    onClick={markAllRead}
+                    onClick={() => void markAllRead()}
                     className="text-2xs text-ink-400 hover:text-cinnabar transition-colors"
                   >
                     全部已读
@@ -640,20 +867,43 @@ export default function Header() {
 
                 {/* 通知列表 */}
                 <div className="max-h-80 overflow-y-auto scrollbar-thin">
-                  {mockNotifications.map((n) => {
+                  {/* 加载态(已登录拉取中)*/}
+                  {isAuthenticated && notifLoading && (
+                    <div className="px-3 py-8 text-center text-sm text-ink-400">
+                      加载中…
+                    </div>
+                  )}
+                  {/* 空态(已登录且无通知)*/}
+                  {isAuthenticated && !notifLoading && displayNotifications.length === 0 && (
+                    <div className="px-3 py-8 text-center text-sm text-ink-400">
+                      暂无通知
+                    </div>
+                  )}
+                  {/* 通知项列表(真实 API 数据或未登录 mock)*/}
+                  {displayNotifications.map((n) => {
                     const Icon = n.icon;
+                    // 已登录:点击触发标记已读 + 跳转;未登录(mock):仅关闭面板
+                    const handleClick = isAuthenticated
+                      ? () => {
+                          // 通过 apiId 反查原始 ApiNotification 以传给 handleNotificationClick
+                          const original = apiNotifications.find((a) => a.id === n.apiId);
+                          if (original) void handleNotificationClick(original);
+                        }
+                      : () => setNotifOpen(false);
                     return (
                       <button
-                        key={n.id}
-                        onClick={() => setUnreadCount(0)}
-                        className="w-full flex items-start gap-2.5 px-3 py-2.5 text-left hover:bg-ink-900/3 transition-colors border-b border-ink-900/4 last:border-b-0"
+                        key={n.apiId ?? n.id}
+                        onClick={handleClick}
+                        className={`w-full flex items-start gap-2.5 px-3 py-2.5 text-left hover:bg-ink-900/3 transition-colors border-b border-ink-900/4 last:border-b-0 ${n.level ? notificationLevelAccent[n.level] : ''} ${isAuthenticated && !n.read ? 'bg-cinnabar/3' : ''}`}
                       >
                         <div className={`w-8 h-8 flex items-center justify-center rounded-md flex-shrink-0 ${n.iconClass}`}>
                           <Icon className="w-4 h-4" />
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center justify-between gap-2">
-                            <p className="text-sm font-medium text-ink-900 truncate">{n.title}</p>
+                            <p className={`text-sm font-medium truncate ${isAuthenticated && !n.read ? 'text-ink-900' : 'text-ink-700'}`}>
+                              {n.title}
+                            </p>
                             <span className="text-2xs text-ink-400 flex-shrink-0">{n.time}</span>
                           </div>
                           <p className="text-xs text-ink-500 mt-0.5 line-clamp-2">{n.desc}</p>
@@ -680,6 +930,7 @@ export default function Header() {
           <button
             className="w-8 h-8 flex items-center justify-center text-ink-500 hover:text-ink-900 hover:bg-ink-900/5 rounded-md transition-colors"
             title="帮助"
+            aria-label="帮助"
           >
             <HelpCircle className="w-4 h-4" />
           </button>
@@ -689,6 +940,7 @@ export default function Header() {
             to="/settings"
             className="w-8 h-8 flex items-center justify-center text-ink-500 hover:text-ink-900 hover:bg-ink-900/5 rounded-md transition-colors"
             title="设置"
+            aria-label="设置"
           >
             <Settings className="w-4 h-4" />
           </Link>
@@ -716,6 +968,8 @@ export default function Header() {
                   userOpen ? 'bg-ink-900/5' : 'hover:bg-ink-900/5'
                 }`}
                 title="用户中心"
+                aria-label="用户中心"
+                aria-expanded={userOpen}
               >
                 {user?.avatar ? (
                   <img

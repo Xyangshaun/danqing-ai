@@ -2,6 +2,8 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { Upload, Eye, Palette, Sparkles, CheckCircle2, Loader2, ArrowRight, PenTool, Layers, Box, Brush, Download, Share2, Cpu, Cloud, Zap, Type, Gem, Settings, Move, Scan, Brain, FileText, Image as ImageIcon, RefreshCw } from 'lucide-react';
 import type { AnalysisResult, PaintingAnalysis, DesignAnalysis, ProductAnalysis, SculptureAnalysis, ProfessionalSuggestion, SuggestionPriority } from '../types';
 import { saveAnalysis } from '../services/data-service';
+import { createDraft, deleteDraft, updateDraft, getDraft } from '../services/draft-service';
+import { useAuth } from '../hooks/useAuth';
 import HeatmapCanvas from '../components/HeatmapCanvas';
 import { useToast } from '../components/ToastProvider';
 import { smartAnalyze, type AnalysisDecision } from '../services/smartAnalysisEngine';
@@ -370,8 +372,87 @@ function AnimatedScore({ score, size = 120 }: { score: number; size?: number }) 
   );
 }
 
+/* ============================================================
+ * 创作草稿辅助 (任务包A)
+ * - compressImageToThumbnail: 用 canvas 压缩为最大 maxSize 的 JPEG dataURL
+ *   (避免把原图 MB 级 dataURL 写入 LocalStorage 导致超配额)
+ * - getDraftIdFromUrl / setDraftIdInUrl: HashRouter 兼容的 draftId 读写
+ *   (hash 形如 #/analyze?draftId=xxx,用 history.replaceState 不刷新页面)
+ * ============================================================ */
+
+/** 将 dataURL 图片压缩为最大 maxSize 的 JPEG 缩略图 dataURL;失败回退原图 */
+function compressImageToThumbnail(dataUrl: string, maxSize = 200): Promise<string> {
+  return new Promise((resolve) => {
+    try {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          let { width, height } = img;
+          // 等比缩放,最长边不超过 maxSize,不放大原图
+          const ratio = Math.min(maxSize / width, maxSize / height, 1);
+          width = Math.max(1, Math.round(width * ratio));
+          height = Math.max(1, Math.round(height * ratio));
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            resolve(dataUrl);
+            return;
+          }
+          ctx.drawImage(img, 0, 0, width, height);
+          // JPEG 0.7 质量:缩略图足够清晰且体积小
+          resolve(canvas.toDataURL('image/jpeg', 0.7));
+        } catch {
+          resolve(dataUrl);
+        }
+      };
+      img.onerror = () => resolve(dataUrl);
+      img.src = dataUrl;
+    } catch {
+      resolve(dataUrl);
+    }
+  });
+}
+
+/** 从 URL hash 中读取 draftId (HashRouter 兼容) */
+function getDraftIdFromUrl(): string | null {
+  try {
+    const hash = window.location.hash; // e.g. "#/analyze?draftId=xxx"
+    const queryStr = hash.split('?')[1];
+    if (!queryStr) return null;
+    return new URLSearchParams(queryStr).get('draftId');
+  } catch {
+    return null;
+  }
+}
+
+/** 在 URL hash 中写入/清除 draftId (history.replaceState 不刷新页面) */
+function setDraftIdInUrl(id: string | null): void {
+  try {
+    const hash = window.location.hash;
+    const [path, query] = hash.replace(/^#/, '').split('?');
+    const params = new URLSearchParams(query || '');
+    if (id) params.set('draftId', id);
+    else params.delete('draftId');
+    const qs = params.toString();
+    const newHash = qs ? `${path}?${qs}` : path;
+    window.history.replaceState(null, '', `#${newHash}`);
+  } catch (err) {
+    console.warn('更新 URL draftId 失败:', err);
+  }
+}
+
 export default function AnalysisPage() {
   const toast = useToast();
+  /* 用 ref 持有最新 toast 上下文,供分析 useEffect 内部调用。
+   * 原因:ToastProvider 的 context value 对象每次渲染都会重建,
+   * 若把 `toast` 直接放入分析 effect 依赖,会在 toast 出现/消失时
+   * 重复触发 smartAnalyze(造成重复分析)。ref 方式既拿到最新方法,
+   * 又不进入依赖数组,行为与原先一致。 */
+  const toastRef = useRef(toast);
+  toastRef.current = toast;
+  const { user, tenant } = useAuth();
   const [step, setStep] = useState<Step>('upload');
   const [imageUrl, setImageUrl] = useState<string>('');
   const [result, setResult] = useState<AnalysisResult | null>(null);
@@ -384,6 +465,80 @@ export default function AnalysisPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const fileRef = useRef<File | null>(null);
   const startTimeRef = useRef<number | null>(null);
+
+  /* ====== 创作草稿 (任务包A) ======
+   * draftIdRef: 草稿 ID (ref,供分析 effect 内清理使用,避免依赖闭包陈旧值)
+   * draftId:    草稿 ID (state,驱动 UI 显示"已恢复草稿"提示)
+   * restoredPreview: 恢复草稿时的缩略图 (用于上传区预览) */
+  const draftIdRef = useRef<string | null>(null);
+  const [draftId, setDraftId] = useState<string | null>(null);
+  const [restoredPreview, setRestoredPreview] = useState<string | undefined>(undefined);
+
+  /* 进入页面:检查 URL ?draftId=xxx,命中则恢复草稿状态 (预填表单/缩略图,不重新分析) */
+  useEffect(() => {
+    try {
+      const id = getDraftIdFromUrl();
+      if (!id) return;
+      const draft = getDraft(id);
+      if (!draft) {
+        // 草稿已不存在 (已清理),移除 URL 残留 query
+        setDraftIdInUrl(null);
+        return;
+      }
+      // 恢复:预填类型 + 缩略图 + draftId (不触发分析)
+      if (draft.artworkType === 'painting' || draft.artworkType === 'design'
+        || draft.artworkType === 'product' || draft.artworkType === 'sculpture') {
+        setSelectedArtType(draft.artworkType);
+      }
+      draftIdRef.current = draft.id;
+      setDraftId(draft.id);
+      setRestoredPreview(draft.imagePreview);
+      toast.info('已恢复未完成的草稿', '可重新上传图片继续诊断');
+    } catch (err) {
+      console.warn('恢复草稿失败:', err);
+    }
+    // 仅在挂载时执行一次
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /**
+   * 图片加载完成后:创建草稿 + 进入分析
+   * - 压缩为 200x200 缩略图存入草稿 (避免 LocalStorage 撑爆)
+   * - 若存在旧草稿 (恢复后重新上传),先删除旧草稿
+   * - 创建后更新 URL ?draftId=xxx,分析完成时清除
+   * 全程 try/catch,失败只 console.warn 不阻塞分析主流程
+   */
+  const beginAnalysisWithImage = useCallback(async (_file: File, dataUrl: string) => {
+    setImageUrl(dataUrl);
+    setRestoredPreview(undefined);
+    try {
+      if (user && tenant) {
+        const thumb = await compressImageToThumbnail(dataUrl, 200);
+        const draft = createDraft({
+          tenantId: tenant.id,
+          userId: user.id,
+          title: `未命名作品_${Date.now()}`,
+          artworkType: selectedArtType,
+          imagePreview: thumb,
+        });
+        if (draft) {
+          // 恢复场景重新上传:清理旧草稿
+          if (draftIdRef.current && draftIdRef.current !== draft.id) {
+            try { deleteDraft(draftIdRef.current); } catch (e) { console.warn('清理旧草稿失败:', e); }
+          }
+          draftIdRef.current = draft.id;
+          setDraftId(draft.id);
+          setDraftIdInUrl(draft.id);
+          try { updateDraft(draft.id, { status: 'analyzing' }); } catch (e) { console.warn('更新草稿状态失败:', e); }
+        }
+      }
+    } catch (err) {
+      console.warn('创建草稿失败:', err);
+    }
+    setStep('analyzing');
+    setProgress(0);
+    setDetailIndex(0);
+  }, [user, tenant, selectedArtType]);
 
   /* 根据 progress 计算当前阶段（0-4），每 20% 切换一个阶段 */
   const currentStage = Math.min(4, Math.floor(progress / 20));
@@ -414,16 +569,15 @@ export default function AnalysisPage() {
       fileRef.current = file;
       const reader = new FileReader();
       reader.onload = (e) => {
-        setImageUrl(e.target?.result as string);
-        setStep('analyzing');
-        setProgress(0);
-        setDetailIndex(0);
+        const dataUrl = e.target?.result as string;
+        /* 委托给 beginAnalysisWithImage:压缩缩略图 + 创建草稿 + 进入分析 */
+        void beginAnalysisWithImage(file, dataUrl);
       };
       reader.readAsDataURL(file);
     }
     /* 重置 input value，允许再次选择同一文件（校验失败后可重选） */
     event.target.value = '';
-  }, [validateFile]);
+  }, [validateFile, beginAnalysisWithImage]);
 
   const handleDrop = useCallback((event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -432,14 +586,12 @@ export default function AnalysisPage() {
       fileRef.current = file;
       const reader = new FileReader();
       reader.onload = (e) => {
-        setImageUrl(e.target?.result as string);
-        setStep('analyzing');
-        setProgress(0);
-        setDetailIndex(0);
+        const dataUrl = e.target?.result as string;
+        void beginAnalysisWithImage(file, dataUrl);
       };
       reader.readAsDataURL(file);
     }
-  }, [validateFile]);
+  }, [validateFile, beginAnalysisWithImage]);
 
   const handleDragOver = useCallback((event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -460,10 +612,8 @@ export default function AnalysisPage() {
             fileRef.current = file;
             const reader = new FileReader();
             reader.onload = (ev) => {
-              setImageUrl(ev.target?.result as string);
-              setStep('analyzing');
-              setProgress(0);
-              setDetailIndex(0);
+              const dataUrl = ev.target?.result as string;
+              void beginAnalysisWithImage(file, dataUrl);
             };
             reader.readAsDataURL(file);
             toast.info('已粘贴图片', '正在准备分析...');
@@ -474,7 +624,7 @@ export default function AnalysisPage() {
     };
     window.addEventListener('paste', handlePaste);
     return () => window.removeEventListener('paste', handlePaste);
-  }, [step, toast, validateFile]);
+  }, [step, toast, validateFile, beginAnalysisWithImage]);
 
   useEffect(() => {
     if (step === 'analyzing') {
@@ -517,13 +667,20 @@ export default function AnalysisPage() {
           await saveAnalysis(analysisResult);
         } catch (err) {
           console.error('保存分析结果失败:', err);
-          toast.warning('诊断结果已生成,但保存到历史记录失败', '可在本地继续查看,刷新页面后可能丢失');
+          toastRef.current.warning('诊断结果已生成,但保存到历史记录失败', '可在本地继续查看,刷新页面后可能丢失');
+        }
+        /* 分析成功:清理草稿 + 清除 URL query (任务包A) */
+        if (draftIdRef.current) {
+          try { deleteDraft(draftIdRef.current); } catch (e) { console.warn('清理草稿失败:', e); }
+          draftIdRef.current = null;
+          setDraftId(null);
+          setDraftIdInUrl(null);
         }
         /* 短暂展示 100% 完成态，再切换到结果页 */
         setTimeout(() => {
           setResult(analysisResult);
           setStep('result');
-          toast.success('分析完成', '诊断报告已生成并保存到历史记录');
+          toastRef.current.success('分析完成', '诊断报告已生成并保存到历史记录');
         }, 400);
       };
 
@@ -533,7 +690,11 @@ export default function AnalysisPage() {
           completed = true;
           clearInterval(progressTimer);
           clearInterval(detailTimer);
-          toast.error('图像分析失败', '请检查图片或网络后重试');
+          toastRef.current.error('图像分析失败', '请检查图片或网络后重试');
+          /* 分析失败:保留草稿 (任务包A),状态回退为 draft 以便工作台显示"继续创作" */
+          if (draftIdRef.current) {
+            try { updateDraft(draftIdRef.current, { status: 'draft' }); } catch (e) { console.warn('更新草稿状态失败:', e); }
+          }
           setStep('upload');
           setImageUrl('');
           setAnalysisDecision(null);
@@ -557,6 +718,14 @@ export default function AnalysisPage() {
   }, [step, imageUrl, selectedArtType]);
 
   const handleRetry = () => {
+    /* 重置:清理草稿 + 清除 URL + 清除恢复预览 (任务包A) */
+    if (draftIdRef.current) {
+      try { deleteDraft(draftIdRef.current); } catch (e) { console.warn('清理草稿失败:', e); }
+      draftIdRef.current = null;
+      setDraftId(null);
+      setDraftIdInUrl(null);
+    }
+    setRestoredPreview(undefined);
     setStep('upload');
     setImageUrl('');
     setResult(null);
@@ -632,6 +801,35 @@ export default function AnalysisPage() {
                 </div>
               </div>
             </div>
+
+            {/* 已恢复草稿提示 (任务包A):显示缩略图 + 类型,可放弃草稿重新开始 */}
+            {draftId && restoredPreview && (
+              <div className="mb-4 flex items-center gap-3 p-3 bg-cinnabar/5 border border-cinnabar/20 rounded-xl">
+                {restoredPreview ? (
+                  <img
+                    src={restoredPreview}
+                    alt="草稿缩略图"
+                    className="w-14 h-14 rounded-md object-cover border border-ink-900/10 flex-shrink-0"
+                  />
+                ) : null}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-ink-900">已恢复未完成的草稿</p>
+                  <p className="text-xs text-ink-500 mt-0.5">
+                    类型:{artTypes.find((a) => a.id === selectedArtType)?.name} · 可重新上传继续诊断
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleRetry();
+                  }}
+                  className="text-xs text-ink-500 hover:text-cinnabar transition-colors flex-shrink-0 px-2 py-1"
+                >
+                  放弃草稿
+                </button>
+              </div>
+            )}
 
             <div
               className="border-2 border-dashed border-ink-300 rounded-2xl p-12 text-center cursor-pointer hover:border-cinnabar hover:bg-cinnabar/5 transition-all duration-300"

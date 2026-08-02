@@ -180,6 +180,28 @@ enum DisputeStatus {
 }
 
 // ============================================================
+// 通知相关枚举(任务包 B:通知系统真实数据接入)
+// ============================================================
+
+/// 通知类型
+enum NotificationType {
+  SYSTEM         // 系统通知
+  ANALYSIS_DONE  // 分析完成
+  ANALYSIS_FAIL  // 分析失败
+  REVIEW         // 评审通知
+  SUBSCRIPTION   // 订阅相关
+  INVITATION     // 邀请
+}
+
+/// 通知级别
+enum NotificationLevel {
+  INFO
+  SUCCESS
+  WARN
+  ERROR
+}
+
+// ============================================================
 // 1. 租户表(Tenant)
 // ============================================================
 
@@ -210,6 +232,8 @@ model Tenant {
   invitations   InvitationCode[]
   presets       EvaluationPreset[] // 租户私有预设(tenantId 非空)
   disputeCases  DisputeCase[]
+  // ---- 任务包 B 新增关系:通知系统 ----
+  notifications Notification[]
 
   @@index([parentId], map: "tenants_parent_id_idx")
   @@index([feishuTenantKey], map: "tenants_feishu_tenant_key_idx")
@@ -254,6 +278,8 @@ model User {
   reviewRecords      ReviewRecord[]
   invitations        InvitationCode[] // 关系:创建的邀请码
   phoneVerifications PhoneVerification[]
+  // ---- 任务包 B 新增关系:通知系统(收件箱)----
+  notifications      Notification[]
 
   @@index([tenantId], map: "users_tenant_id_idx")
   @@index([feishuUnionId], map: "users_feishu_union_id_idx")
@@ -730,4 +756,40 @@ model AiUsageLog {
   @@index([provider], map: "ai_usage_logs_provider_idx")
   @@index([success], map: "ai_usage_logs_success_idx")
   @@map("ai_usage_logs")
+}
+
+// ============================================================
+// 18. 通知表(Notification,任务包 B:通知系统真实数据接入)
+// 用户通知收件箱,多租户隔离,支持游标分页与未读过滤
+// 触发点:分析完成/失败、成长报告生成、订阅到期、邀请等
+// 3 秒 SLA:索引覆盖 (tenantId,userId,readAt) 与 (tenantId,userId,createdAt)
+// ============================================================
+
+model Notification {
+  id          String            @id @default(uuid()) @map("id")
+  tenantId    String            @map("tenant_id")
+  // 接收者 user_id(通知归属人)
+  userId      String            @map("user_id")
+  type        NotificationType  @map("type")
+  title       String            @map("title") @db.VarChar(128)
+  content     String            @map("content") @db.Text
+  level       NotificationLevel @default(INFO) @map("level")
+  // 点击通知跳转的相对路径(可选)
+  linkUrl     String?           @map("link_url") @db.Text
+  // 附加数据(如关联 analysisId / presetId 等)
+  metadata    Json?             @map("metadata")
+  // 已读时间(null 表示未读)
+  readAt      DateTime?         @map("read_at")
+  createdAt   DateTime          @default(now()) @map("created_at")
+
+  // 关系(级联删除:租户/用户删除时一并清理通知)
+  tenant      Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // 关键查询索引:
+  //   1) 未读计数 + 未读列表过滤:WHERE tenantId+userId AND readAt IS NULL
+  //   2) 游标分页:ORDER BY createdAt DESC, id DESC
+  @@index([tenantId, userId, readAt], map: "notifications_tenant_id_user_id_read_at_idx")
+  @@index([tenantId, userId, createdAt], map: "notifications_tenant_id_user_id_created_at_idx")
+  @@map("notifications")
 }

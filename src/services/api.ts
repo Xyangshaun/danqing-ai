@@ -5,6 +5,7 @@
 
 import type {
   ApiResponse,
+  AuthRefreshResponse,
   ClientType,
 } from '../types/api-contract';
 import { ErrorCode } from '../types/api-contract';
@@ -237,7 +238,7 @@ async function refreshTokenOnce(): Promise<string> {
   }
   refreshPromise = (async () => {
     try {
-      const resp = await rawRequest<import('../types/api-contract').AuthRefreshResponse>(
+      const resp = await rawRequest<AuthRefreshResponse>(
         '/auth/refresh',
         {
           method: 'POST',
@@ -468,6 +469,10 @@ import type {
   EvaluationPresetDetail,
   ApplyPresetRequest,
   ApplyPresetResponse,
+  NotificationListResponse,
+  UnreadCountResponse,
+  MarkNotificationReadResponse,
+  MarkAllNotificationsReadResponse,
 } from '../types/api-contract';
 
 /** GET /presets - 列出当前用户可见的评分预设 */
@@ -484,3 +489,38 @@ export function getPreset(id: string): Promise<EvaluationPresetDetail> {
 export function applyPreset(body: ApplyPresetRequest): Promise<ApplyPresetResponse> {
   return post<ApplyPresetResponse>('/presets/apply', body);
 }
+
+/* ============================================================
+ * Notification API(任务包 B:通知系统)
+ * ============================================================ */
+
+/** GET /notifications - 通知列表(游标分页)
+ * @param query.limit 每页数量(默认 20,最大 50)
+ * @param query.cursor 上一页返回的 nextCursor
+ * @param query.onlyUnread 仅未读
+ */
+export function listNotifications(query?: {
+  limit?: number;
+  cursor?: string;
+  onlyUnread?: boolean;
+}): Promise<NotificationListResponse> {
+  return get<NotificationListResponse>('/notifications', query, { silent: true });
+}
+
+/** GET /notifications/unread-count - 未读通知计数(轻量轮询端点) */
+export function getUnreadNotificationCount(): Promise<UnreadCountResponse> {
+  return get<UnreadCountResponse>('/notifications/unread-count', undefined, { silent: true });
+}
+
+/** PATCH /notifications/:id/read - 单条通知标记已读 */
+export function markNotificationRead(id: string): Promise<MarkNotificationReadResponse> {
+  return patch<MarkNotificationReadResponse>(`/notifications/${id}/read`, undefined, { silent: true });
+}
+
+/** POST /notifications/read-all - 全部通知标记已读 */
+export function markAllNotificationsRead(): Promise<MarkAllNotificationsReadResponse> {
+  return post<MarkAllNotificationsReadResponse>('/notifications/read-all', undefined, { silent: true });
+}
+
+/** 导出 Notification 类型供组件使用 */
+export type { Notification } from '../types/api-contract';

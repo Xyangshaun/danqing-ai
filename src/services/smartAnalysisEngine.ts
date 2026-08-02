@@ -1,5 +1,76 @@
-import type { AnalysisResult, ArtType, PaintingAnalysis, DesignAnalysis, ProductAnalysis, SculptureAnalysis } from '../types';
+import type { AnalysisResult, ArtType, DimensionResult, ProfessionalSuggestion, PaintingAnalysis, DesignAnalysis, ProductAnalysis, SculptureAnalysis } from '../types';
 import { analyzeImage, getBackendUrl } from './analysisService';
+
+/* ============================================================
+ * 后端分析响应类型定义
+ *
+ * convertBackendResult 需兼容多种后端格式:
+ *   - AnalysisRecord 包装格式(data.result 包含实际分析数据)
+ *   - 新版结构化格式(data.dimensions.type 存在)
+ *   - 旧版平铺格式(data.composition / data.color 直接平铺)
+ * 以下接口用可选字段 + 局部类型叠加覆盖所有访问路径,
+ * 替代原先的 `any`,在保留运行时行为的同时获得类型安全。
+ * ============================================================ */
+
+/** painting 类型 brushwork 可能携带的聚合字段及其来源字段 */
+interface BackendBrushwork {
+  structureTensor?: { coherence: number; energy: number; dominantDirection: number };
+  directionCoherence?: number;
+  strokeEnergy?: number;
+  dominantBrushDirection?: number;
+}
+
+/** 后端 dimensions:在前端联合类型基础上叠加 brushwork 可选扩展 */
+type BackendDimensions = DimensionResult & { brushwork?: BackendBrushwork };
+
+/** 旧版平铺构图字段 */
+interface BackendLegacyComposition {
+  score?: number;
+  focusPoint?: { x: number; y: number };
+  balance?: string;
+  guideline?: string;
+  whitespaceRatio?: number;
+  symmetry?: number;
+  suggestion?: string;
+  heatmapData?: number[][];
+}
+
+/** 旧版平铺色彩字段 */
+interface BackendLegacyColor {
+  score?: number;
+  warmRatio?: number;
+  coolRatio?: number;
+  contrast?: string;
+  saturation?: string;
+  richness?: string;
+  harmony?: string;
+  dominantColor?: string;
+  suggestion?: string;
+}
+
+/**
+ * 后端分析响应(递归,兼容 AnalysisRecord 包装与平铺旧版格式)。
+ * 所有字段可选,因不同版本后端返回结构差异较大。
+ */
+interface BackendAnalysisData {
+  id?: string;
+  result?: BackendAnalysisData;
+  dimensions?: BackendDimensions;
+  overallScore?: number;
+  imageUrl?: string;
+  createdAt?: string;
+  artType?: ArtType;
+  workType?: ArtType;
+  originality?: Partial<AnalysisResult['originality']>;
+  professionalSuggestions?: ProfessionalSuggestion[];
+  aiVisionResult?: { professionalSuggestions?: ProfessionalSuggestion[] };
+  aiEnhanced?: boolean;
+  cacheHit?: boolean;
+  jimpDurationMs?: number;
+  aiDurationMs?: number;
+  composition?: BackendLegacyComposition;
+  color?: BackendLegacyColor;
+}
 
 /**
  * 图片复杂度评估接口
@@ -171,15 +242,16 @@ export async function checkServerHealth(): Promise<boolean> {
  *   - 新版(Phase B+): data.dimensions 为结构化对象,可能包含 professionalSuggestions/aiVisionResult
  *   - 旧版(Legacy): data.composition/data.color 平铺结构
  */
-function convertBackendResult(data: any, artType: ArtType): AnalysisResult {
+function convertBackendResult(data: BackendAnalysisData, artType: ArtType): AnalysisResult {
   /* 记录顶层id，用于兼容AnalysisRecord格式 */
   const recordId = data.id;
 
   /* 检测是否为 AnalysisRecord 包装格式: data.result 存在且包含分析结果字段 */
   const isRecordFormat = data.result && (data.result.dimensions || typeof data.result.overallScore === 'number');
 
-  /* 解包:如果是AnalysisRecord格式,从result中提取实际分析数据 */
-  const actualData = isRecordFormat ? data.result : data;
+  /* 解包:如果是AnalysisRecord格式,从result中提取实际分析数据。
+   * isRecordFormat 为真时 data.result 必然存在,此处用 as 断言去除 undefined。 */
+  const actualData = (isRecordFormat ? data.result : data) as BackendAnalysisData;
 
   /* 提取 professionalSuggestions: 优先取result层,其次顶层,再从aiVisionResult中取 */
   const professionalSuggestions =
@@ -203,9 +275,9 @@ function convertBackendResult(data: any, artType: ArtType): AnalysisResult {
   if (isNewFormat) {
     /* 新版格式:直接透传 dimensions/originality,附加 professionalSuggestions */
     /* Phase F1:对 painting 类型,从已有 3 字段聚合 structureTensor */
-    const dims = actualData.dimensions;
+    /* isNewFormat 为真保证 dimensions 存在,用 ! 断言去除 undefined */
+    const dims = actualData.dimensions!;
     if (
-      dims &&
       dims.type === 'painting' &&
       dims.brushwork &&
       !dims.brushwork.structureTensor
@@ -229,12 +301,15 @@ function convertBackendResult(data: any, artType: ArtType): AnalysisResult {
       createdAt: actualData.createdAt || data.createdAt || new Date().toISOString(),
       artType: actualData.artType || data.artType || actualData.workType || data.workType || artType,
       dimensions: dims,
-      originality: actualData.originality || {
+      /* 后端 originality 字段以 Partial 形式声明(各版本字段差异),
+       * 透传时保留原 any 行为:truthy 即原样透传,falsy 用默认完整对象。
+       * 用 as 断言为完整类型,与原先 any 透传语义一致。 */
+      originality: (actualData.originality || {
         score: 80,
         similarity: 0.15,
         creativityLevel: 'good',
         suggestion: '原创性良好，继续保持个人风格。',
-      },
+      }) as AnalysisResult['originality'],
       overallScore: actualData.overallScore ?? 75,
       professionalSuggestions,
       ...metaInfo,
@@ -378,7 +453,16 @@ function convertBackendResult(data: any, artType: ArtType): AnalysisResult {
       score: originality.score || 80,
       similarity: originality.similarity ?? 0.15,
       suggestion: originality.suggestion || '原创性良好，继续保持个人风格。',
-      creativityLevel: originality.similarity < 0.15 ? 'excellent' : originality.similarity < 0.25 ? 'good' : 'average',
+      /* originality.similarity 可能为 undefined(旧版后端未返回该字段);
+       * 原先 `any` 下 `undefined < 0.15` 即 false → 'average',此处用显式
+       * undefined 判断保留相同行为,同时满足 strictNullChecks。 */
+      creativityLevel: originality.similarity === undefined
+        ? 'average'
+        : originality.similarity < 0.15
+          ? 'excellent'
+          : originality.similarity < 0.25
+            ? 'good'
+            : 'average',
     },
     overallScore: actualData.overallScore ?? data.overallScore ?? 75,
     professionalSuggestions,

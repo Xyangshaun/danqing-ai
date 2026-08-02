@@ -1,11 +1,13 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   Eye, BookOpen, Wand2, Heart, Sparkles, TrendingUp, TrendingDown, ArrowRight,
   Plus, Clock, Award, Zap, Brush, PenTool, Box, Layers, RefreshCw, type LucideIcon,
-  Quote, ChevronRight, Star, Target, AlertCircle, ChevronLeft,
+  Quote, ChevronRight, Star, Target, AlertCircle, ChevronLeft, FileEdit, Loader2,
 } from 'lucide-react';
 import { getAnalysisHistory, getGrowthData } from '../services/data-service';
+import { listDrafts, subscribeDrafts, type Draft } from '../services/draft-service';
+import { useAuth } from '../hooks/useAuth';
 import type { HistoryRecord, GrowthData } from '../types';
 
 /* 艺术名言（每日一条） */
@@ -37,12 +39,60 @@ function formatRelativeDate(dateStr: string): string {
   return d.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' });
 }
 
+/* 相对时间格式化 (ms 时间戳):"刚刚" / "3 分钟前" / "2 小时前" / "1 天前" */
+function formatRelativeTime(ts: number): string {
+  const diff = Date.now() - ts;
+  if (diff < 0) return '刚刚';
+  const sec = Math.floor(diff / 1000);
+  if (sec < 60) return '刚刚';
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min} 分钟前`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr} 小时前`;
+  const day = Math.floor(hr / 24);
+  if (day < 7) return `${day} 天前`;
+  return new Date(ts).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' });
+}
+
 export default function HomePage() {
   const [history, setHistory] = useState<HistoryRecord[]>([]);
   const [growthData, setGrowthData] = useState<GrowthData[]>([]);
   const navigate = useNavigate();
+  const { user, tenant } = useAuth();
   /* 名言索引：初始为今日名言，用户可通过左右按钮切换 */
   const [quoteIndex, setQuoteIndex] = useState(() => new Date().getDate() % artQuotes.length);
+
+  /* ====== 创作草稿(任务包A):工作台"继续创作"区域 ======
+   * - drafts: 当前用户最近草稿(最多展示 4 条,按 updatedAt 倒序)
+   * - draftsTick: 跨标签 storage 事件触发的刷新信号
+   * - 未登录或读取失败时静默不显示该区块 */
+  const [drafts, setDrafts] = useState<Draft[]>([]);
+  const [draftsTick, setDraftsTick] = useState(0);
+
+  const refreshDrafts = useCallback(() => {
+    setDraftsTick((t) => t + 1);
+  }, []);
+
+  /* 跨标签同步:其他标签创建/删除草稿时刷新本标签 */
+  useEffect(() => {
+    const unsub = subscribeDrafts(refreshDrafts);
+    return unsub;
+  }, [refreshDrafts]);
+
+  /* 加载草稿(用户/租户/刷新信号变化时);失败静默 */
+  useEffect(() => {
+    if (!user || !tenant) {
+      setDrafts([]);
+      return;
+    }
+    try {
+      const list = listDrafts(tenant.id, user.id);
+      setDrafts(list.slice(0, 4));
+    } catch (err) {
+      console.warn('加载创作草稿失败:', err);
+      setDrafts([]);
+    }
+  }, [user, tenant, draftsTick]);
 
   // 异步并行加载历史和成长数据：通过 data-service 自动选择数据源
   useEffect(() => {
@@ -160,6 +210,94 @@ export default function HomePage() {
             </Link>
           </div>
         </section>
+
+        {/* ========== 继续创作 (草稿区,任务包A) ========== */}
+        {drafts.length > 0 && (
+          <section className="animate-fade-in">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 bg-cinnabar/10 rounded-md flex items-center justify-center">
+                  <FileEdit className="w-4 h-4 text-cinnabar" />
+                </div>
+                <div>
+                  <h3 className="font-serif text-base font-semibold text-ink-900">继续创作</h3>
+                  <p className="text-2xs text-ink-400">未完成的诊断,点击继续</p>
+                </div>
+              </div>
+              {drafts.length >= 4 && (
+                <Link
+                  to="/history"
+                  className="flex items-center gap-1 text-xs text-ink-500 hover:text-cinnabar transition-colors"
+                >
+                  查看全部草稿 <ChevronRight className="w-3 h-3" />
+                </Link>
+              )}
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+              {drafts.map((draft) => {
+                const cfg = artTypeIcons[draft.artworkType] || artTypeIcons.painting;
+                const Icon = cfg.icon;
+                const isAnalyzing = draft.status === 'analyzing';
+                return (
+                  <div
+                    key={draft.id}
+                    onClick={() => navigate(`/analyze?draftId=${draft.id}`)}
+                    className="group bg-rice-50 border border-ink-900/6 hover:border-cinnabar/30 hover:shadow-card-hover hover:-translate-y-0.5 rounded-lg overflow-hidden transition-all cursor-pointer"
+                  >
+                    {/* 缩略图 / 类型图标占位 */}
+                    <div className="relative aspect-[4/3] bg-rice-200 overflow-hidden">
+                      {draft.imagePreview ? (
+                        <img
+                          src={draft.imagePreview}
+                          alt="草稿缩略图"
+                          loading="lazy"
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                        />
+                      ) : (
+                        <div className={`w-full h-full ${cfg.bg} flex items-center justify-center`}>
+                          <Icon className={`w-8 h-8 ${cfg.color}`} />
+                        </div>
+                      )}
+                      {/* 状态徽章 */}
+                      <div className={`absolute top-2 left-2 px-1.5 py-0.5 text-2xs rounded flex items-center gap-1 ${
+                        isAnalyzing
+                          ? 'bg-cinnabar/90 text-white'
+                          : 'bg-ink-900/70 backdrop-blur-sm text-rice-100'
+                      }`}>
+                        {isAnalyzing ? (
+                          <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                        ) : (
+                          <Clock className="w-2.5 h-2.5" />
+                        )}
+                        {isAnalyzing ? '分析中' : '草稿'}
+                      </div>
+                      {/* 类型徽章 */}
+                      <div className="absolute top-2 right-2 px-1.5 py-0.5 bg-ink-900/80 backdrop-blur-sm text-rice-100 text-2xs rounded flex items-center gap-1">
+                        <Icon className="w-2.5 h-2.5" />
+                        {cfg.label}
+                      </div>
+                    </div>
+                    {/* 信息 */}
+                    <div className="p-3">
+                      <p className="text-sm font-medium text-ink-900 truncate group-hover:text-cinnabar transition-colors">
+                        {draft.title}
+                      </p>
+                      <div className="flex items-center justify-between mt-1.5">
+                        <span className="flex items-center gap-1 text-2xs text-ink-400">
+                          <Clock className="w-2.5 h-2.5" />
+                          {formatRelativeTime(draft.updatedAt)}
+                        </span>
+                        <span className="flex items-center gap-0.5 text-2xs text-cinnabar font-medium opacity-0 group-hover:opacity-100 transition-opacity">
+                          继续 <ArrowRight className="w-3 h-3" />
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        )}
 
         {/* ========== 快速开始卡片组 ========== */}
         <section className="grid grid-cols-2 md:grid-cols-4 gap-3 animate-fade-in">

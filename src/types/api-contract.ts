@@ -542,3 +542,77 @@ export interface ApplyPresetResponse {
   /** 使用的预设信息 */
   appliedPreset: EvaluationPresetSummary;
 }
+
+// ============ 3.13 通知系统类型(任务包 B:从后端同步) ============
+//
+// 对应 API:
+//   GET    /notifications                通知列表(游标分页)
+//   GET    /notifications/unread-count   未读计数
+//   PATCH  /notifications/:id/read       单条标记已读
+//   POST   /notifications/read-all       全部标记已读
+//
+// 多租户强制:每条通知归属 (tenantId, userId),查询必带两者过滤
+
+/** 通知类型 */
+export type NotificationType =
+  | 'SYSTEM'
+  | 'ANALYSIS_DONE'
+  | 'ANALYSIS_FAIL'
+  | 'REVIEW'
+  | 'SUBSCRIPTION'
+  | 'INVITATION';
+
+/** 通知级别 */
+export type NotificationLevel = 'INFO' | 'SUCCESS' | 'WARN' | 'ERROR';
+
+/** 通知条目 */
+export interface Notification {
+  id: string;
+  /** 租户 ID(多租户隔离) */
+  tenantId: string;
+  /** 接收者用户 ID */
+  userId: string;
+  type: NotificationType;
+  title: string;
+  content: string;
+  level: NotificationLevel;
+  /** 点击跳转的相对路径(可选) */
+  linkUrl?: string | null;
+  /** 附加数据(如关联 analysisId / presetId 等) */
+  metadata?: Record<string, unknown> | null;
+  /** 已读时间(ISO 8601),null 表示未读 */
+  readAt: ISODateString | null;
+  /** 创建时间(ISO 8601) */
+  createdAt: ISODateString;
+}
+
+/** GET /notifications 查询参数 */
+export interface ListNotificationsQuery {
+  /** 每页数量,默认 20,最大 50 */
+  limit?: number;
+  /** 游标(上一页最后一项的 createdAt+id 编码) */
+  cursor?: string;
+  /** 仅未读 */
+  onlyUnread?: boolean;
+}
+
+/** GET /notifications 响应(游标分页) */
+export interface NotificationListResponse {
+  items: Notification[];
+  /** 下一页游标,null 表示无更多数据 */
+  nextCursor: string | null;
+}
+
+/** GET /notifications/unread-count 响应 */
+export interface UnreadCountResponse {
+  count: number;
+}
+
+/** PATCH /notifications/:id/read 响应(返回更新后的通知) */
+export type MarkNotificationReadResponse = Notification;
+
+/** POST /notifications/read-all 响应 */
+export interface MarkAllNotificationsReadResponse {
+  /** 本次标记已读的条数 */
+  count: number;
+}

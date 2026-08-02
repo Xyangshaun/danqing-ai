@@ -1,10 +1,11 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, memo, useCallback } from 'react';
 import {
   Eye, BookOpen, Wand2, Heart, History, TrendingUp,
   Settings, ChevronLeft, ChevronRight, Sparkles, Plus,
   Brush, PenTool, Box, Layers, Clock, type LucideIcon,
 } from 'lucide-react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
+import { usePrefetch } from '../hooks/usePrefetch';
 
 type NavItem = {
   path: string;
@@ -69,6 +70,107 @@ interface SidebarProps {
   collapsed: boolean;
   onToggle: () => void;
 }
+
+/* ============================================================
+ * SidebarNavItem — 单个导航项(memo + usePrefetch)
+ *
+ * 提取为独立组件以:
+ *   1. 调用 usePrefetch hook(无法在 .map 循环内调用)
+ *   2. 通过 React.memo 跳过未变化项的重渲染
+ *   3. hover/focus/touchstart 时预加载对应路由 chunk
+ * ============================================================ */
+
+interface SidebarNavItemProps {
+  item: NavItem;
+  isActive: boolean;
+  collapsed: boolean;
+  isHovered: boolean;
+  onHoverChange: (path: string | null) => void;
+}
+
+const SidebarNavItem = memo(function SidebarNavItem({
+  item,
+  isActive,
+  collapsed,
+  isHovered,
+  onHoverChange,
+}: SidebarNavItemProps) {
+  const prefetch = usePrefetch(item.path);
+  const Icon = item.icon;
+  const isHighlighted = !!item.highlight;
+
+  const handleMouseEnter = useCallback(() => {
+    onHoverChange(item.path);
+    prefetch.onMouseEnter();
+  }, [onHoverChange, item.path, prefetch]);
+
+  const handleMouseLeave = useCallback(() => {
+    onHoverChange(null);
+  }, [onHoverChange]);
+
+  return (
+    <Link
+      to={item.path}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      onFocus={prefetch.onFocus}
+      onTouchStart={prefetch.onTouchStart}
+      className={`group relative flex items-center px-2 h-9 rounded-md text-sm transition-all duration-200 ${
+        isActive
+          ? isHighlighted
+            ? 'bg-cinnabar/10 text-ink-900 shadow-subtle'
+            : 'bg-ink-900 text-rice-100 shadow-subtle'
+          : isHighlighted
+          ? 'text-ink-900 hover:bg-cinnabar/5'
+          : 'text-ink-600 hover:bg-ink-900/5 hover:text-ink-900'
+      } ${collapsed ? 'justify-center gap-0' : 'gap-3'}`}
+      title={collapsed ? item.label : undefined}
+    >
+      {/* AI 诊断左侧朱砂色竖条指示 */}
+      {isHighlighted && (
+        <span
+          className={`absolute left-0 top-0 bg-cinnabar ${
+            collapsed ? 'w-0.5 h-full' : 'w-1 h-full rounded-l-md'
+          }`}
+        />
+      )}
+      <Icon
+        className={`w-4 h-4 flex-shrink-0 ${
+          isHighlighted ? 'text-cinnabar' : isActive ? 'text-cinnabar-light' : ''
+        }`}
+      />
+      <div
+        className={`flex items-center overflow-hidden transition-all duration-200 ${
+          collapsed ? 'opacity-0 max-w-0' : 'opacity-100 flex-1 min-w-0'
+        }`}
+      >
+        <span
+          className={`whitespace-nowrap ${
+            isHighlighted ? 'font-semibold' : 'font-medium'
+          }`}
+        >
+          {item.label}
+        </span>
+        {item.shortcut && (
+          <kbd
+            className={`ml-auto px-1.5 py-0.5 rounded text-2xs font-mono ${
+              isActive
+                ? isHighlighted
+                  ? 'bg-cinnabar/20 text-ink-700'
+                  : 'bg-rice-100/10 text-rice-200'
+                : isHovered
+                ? 'bg-ink-900/10 text-ink-500'
+                : 'text-ink-300'
+            }`}
+          >
+            {item.shortcut}
+          </kbd>
+        )}
+      </div>
+      {collapsed && <Tooltip label={item.label} />}
+    </Link>
+  );
+});
 
 export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const location = useLocation();
@@ -193,68 +295,15 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
             <div className="px-2 space-y-0.5">
               {group.items.map((item) => {
                 const isActive = location.pathname === item.path;
-                const Icon = item.icon;
-                const isHighlighted = !!item.highlight;
                 return (
-                  <Link
+                  <SidebarNavItem
                     key={item.path}
-                    to={item.path}
-                    onMouseEnter={() => setHoveredItem(item.path)}
-                    onMouseLeave={() => setHoveredItem(null)}
-                    className={`group relative flex items-center px-2 h-9 rounded-md text-sm transition-all duration-200 ${
-                      isActive
-                        ? isHighlighted
-                          ? 'bg-cinnabar/10 text-ink-900 shadow-subtle'
-                          : 'bg-ink-900 text-rice-100 shadow-subtle'
-                        : isHighlighted
-                        ? 'text-ink-900 hover:bg-cinnabar/5'
-                        : 'text-ink-600 hover:bg-ink-900/5 hover:text-ink-900'
-                    } ${collapsed ? 'justify-center gap-0' : 'gap-3'}`}
-                    title={collapsed ? item.label : undefined}
-                  >
-                    {/* AI 诊断左侧朱砂色竖条指示 */}
-                    {isHighlighted && (
-                      <span
-                        className={`absolute left-0 top-0 bg-cinnabar ${
-                          collapsed ? 'w-0.5 h-full' : 'w-1 h-full rounded-l-md'
-                        }`}
-                      />
-                    )}
-                    <Icon
-                      className={`w-4 h-4 flex-shrink-0 ${
-                        isHighlighted ? 'text-cinnabar' : isActive ? 'text-cinnabar-light' : ''
-                      }`}
-                    />
-                    <div
-                      className={`flex items-center overflow-hidden transition-all duration-200 ${
-                        collapsed ? 'opacity-0 max-w-0' : 'opacity-100 flex-1 min-w-0'
-                      }`}
-                    >
-                      <span
-                        className={`whitespace-nowrap ${
-                          isHighlighted ? 'font-semibold' : 'font-medium'
-                        }`}
-                      >
-                        {item.label}
-                      </span>
-                      {item.shortcut && (
-                        <kbd
-                          className={`ml-auto px-1.5 py-0.5 rounded text-2xs font-mono ${
-                            isActive
-                              ? isHighlighted
-                                ? 'bg-cinnabar/20 text-ink-700'
-                                : 'bg-rice-100/10 text-rice-200'
-                              : hoveredItem === item.path
-                              ? 'bg-ink-900/10 text-ink-500'
-                              : 'text-ink-300'
-                          }`}
-                        >
-                          {item.shortcut}
-                        </kbd>
-                      )}
-                    </div>
-                    {collapsed && <Tooltip label={item.label} />}
-                  </Link>
+                    item={item}
+                    isActive={isActive}
+                    collapsed={collapsed}
+                    isHovered={hoveredItem === item.path}
+                    onHoverChange={setHoveredItem}
+                  />
                 );
               })}
             </div>
@@ -309,4 +358,5 @@ function Tooltip({ label }: { label: string }) {
 }
 
 /* 导出创作类型，供其他组件复用 */
+// eslint-disable-next-line react-refresh/only-export-components -- 导航配置常量与组件同文件便于协同维护,非 HMR 热点
 export { creationTypes };

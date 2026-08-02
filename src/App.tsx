@@ -6,6 +6,7 @@ import Sidebar from './components/Sidebar';
 import StatusBar from './components/StatusBar';
 import ErrorBoundary from './components/ErrorBoundary';
 import PageSkeleton from './components/PageSkeleton';
+import RouteTransition from './components/RouteTransition';
 import { ToastProvider } from './components/ToastProvider';
 import { AuthProvider } from './context/AuthContext';
 import RequireAuth from './components/auth/RequireAuth';
@@ -29,7 +30,7 @@ const SettingsPage = lazy(() => import('./pages/SettingsPage'));
  * 受保护的业务布局(Header + Sidebar + Main + StatusBar)
  * 由 RequireAuth 包裹,未登录跳转 /login
  */
-function AppLayout() {
+export function AppLayout() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const navigate = useNavigate();
@@ -170,22 +171,25 @@ function AppLayout() {
             <Menu className="w-4 h-4 text-ink-700" />
           </button>
 
-          {/* 每个路由独立 ErrorBoundary + Suspense 骨架屏
-              key=pathname 让路由切换时 ErrorBoundary 重新挂载,避免单个页面报错后所有页面都显示降级 UI */}
+          {/* 每个路由独立 ErrorBoundary + Suspense 骨架屏 + 路由淡入
+              key=pathname 让路由切换时 ErrorBoundary 重新挂载,避免单个页面报错后所有页面都显示降级 UI;
+              RouteTransition 在 ErrorBoundary 内部播放淡入动画(不影响错误边界/认证守卫逻辑) */}
           <ErrorBoundary key={location.pathname}>
-            <Suspense fallback={<PageSkeleton />}>
-              <Routes>
-                <Route path="/" element={<HomePage />} />
-                <Route path="/analyze" element={<AnalysisPage />} />
-                <Route path="/materials" element={<MaterialsPage />} />
-                <Route path="/styles" element={<StylesPage />} />
-                <Route path="/fuse" element={<FusePage />} />
-                <Route path="/emotion" element={<EmotionPage />} />
-                <Route path="/history" element={<HistoryPage />} />
-                <Route path="/growth" element={<GrowthPage />} />
-                <Route path="/settings" element={<SettingsPage />} />
-              </Routes>
-            </Suspense>
+            <RouteTransition locationKey={location.pathname}>
+              <Suspense fallback={<PageSkeleton variant="generic" />}>
+                <Routes>
+                  <Route path="/" element={<HomePage />} />
+                  <Route path="/analyze" element={<AnalysisPage />} />
+                  <Route path="/materials" element={<MaterialsPage />} />
+                  <Route path="/styles" element={<StylesPage />} />
+                  <Route path="/fuse" element={<FusePage />} />
+                  <Route path="/emotion" element={<EmotionPage />} />
+                  <Route path="/history" element={<HistoryPage />} />
+                  <Route path="/growth" element={<GrowthPage />} />
+                  <Route path="/settings" element={<SettingsPage />} />
+                </Routes>
+              </Suspense>
+            </RouteTransition>
           </ErrorBoundary>
         </main>
       </div>

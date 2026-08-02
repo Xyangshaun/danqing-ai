@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback, memo } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { History, Calendar, Eye, ArrowRight, X, Brush, PenTool, Box, Layers, Palette, Sparkles, Type, Gem, Settings, Move, RefreshCw, Loader2, ImageOff } from 'lucide-react';
 import { getAnalysisHistory, getAnalysisDetail } from '../services/data-service';
@@ -6,6 +6,8 @@ import type { HistoryRecord, AnalysisResult, PaintingAnalysis, DesignAnalysis, P
 import HeatmapCanvas from '../components/HeatmapCanvas';
 import { ListSkeleton, SkeletonBox } from '../components/PageSkeleton';
 import EmptyState from '../components/EmptyState';
+import { useVirtualList } from '../hooks/useVirtualList';
+import { useLazyImage } from '../hooks/useLazyImage';
 
 type ArtTypeFilter = 'all' | ArtType;
 type ScoreFilter = 'all' | 'excellent' | 'good' | 'pending';
@@ -331,6 +333,156 @@ function DetailModal({ result, onClose, onRediagnose }: { result: AnalysisResult
   );
 }
 
+/* ============================================================
+ * 虚拟列表常量(任务包D:性能优化)
+ *   - VIRTUAL_THRESHOLD: 超过此数量才启用虚拟滚动,小列表保持原渲染
+ *   - HISTORY_ITEM_HEIGHT: 固定行高 = 卡片(176px) + 间距(24px)
+ *   - HISTORY_CONTAINER_HEIGHT: 虚拟容器视口高度
+ * ============================================================ */
+const VIRTUAL_THRESHOLD = 50;
+const HISTORY_ITEM_HEIGHT = 200;
+const HISTORY_CONTAINER_HEIGHT = 640;
+
+/* formatDate 纯函数,提取到组件外避免每次渲染重建 */
+function formatDate(dateStr: string): string {
+  const date = new Date(dateStr);
+  const month = date.getMonth() + 1;
+  const day = date.getDate();
+  const hours = date.getHours().toString().padStart(2, '0');
+  const minutes = date.getMinutes().toString().padStart(2, '0');
+  return `${month}月${day}日 ${hours}:${minutes}`;
+}
+
+/* ============================================================
+ * HistoryCard — 单条历史记录卡片(memo + useLazyImage)
+ *
+ * 提取为独立组件以:
+ *   1. 通过 React.memo 跳过未变化卡片的重渲染(筛选/排序时仅重渲染变化项)
+ *   2. 使用 useLazyImage 实现缩略图懒加载(IntersectionObserver + 占位图)
+ *   3. 缩略图加载失败时显示 ImageOff 占位,避免 broken image 图标
+ * ============================================================ */
+
+interface HistoryCardProps {
+  record: HistoryRecord;
+  index: number;
+  onViewDetail: (record: HistoryRecord) => void;
+  onRediagnose: (artType: string) => void;
+}
+
+const HistoryCard = memo(function HistoryCard({
+  record,
+  index,
+  onViewDetail,
+  onRediagnose,
+}: HistoryCardProps) {
+  const artConfig = artTypeConfig[record.artType] || artTypeConfig.painting;
+  const Icon = artConfig.icon;
+  const { imgRef, loadedSrc, isLoaded, isError } = useLazyImage(record.imageUrl);
+
+  return (
+    <div className="relative pl-16 group">
+      <div className={`absolute left-4 top-6 w-5 h-5 ${getScoreBg(record.overallScore)} rounded-full border-4 border-rice-200 z-10`} />
+
+      <div className="bg-rice-50 rounded-2xl p-6 shadow-card hover:shadow-card-hover transition-all duration-300 transform hover:-translate-y-1 relative">
+        {/* 卡片 hover 时显示的快捷操作 */}
+        <div className="absolute top-3 right-3 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+          <button
+            onClick={() => onViewDetail(record)}
+            title="查看详情"
+            className="w-8 h-8 bg-white/95 backdrop-blur rounded-md flex items-center justify-center text-ink-600 hover:text-ink-900 hover:bg-white shadow-card border border-ink-900/6 transition-colors"
+          >
+            <Eye className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => onRediagnose(record.artType)}
+            title="再次诊断"
+            className="w-8 h-8 bg-white/95 backdrop-blur rounded-md flex items-center justify-center text-ink-600 hover:text-cinnabar hover:bg-white shadow-card border border-ink-900/6 transition-colors"
+          >
+            <RefreshCw className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="flex flex-col md:flex-row md:items-center gap-4">
+          <div className="flex-shrink-0 relative">
+            {isError ? (
+              <div className="w-32 h-32 flex flex-col items-center justify-center bg-ink-100 rounded-xl">
+                <ImageOff className="w-8 h-8 text-ink-300 mb-1" />
+                <span className="text-2xs text-ink-400">加载失败</span>
+              </div>
+            ) : (
+              <img
+                ref={imgRef}
+                src={loadedSrc}
+                alt={`分析记录 ${index + 1}`}
+                className={`w-32 h-32 object-cover rounded-xl transition-opacity duration-300 ${
+                  isLoaded ? 'opacity-100' : 'opacity-0'
+                }`}
+              />
+            )}
+            {/* 加载中骨架占位 */}
+            {!isLoaded && !isError && (
+              <div className="absolute inset-0 w-32 h-32 rounded-xl overflow-hidden">
+                <SkeletonBox className="absolute inset-0" />
+              </div>
+            )}
+          </div>
+
+          <div className="flex-1">
+            <div className="flex items-center gap-3 mb-2">
+              <Calendar className="w-4 h-4 text-ink-400" />
+              <span className="text-sm text-ink-500">
+                {formatDate(record.createdAt)}
+              </span>
+              <span className={`inline-flex items-center gap-1 px-2 py-1 ${artConfig.color}/10 text-ink-700 text-xs rounded-full`}>
+                <Icon className="w-3 h-3" />
+                {artConfig.name}
+              </span>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-4 mb-3">
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-ink-500">综合</span>
+                <div className={`w-10 h-10 ${getScoreBg(record.overallScore)} rounded-full flex items-center justify-center`}>
+                  <span className="font-serif text-lg font-bold text-white">
+                    {record.overallScore}
+                  </span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-ink-500">维度一</span>
+                <span className="font-medium text-ink-700">
+                  {record.dimension1Score}分
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-ink-500">维度二</span>
+                <span className="font-medium text-ink-700">
+                  {record.dimension2Score}分
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-ink-500">维度三</span>
+                <span className="font-medium text-ink-700">
+                  {record.dimension3Score}分
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <button
+            onClick={() => onViewDetail(record)}
+            className="flex items-center gap-2 px-4 py-2 bg-ink-900/5 text-ink-700 rounded-lg hover:bg-ink-900 hover:text-rice-100 transition-all duration-300"
+          >
+            <Eye className="w-4 h-4" />
+            <span className="text-sm font-medium">查看详情</span>
+            <ArrowRight className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+});
+
 export default function HistoryPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -368,15 +520,6 @@ export default function HistoryPage() {
     })();
     return () => { cancelled = true; };
   }, []);
-
-  const formatDate = (dateStr: string) => {
-    const date = new Date(dateStr);
-    const month = date.getMonth() + 1;
-    const day = date.getDate();
-    const hours = date.getHours().toString().padStart(2, '0');
-    const minutes = date.getMinutes().toString().padStart(2, '0');
-    return `${month}月${day}日 ${hours}:${minutes}`;
-  };
 
   // 切换筛选时同步 URL 参数（保持可分享）
   const syncUrlParams = (next: { type?: ArtTypeFilter; filter?: ScoreFilter; sort?: SortMode }) => {
@@ -434,7 +577,8 @@ export default function HistoryPage() {
   }, [history, typeFilter, scoreFilter, sortMode]);
 
   // 查看详情：异步调用 data-service 获取完整分析结果
-  const handleViewDetail = async (record: HistoryRecord) => {
+  // useCallback 稳定引用,避免 HistoryCard(memo) 因回调变化而重渲染
+  const handleViewDetail = useCallback(async (record: HistoryRecord) => {
     try {
       const result = await getAnalysisDetail(record.id);
       if (result) {
@@ -443,15 +587,26 @@ export default function HistoryPage() {
     } catch (err) {
       console.error('加载分析详情失败:', err);
     }
-  };
+  }, []);
 
-  const handleRediagnose = (artType: string) => {
+  const handleRediagnose = useCallback((artType: string) => {
     navigate(`/analyze?type=${artType}`);
-  };
+  }, [navigate]);
 
-  const handleCloseModal = () => {
+  const handleCloseModal = useCallback(() => {
     setSelectedRecord(null);
-  };
+  }, []);
+
+  /* 虚拟列表:超过阈值时启用,仅渲染可视区 + overscan 行 */
+  const useVirtual = filteredHistory.length > VIRTUAL_THRESHOLD;
+  const { visibleItems, totalHeight, onScroll } = useVirtualList(
+    filteredHistory,
+    {
+      itemHeight: HISTORY_ITEM_HEIGHT,
+      containerHeight: HISTORY_CONTAINER_HEIGHT,
+      overscan: 5,
+    },
+  );
 
   return (
     <div className="min-h-screen bg-rice-200 ink-texture pt-20 pb-20">
@@ -535,105 +690,54 @@ export default function HistoryPage() {
                 </button>
               </div>
             ) : (
-              <div className="relative">
-                <div className="absolute left-6 top-0 bottom-0 w-0.5 bg-ink-200" />
-
-                <div className="space-y-6">
-                  {filteredHistory.map((record, index) => {
-                    const artConfig = artTypeConfig[record.artType] || artTypeConfig.painting;
-                    const Icon = artConfig.icon;
-                    return (
+              useVirtual ? (
+                /* 虚拟列表模式:超过 50 条记录时启用,仅渲染可视区 + overscan 行 */
+                <div
+                  onScroll={onScroll}
+                  style={{ height: HISTORY_CONTAINER_HEIGHT, overflowY: 'auto', position: 'relative' }}
+                  className="scrollbar-thin"
+                >
+                  <div style={{ height: totalHeight, position: 'relative' }}>
+                    {/* 时间线竖线 */}
+                    <div className="absolute left-6 top-0 bottom-0 w-0.5 bg-ink-200" />
+                    {visibleItems.map(({ item, index, offsetTop }) => (
                       <div
-                        key={record.id}
-                        className="relative pl-16 group"
+                        key={item.id}
+                        style={{
+                          position: 'absolute',
+                          top: offsetTop,
+                          left: 0,
+                          right: 0,
+                          height: HISTORY_ITEM_HEIGHT,
+                        }}
                       >
-                        <div className={`absolute left-4 top-6 w-5 h-5 ${getScoreBg(record.overallScore)} rounded-full border-4 border-rice-200 z-10`} />
-
-                        <div className="bg-rice-50 rounded-2xl p-6 shadow-card hover:shadow-card-hover transition-all duration-300 transform hover:-translate-y-1 relative">
-                          {/* 卡片 hover 时显示的快捷操作 */}
-                          <div className="absolute top-3 right-3 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                            <button
-                              onClick={() => handleViewDetail(record)}
-                              title="查看详情"
-                              className="w-8 h-8 bg-white/95 backdrop-blur rounded-md flex items-center justify-center text-ink-600 hover:text-ink-900 hover:bg-white shadow-card border border-ink-900/6 transition-colors"
-                            >
-                              <Eye className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={() => handleRediagnose(record.artType)}
-                              title="再次诊断"
-                              className="w-8 h-8 bg-white/95 backdrop-blur rounded-md flex items-center justify-center text-ink-600 hover:text-cinnabar hover:bg-white shadow-card border border-ink-900/6 transition-colors"
-                            >
-                              <RefreshCw className="w-4 h-4" />
-                            </button>
-                          </div>
-
-                          <div className="flex flex-col md:flex-row md:items-center gap-4">
-                            <div className="flex-shrink-0">
-                              <img
-                                src={record.imageUrl}
-                                alt={`分析记录 ${index + 1}`}
-                                className="w-32 h-32 object-cover rounded-xl"
-                              />
-                            </div>
-
-                            <div className="flex-1">
-                              <div className="flex items-center gap-3 mb-2">
-                                <Calendar className="w-4 h-4 text-ink-400" />
-                                <span className="text-sm text-ink-500">
-                                  {formatDate(record.createdAt)}
-                                </span>
-                                <span className={`inline-flex items-center gap-1 px-2 py-1 ${artConfig.color}/10 text-ink-700 text-xs rounded-full`}>
-                                  <Icon className="w-3 h-3" />
-                                  {artConfig.name}
-                                </span>
-                              </div>
-
-                              <div className="flex flex-wrap items-center gap-4 mb-3">
-                                <div className="flex items-center gap-2">
-                                  <span className="text-sm text-ink-500">综合</span>
-                                  <div className={`w-10 h-10 ${getScoreBg(record.overallScore)} rounded-full flex items-center justify-center`}>
-                                    <span className="font-serif text-lg font-bold text-white">
-                                      {record.overallScore}
-                                    </span>
-                                  </div>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  <span className="text-sm text-ink-500">维度一</span>
-                                  <span className="font-medium text-ink-700">
-                                    {record.dimension1Score}分
-                                  </span>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  <span className="text-sm text-ink-500">维度二</span>
-                                  <span className="font-medium text-ink-700">
-                                    {record.dimension2Score}分
-                                  </span>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  <span className="text-sm text-ink-500">维度三</span>
-                                  <span className="font-medium text-ink-700">
-                                    {record.dimension3Score}分
-                                  </span>
-                                </div>
-                              </div>
-                            </div>
-
-                            <button
-                              onClick={() => handleViewDetail(record)}
-                              className="flex items-center gap-2 px-4 py-2 bg-ink-900/5 text-ink-700 rounded-lg hover:bg-ink-900 hover:text-rice-100 transition-all duration-300"
-                            >
-                              <Eye className="w-4 h-4" />
-                              <span className="text-sm font-medium">查看详情</span>
-                              <ArrowRight className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </div>
+                        <HistoryCard
+                          record={item}
+                          index={index}
+                          onViewDetail={handleViewDetail}
+                          onRediagnose={handleRediagnose}
+                        />
                       </div>
-                    );
-                  })}
+                    ))}
+                  </div>
                 </div>
-              </div>
+              ) : (
+                /* 普通列表模式:小列表保持原有视觉,使用 memo 化的 HistoryCard */
+                <div className="relative">
+                  <div className="absolute left-6 top-0 bottom-0 w-0.5 bg-ink-200" />
+                  <div className="space-y-6">
+                    {filteredHistory.map((record, index) => (
+                      <HistoryCard
+                        key={record.id}
+                        record={record}
+                        index={index}
+                        onViewDetail={handleViewDetail}
+                        onRediagnose={handleRediagnose}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )
             )}
           </div>
         )}

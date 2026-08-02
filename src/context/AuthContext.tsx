@@ -22,11 +22,8 @@ import {
   refreshAccessToken,
   switchTenant as sdkSwitchTenant,
 } from '../services/auth-sdk';
-import {
-  setAuthFailedHandler,
-  setToastHandler,
-  ApiError,
-} from '../services/api';
+import { setAuthFailedHandler, setToastHandler } from '../services/api';
+import type { ApiError } from '../services/api';
 import { clearAccessToken, hasAccessToken } from '../services/token-store';
 import { useToast } from '../components/ToastProvider';
 
@@ -59,6 +56,7 @@ export interface AuthContextValue {
   skipLogin: () => void;
 }
 
+// eslint-disable-next-line react-refresh/only-export-components -- Context 对象与 Provider 同文件是 React 官方推荐组织方式
 export const AuthContext = createContext<AuthContextValue | null>(null);
 
 /* ============================================================

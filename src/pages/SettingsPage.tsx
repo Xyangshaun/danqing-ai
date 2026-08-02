@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Settings, User, Bell, Palette, Database, Cloud, Shield, Keyboard,
   Check, Loader2, type LucideIcon, Server, Wifi, WifiOff, Loader,
@@ -62,6 +62,12 @@ const DEFAULT_SETTINGS: UserSettings = {
 
 export default function SettingsPage() {
   const toast = useToast();
+  /* 用 ref 持有最新 toast 上下文,供加载 useEffect 内部调用。
+   * 原因:ToastProvider 的 context value 对象每次渲染都会重建,
+   * 若把 `toast` 直接放入加载 effect 依赖,会在每次 toast 出现/消失时
+   * 重复触发 getSettings/getAnalysisHistory(造成无限循环)。 */
+  const toastRef = useRef(toast);
+  toastRef.current = toast;
   const [active, setActive] = useState('account');
   const [settings, setSettings] = useState<UserSettings>(DEFAULT_SETTINGS);
   const [loading, setLoading] = useState(true);
@@ -87,13 +93,14 @@ export default function SettingsPage() {
         setHistoryCount(history.length);
       } catch (err) {
         console.error('加载设置失败:', err);
-        if (!cancelled) toast.error('加载设置失败', '请稍后重试');
+        if (!cancelled) toastRef.current.error('加载设置失败', '请稍后重试');
       } finally {
         if (!cancelled) setLoading(false);
       }
     })();
     return () => { cancelled = true; };
-  }, [toast]);
+    // 仅在挂载时执行一次;toast 通过 ref 访问,不进入依赖数组(避免无限循环)
+  }, []);
 
   /* 通用更新:局部 patch + 异步保存到 dataService */
   const updateSettings = useCallback(
@@ -650,6 +657,8 @@ function Toggle({ label, desc, value, onChange }: { label: string; desc: string;
       </div>
       <button
         onClick={() => onChange(!value)}
+        aria-label={label}
+        aria-pressed={value}
         className={`relative w-10 h-6 rounded-full transition-colors ${
           value ? 'bg-cinnabar' : 'bg-ink-900/15'
         }`}

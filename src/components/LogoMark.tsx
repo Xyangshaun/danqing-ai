@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { memo, useState } from 'react';
 
 /**
  * DQ AI LogoMark — "朱印·凝眸"
@@ -42,7 +42,7 @@ import { useState } from 'react';
  *         或 line(25.5,19.5)-(28.5,22.5) stroke-width=2.6 round
  * 金睛:   circle(22,16) r=1.2 fill=#d4af37
  */
-export default function LogoMark() {
+function LogoMark() {
   const [isHovered, setIsHovered] = useState(false);
 
   return (
@@ -123,3 +123,10 @@ export default function LogoMark() {
     </div>
   );
 }
+
+/**
+ * React.memo 包裹:LogoMark 无 props,父组件(如 Header)重渲染时跳过。
+ * 内部 hover 状态变化仍正常触发自身重渲染。
+ */
+export default memo(LogoMark);
+
