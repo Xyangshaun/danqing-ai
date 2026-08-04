@@ -11,12 +11,13 @@ export const SITE = {
   slogan: '丹青有AI,让艺术教育更智能',
   description:
     '丹青有AI 是面向高校艺术教育的 AI 作业诊断系统,3 秒智能分析构图、色彩、笔触,支持绘画、设计、产品设计、雕塑四种创意形式,以专业美院标准助力教师减负、学生成长。',
-  url: 'https://www.domain',
+  url: 'https://www.danqing.site',
   // 业务应用入口(由业务应用自身触发飞书 OAuth,官网不接触 OAuth 细节)
-  appUrl: 'https://app.domain',
+  // 2026-08-04 调整:业务应用移至 /app 路径,官网占据根路径
+  appUrl: 'https://www.danqing.site/app',
   // 联系方式
-  email: 'contact@domain',
-  salesEmail: 'sales@domain',
+  email: 'contact@danqing.site',
+  salesEmail: 'sales@danqing.site',
   // 社交(占位)
   wechatOfficial: '丹青有AI',
 } as const;
@@ -60,7 +61,8 @@ export const FOOTER_LINKS = {
  */
 export const CTA_LINKS = {
   // 立即体验 / 免费试用 - 跳转业务应用首页(业务应用内部处理登录态)
-  trial: 'https://app.domain/',
+  // 2026-08-04 调整:业务应用移至 /app 路径
+  trial: 'https://www.danqing.site/app/',
   // 联系销售(mailto)
-  contactSales: 'mailto:sales@domain?subject=%E9%99%A2%E6%A0%A1%E7%89%88%E5%92%A8%E8%AF%A2',
+  contactSales: 'mailto:sales@danqing.site?subject=%E9%99%A2%E6%A0%A1%E7%89%88%E5%92%A8%E8%AF%A2',
 } as const;
