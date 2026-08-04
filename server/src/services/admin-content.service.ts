@@ -50,6 +50,7 @@ class AdminContentServiceClass {
     const filter: ListAdminArtworksFilter = {
       currentTenantId: ctx.tenantId,
       targetTenantId: query.tenantId,
+      userId: query.userId,
       workType: query.workType as ArtType | undefined,
       status: query.status,
       reviewStatus: query.reviewStatus as ReviewStatus | undefined,

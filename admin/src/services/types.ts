@@ -80,6 +80,14 @@ export type {
   CreateApiKeyResponse,
   RevokeApiKeyResponse,
   AdminSystemHealth,
+  // 邀请码 / 批量导入(Phase 5)
+  AdminInvitationInfo,
+  CreateAdminInvitationRequest,
+  CreateAdminInvitationResponse,
+  ListAdminInvitationsResponse,
+  BatchImportStudentItem,
+  BatchImportStudentsRequest,
+  BatchImportStudentsResponse,
 } from '@/types/api';
 
 /** GET /api/admin/users/export 查询参数(无分页) */

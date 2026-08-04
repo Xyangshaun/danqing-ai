@@ -504,10 +504,21 @@ export function extractJsonFromContent(content: string): unknown | null {
 /**
  * 将 axios 异常映射为 AIFailureReason
  * 用于可观测性分类统计
+ *
+ * 超时识别覆盖三类信号(任一命中即判超时):
+ *   1. axios connection timeout:`code = ECONNABORTED` / `ETIMEDOUT`
+ *   2. AbortController 主动取消(2.5s wall-clock deadline):`code = ERR_CANCELED` 或 `name = CanceledError`
+ *   3. 兼容旧版 axios 取消信号:`message` 含 'canceled'
  */
 function classifyAxiosError(err: AxiosError): AIFailureReason {
-  // 超时:axios code = ECONNABORTED 或 ETIMEDOUT
-  if (err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT') {
+  // 超时:axios connection timeout 或 AbortController wall-clock deadline 触发
+  if (
+    err.code === 'ECONNABORTED' ||
+    err.code === 'ETIMEDOUT' ||
+    err.code === 'ERR_CANCELED' ||
+    err.name === 'CanceledError' ||
+    err.message?.includes('canceled')
+  ) {
     return 'AI_TIMEOUT';
   }
   // 网络层错误(DNS 解析失败 / 连接拒绝 / 连接重置)
@@ -719,7 +730,12 @@ function resolveAIConfig(): ResolvedAIConfig | null {
  * @param req AI 视觉分析请求(图片源 + 作品类型 + Jimp 指标)
  * @returns AIVisionCallResult 含成功/失败信息 + 耗时 + token 用量
  *
- * SLA:超时硬性 2.5s(env.AI_API_TIMEOUT),超时即切断,不重试
+ * SLA 双层超时保障(P3-2.2 强化):
+ *   1. axios `timeout`(env.AI_API_TIMEOUT,默认 2500ms):连接/响应超时
+ *   2. AbortController wall-clock deadline:2.5s 硬切断,兜底慢速 body 流场景
+ *   二者互补,任一触发都返回 AI_TIMEOUT,由 ai-analysis.service.ts 降级到 Jimp fallback
+ *   重试策略:不重试(重试会突破 3s SLA)
+ *
  * Provider 选择:根据 AI_PROVIDER 配置,TRAE 不可用时自动降级到 GLM
  */
 export async function analyzeWithAI(req: AIVisionRequest): Promise<AIVisionCallResult> {
@@ -766,9 +782,17 @@ export async function analyzeWithAI(req: AIVisionRequest): Promise<AIVisionCallR
   };
   const requestBody = buildRequestBody(bodyReq, model);
 
+  // P3-2.2 双层超时保障:
+  //   1. axios `timeout`(连接/响应超时,但可能不覆盖慢速 body 流)
+  //   2. AbortController wall-clock deadline(2.5s 硬切断,兜底任何慢速场景)
+  // 二者互补,任一触发都会让请求失败并降级到 Jimp fallback,保障 3s SLA 不可破
+  const controller = new AbortController();
+  const abortTimer = setTimeout(() => controller.abort(), cfg.aiApiTimeout);
+
   try {
     const response: AxiosResponse = await axios.post(apiUrl, requestBody, {
       timeout: cfg.aiApiTimeout,
+      signal: controller.signal,
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${apiKey}`,
@@ -881,6 +905,10 @@ export async function analyzeWithAI(req: AIVisionRequest): Promise<AIVisionCallR
       failureReason: reason,
       durationMs,
     };
+  } finally {
+    // 清理 AbortController 定时器,防止内存泄漏
+    // (即使 abort 已触发,clearTimeout 也是安全无副作用的)
+    clearTimeout(abortTimer);
   }
 }
 

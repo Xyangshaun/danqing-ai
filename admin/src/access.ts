@@ -46,6 +46,8 @@ const access = (initialState?: InitialStateWithAuth) => {
     canAuditRead: has(perms, PERM.auditRead),
     canApiKeyRead: has(perms, PERM.apiKeyRead),
     canSystemHealth: has(perms, PERM.systemHealth),
+    // 邀请码 / 批量导入(Phase 5)
+    canInvitationWrite: has(perms, PERM.invitationWrite),
   };
 };
 

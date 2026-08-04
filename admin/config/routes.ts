@@ -170,6 +170,12 @@ export default [
         access: 'canApiKeyRead',
       },
       {
+        path: '/system/quota',
+        name: '配额管理',
+        component: './system/quota',
+        access: 'canTenantRead',
+      },
+      {
         path: '/system/health',
         name: '系统健康',
         component: './system/health',

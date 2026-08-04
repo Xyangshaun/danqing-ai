@@ -19,6 +19,12 @@ import type {
   CreateApiKeyResponse,
   RevokeApiKeyResponse,
   AdminSystemHealth,
+  AdminInvitationInfo,
+  CreateAdminInvitationRequest,
+  CreateAdminInvitationResponse,
+  ListAdminInvitationsResponse,
+  BatchImportStudentsRequest,
+  BatchImportStudentsResponse,
 } from './types';
 
 /** 租户列表 */
@@ -63,3 +69,38 @@ export function revokeApiKey(id: string): Promise<RevokeApiKeyResponse> {
 export function getSystemHealth(): Promise<AdminSystemHealth> {
   return get<AdminSystemHealth>('/api/admin/system/health');
 }
+
+// ============================================================
+// 邀请码 / 批量导入(Phase 5)
+// 对应后端:/api/admin/tenants/:id/invitations + /students/batch
+// ============================================================
+
+/** 列出租户邀请码 */
+export function listInvitations(tenantId: string): Promise<ListAdminInvitationsResponse> {
+  return get<ListAdminInvitationsResponse>(`/api/admin/tenants/${tenantId}/invitations`);
+}
+
+/** 创建邀请码 */
+export function createInvitation(
+  tenantId: string,
+  data: CreateAdminInvitationRequest,
+): Promise<CreateAdminInvitationResponse> {
+  return post<CreateAdminInvitationResponse>(`/api/admin/tenants/${tenantId}/invitations`, data);
+}
+
+/** 批量导入学生(有手机号直接建号,无手机号生成邀请码) */
+export function batchImportStudents(
+  tenantId: string,
+  data: BatchImportStudentsRequest,
+): Promise<BatchImportStudentsResponse> {
+  return post<BatchImportStudentsResponse>(`/api/admin/tenants/${tenantId}/students/batch`, data);
+}
+
+export type {
+  AdminInvitationInfo,
+  CreateAdminInvitationRequest,
+  CreateAdminInvitationResponse,
+  ListAdminInvitationsResponse,
+  BatchImportStudentsRequest,
+  BatchImportStudentsResponse,
+};

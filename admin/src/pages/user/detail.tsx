@@ -45,7 +45,7 @@ export default function UserDetailPage() {
   });
   const artworksQ = useQuery({
     queryKey: ['artworks', 'user', userId],
-    queryFn: () => listArtworks({ page: 1, pageSize: 20 }),
+    queryFn: () => listArtworks({ userId, page: 1, pageSize: 20 }),
     enabled: !!userId,
   });
 

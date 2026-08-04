@@ -29,6 +29,8 @@ const PERM_GROUPS: { module: string; codes: { code: string; name: string }[] }[]
     { code: PERM.artworkWrite, name: '审核/删除作品' },
     { code: PERM.templateRead, name: '查看模板' },
     { code: PERM.templateWrite, name: '管理模板' },
+    { code: PERM.presetRead, name: '查看预设' },
+    { code: PERM.presetWrite, name: '管理预设' },
   ]},
   { module: '订阅管理', codes: [
     { code: PERM.subscriptionRead, name: '查看订阅' },
@@ -46,6 +48,7 @@ const PERM_GROUPS: { module: string; codes: { code: string; name: string }[] }[]
     { code: PERM.apiKeyRead, name: '查看密钥' },
     { code: PERM.apiKeyWrite, name: '管理密钥' },
     { code: PERM.systemHealth, name: '系统健康' },
+    { code: PERM.invitationWrite, name: '邀请码/批量导入' },
   ]},
 ];
 

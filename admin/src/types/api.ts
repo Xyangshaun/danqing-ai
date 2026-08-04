@@ -249,6 +249,7 @@ export interface AdminArtworkListItem {
 
 export interface ListAdminArtworksQuery extends PaginationQuery {
   tenantId?: string;
+  userId?: string;
   workType?: ArtType;
   status?: AnalysisStatus;
   reviewStatus?: ReviewStatus;
@@ -688,4 +689,47 @@ export interface AdminSystemHealth {
   memoryUsageMb: number;
   nodeVersion: string;
   timestamp: ISODateString;
+}
+
+// ============ 邀请码 / 批量导入(Phase 5)============
+
+/** 邀请码信息 */
+export interface AdminInvitationInfo {
+  id: string;
+  code: string;
+  tenantId: string;
+  role: UserRole;
+  maxUses: number;
+  usedCount: number;
+  expiresAt: ISODateString;
+  createdBy: string;
+  createdAt: ISODateString;
+}
+
+export interface CreateAdminInvitationRequest {
+  role: UserRole;
+  maxUses: number;
+  expiresHours: number;
+}
+
+export type CreateAdminInvitationResponse = AdminInvitationInfo;
+
+export type ListAdminInvitationsResponse = AdminInvitationInfo[];
+
+/** 批量导入学生单条数据 */
+export interface BatchImportStudentItem {
+  name: string;
+  phone?: string;
+  email?: string;
+}
+
+export interface BatchImportStudentsRequest {
+  students: BatchImportStudentItem[];
+  role?: UserRole;
+}
+
+export interface BatchImportStudentsResponse {
+  imported: number;
+  failed: { name: string; reason: string }[];
+  invitationCodes: { name: string; code: string }[];
 }

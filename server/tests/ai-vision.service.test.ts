@@ -1018,6 +1018,20 @@ describe('ai-vision.service', () => {
         expect(result.failureReason).toBe('AI_TIMEOUT');
       });
 
+      it('should_return_timeout_on_abort_controller_cancel', async () => {
+        // P3-2.2: AbortController wall-clock deadline 触发时,axios 抛 ERR_CANCELED / CanceledError
+        aiEnvState.aiApiKey = 'test-key';
+        const abortErr = new Error('canceled') as Error & { code: string; name: string };
+        abortErr.code = 'ERR_CANCELED';
+        abortErr.name = 'CanceledError';
+        vi.mocked(axios.post).mockRejectedValue(abortErr);
+
+        const result = await analyzeWithAI(buildAiRequest());
+
+        expect(result.success).toBe(false);
+        expect(result.failureReason).toBe('AI_TIMEOUT');
+      });
+
       it('should_return_network_error_on_econnrefused', async () => {
         aiEnvState.aiApiKey = 'test-key';
         vi.mocked(axios.post).mockRejectedValue(buildAxiosError('ECONNREFUSED', 'connect ECONNREFUSED'));
@@ -1723,5 +1737,151 @@ describe('ai-analysis.service (hybrid orchestration)', () => {
     it('should_return_null_for_null_input', () => {
       expect(getAIFailureReason(null)).toBeNull();
     });
+  });
+});
+
+// ============================================================
+// 测试套件 11:AI 启用验证工作流(P3-2.4)
+// 模拟生产环境逐步启用 AI 的完整流程:
+//   禁用 → 启用但无 Key → 填入 GLM Key → 切换 TRAE(不完整)→ TRAE 完整
+// 验证每一步 isAIEnabled() + analyzeWithAI() 的行为符合预期
+// ============================================================
+
+describe('AI enablement workflow (P3-2.4)', () => {
+  // ---- 步骤 1:AI 完全禁用 ----
+
+  it('step1_disabled_state_returns_disabled_in_hybrid', async () => {
+    aiEnvState.aiEnabled = false;
+    aiEnvState.aiApiKey = '';
+    aiEnvState.aiProvider = 'glm';
+
+    expect(isAIEnabled()).toBe(false);
+
+    const result = await runHybridAnalysis({
+      imageSource: 'https://example.com/test.jpg',
+      artType: 'painting',
+    });
+
+    expect(result.aiEnhanced).toBe(false);
+    expect(result.aiMeta.aiFailureReason).toBe('AI_DISABLED');
+  });
+
+  // ---- 步骤 2:启用 AI_ENABLED=true 但未填 Key ----
+
+  it('step2_enabled_but_no_key_still_disabled', async () => {
+    aiEnvState.aiEnabled = true;
+    aiEnvState.aiApiKey = '';
+    aiEnvState.aiProvider = 'glm';
+
+    expect(isAIEnabled()).toBe(false);
+
+    const result = await analyzeWithAI(buildAiRequest());
+    expect(result.success).toBe(false);
+    expect(result.failureReason).toBe('AI_KEY_MISSING');
+  });
+
+  // ---- 步骤 3:填入 GLM Key,AI 正式启用 ----
+
+  it('step3_glm_key_present_enables_ai_and_succeeds', async () => {
+    aiEnvState.aiEnabled = true;
+    aiEnvState.aiApiKey = 'glm-key-step3';
+    aiEnvState.aiProvider = 'glm';
+
+    expect(isAIEnabled()).toBe(true);
+
+    vi.mocked(axios.post).mockResolvedValue(buildGlmResponse(buildValidAiContent()));
+    const result = await analyzeWithAI(buildAiRequest());
+
+    expect(result.success).toBe(true);
+    // 验证请求发往 GLM 端点
+    const callUrl = vi.mocked(axios.post).mock.calls[0]![0];
+    expect(callUrl).toBe(aiEnvState.aiApiUrl);
+  });
+
+  // ---- 步骤 4:切换 TRAE provider 但 TRAE 凭证不完整 → 自动降级到 GLM ----
+
+  it('step4_trae_provider_incomplete_falls_back_to_glm', async () => {
+    aiEnvState.aiEnabled = true;
+    aiEnvState.aiProvider = 'trae';
+    aiEnvState.aiApiKey = 'glm-fallback-key';
+    aiEnvState.traeApiKey = ''; // TRAE key 缺失
+    aiEnvState.traeApiUrl = '';
+    aiEnvState.traeApiModel = '';
+
+    expect(isAIEnabled()).toBe(true); // GLM key 仍可用
+
+    vi.mocked(axios.post).mockResolvedValue(buildGlmResponse(buildValidAiContent()));
+    const result = await analyzeWithAI(buildAiRequest());
+
+    expect(result.success).toBe(true);
+    // 验证请求发往 GLM 端点(降级),而非 TRAE
+    const callUrl = vi.mocked(axios.post).mock.calls[0]![0];
+    expect(callUrl).toBe(aiEnvState.aiApiUrl);
+  });
+
+  // ---- 步骤 5:TRAE 凭证完整 → 使用 TRAE ----
+
+  it('step5_trae_fully_configured_uses_trae', async () => {
+    aiEnvState.aiEnabled = true;
+    aiEnvState.aiProvider = 'trae';
+    aiEnvState.aiApiKey = 'glm-backup-key';
+    aiEnvState.traeApiKey = 'trae-key-step5';
+    aiEnvState.traeApiUrl = 'https://trae-api.example.com/v1/chat/completions';
+    aiEnvState.traeApiModel = 'trae-vision-v1';
+
+    expect(isAIEnabled()).toBe(true);
+
+    vi.mocked(axios.post).mockResolvedValue(buildGlmResponse(buildValidAiContent()));
+    const result = await analyzeWithAI(buildAiRequest());
+
+    expect(result.success).toBe(true);
+    // 验证请求发往 TRAE 端点,而非 GLM
+    const callUrl = vi.mocked(axios.post).mock.calls[0]![0];
+    expect(callUrl).toBe('https://trae-api.example.com/v1/chat/completions');
+    const body = vi.mocked(axios.post).mock.calls[0]![1] as { model: string };
+    expect(body.model).toBe('trae-vision-v1');
+  });
+
+  // ---- isAIEnabled 的 TRAE 组合覆盖 ----
+
+  it('isAIEnabled_true_when_trae_key_and_url_both_present', () => {
+    aiEnvState.aiEnabled = true;
+    aiEnvState.aiApiKey = ''; // GLM key 缺失
+    aiEnvState.aiProvider = 'trae';
+    aiEnvState.traeApiKey = 'trae-key';
+    aiEnvState.traeApiUrl = 'https://trae.example.com';
+    expect(isAIEnabled()).toBe(true);
+  });
+
+  it('isAIEnabled_false_when_trae_key_present_but_url_missing', () => {
+    aiEnvState.aiEnabled = true;
+    aiEnvState.aiApiKey = '';
+    aiEnvState.aiProvider = 'trae';
+    aiEnvState.traeApiKey = 'trae-key';
+    aiEnvState.traeApiUrl = ''; // URL 缺失
+    expect(isAIEnabled()).toBe(false);
+  });
+
+  // ---- 启用后超时仍走 fallback(3 秒 SLA 保障) ----
+
+  it('enabled_ai_timeout_falls_back_to_jimp_template_suggestions', async () => {
+    aiEnvState.aiEnabled = true;
+    aiEnvState.aiApiKey = 'test-key';
+    aiEnvState.aiProvider = 'glm';
+
+    vi.mocked(axios.post).mockRejectedValue(buildAxiosError('ECONNABORTED', 'timeout of 2500ms exceeded'));
+
+    const result = await runHybridAnalysis({
+      imageSource: 'https://example.com/test.jpg',
+      artType: 'painting',
+    });
+
+    expect(result.aiEnhanced).toBe(false);
+    expect(result.aiMeta.aiFailureReason).toBe('AI_TIMEOUT');
+    // Phase B5: 超时后 aiVisionResult 不为 null,降级为模板建议
+    expect(result.aiVisionResult).not.toBeNull();
+    expect(result.aiVisionResult!.professionalSuggestions.length).toBeGreaterThanOrEqual(3);
+    // Jimp 分析结果仍可用
+    expect(result.overallScore).toBeGreaterThan(0);
   });
 });

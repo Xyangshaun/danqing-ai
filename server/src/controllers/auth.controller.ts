@@ -194,20 +194,33 @@ export const feishuCallback: RequestHandler = async (req, res, next) => {
     // refresh_token 写 HttpOnly Cookie
     setRefreshTokenCookie(res, result.refreshToken);
     // csrf_token 写非 HttpOnly Cookie(双提交 Cookie 模式,前端读后以 X-CSRF-Token 头回传)
-    setCsrfTokenCookie(res);
+    // setCsrfTokenCookie 返回 token 值:mobile 端无法读 Cookie,需在响应体返回
+    const csrfToken = setCsrfTokenCookie(res);
 
     // 响应体返回 access_token(不返回 refresh_token)
-    return success(
-      res,
-      {
-        accessToken: result.accessToken,
-        accessTokenExpiresAt: result.accessTokenExpiresAt,
-        isFirstLogin: result.isFirstLogin,
-        user: result.user,
-        tenant: result.tenant,
-      },
-      '登录成功',
-    );
+    // mobile 端 React Native 无法可靠读取 Set-Cookie 头,且不依赖浏览器 Cookie 安全模型,
+    // 故 client=mobile 时额外返回 refreshToken + csrfToken,由移动端自行安全存储(expo-secure-store)
+    // web/admin 继续走 Cookie 模式,响应体不含这两个字段(向后兼容)
+    const payload: {
+      accessToken: string;
+      accessTokenExpiresAt: string;
+      isFirstLogin: boolean;
+      user: typeof result.user;
+      tenant: typeof result.tenant;
+      refreshToken?: string;
+      csrfToken?: string;
+    } = {
+      accessToken: result.accessToken,
+      accessTokenExpiresAt: result.accessTokenExpiresAt,
+      isFirstLogin: result.isFirstLogin,
+      user: result.user,
+      tenant: result.tenant,
+    };
+    if (client === 'mobile') {
+      payload.refreshToken = result.refreshToken;
+      payload.csrfToken = csrfToken;
+    }
+    return success(res, payload, '登录成功');
   } catch (err) {
     return next(err);
   }
@@ -356,14 +369,30 @@ export const phoneVerify: RequestHandler = async (req, res, next) => {
       userId: req.userId,
       tenantId: req.tenantId,
     });
-    // 登录类场景:refresh_token 写 Cookie + csrf_token 写 Cookie
-    if ('accessToken' in result && result.accessToken) {
-      // verifyPhoneOtp 返回 PhoneVerifyResponse(复用 FeishuCallbackResponse)
-      // 此处不直接持有 refreshToken,由 service 内部已落 Session
-      // refresh_token Cookie 需要后续扩展 service 返回;当前简化:仅返回 access_token
-      setCsrfTokenCookie(res);
+    // refresh_token 写 HttpOnly Cookie + csrf_token 写 Cookie
+    // mobile 端无法读 Cookie,client=mobile 时在响应体额外返回 refreshToken + csrfToken
+    setRefreshTokenCookie(res, result.refreshToken);
+    const csrfToken = setCsrfTokenCookie(res);
+    const payload: {
+      accessToken: string;
+      accessTokenExpiresAt: string;
+      isFirstLogin: boolean;
+      user: typeof result.user;
+      tenant: typeof result.tenant;
+      refreshToken?: string;
+      csrfToken?: string;
+    } = {
+      accessToken: result.accessToken,
+      accessTokenExpiresAt: result.accessTokenExpiresAt,
+      isFirstLogin: result.isFirstLogin,
+      user: result.user,
+      tenant: result.tenant,
+    };
+    if (client === 'mobile') {
+      payload.refreshToken = result.refreshToken;
+      payload.csrfToken = csrfToken;
     }
-    return success(res, result, 'success');
+    return success(res, payload, '登录成功');
   } catch (err) {
     return next(err);
   }
@@ -392,8 +421,28 @@ export const invitationRedeem: RequestHandler = async (req, res, next) => {
       client,
       existingUserId: req.userId,
     });
-    setCsrfTokenCookie(res);
-    return success(res, result, 'success');
+    setRefreshTokenCookie(res, result.refreshToken);
+    const csrfToken = setCsrfTokenCookie(res);
+    const payload: {
+      accessToken: string;
+      accessTokenExpiresAt: string;
+      isFirstLogin: boolean;
+      user: typeof result.user;
+      tenant: typeof result.tenant;
+      refreshToken?: string;
+      csrfToken?: string;
+    } = {
+      accessToken: result.accessToken,
+      accessTokenExpiresAt: result.accessTokenExpiresAt,
+      isFirstLogin: result.isFirstLogin,
+      user: result.user,
+      tenant: result.tenant,
+    };
+    if (client === 'mobile') {
+      payload.refreshToken = result.refreshToken;
+      payload.csrfToken = csrfToken;
+    }
+    return success(res, payload, '兑换成功');
   } catch (err) {
     return next(err);
   }
@@ -424,8 +473,28 @@ export const adminRegister: RequestHandler = async (req, res, next) => {
       deviceId,
       client,
     });
-    setCsrfTokenCookie(res);
-    return success(res, result, '注册成功');
+    setRefreshTokenCookie(res, result.refreshToken);
+    const csrfToken = setCsrfTokenCookie(res);
+    const payload: {
+      accessToken: string;
+      accessTokenExpiresAt: string;
+      isFirstLogin: boolean;
+      user: typeof result.user;
+      tenant: typeof result.tenant;
+      refreshToken?: string;
+      csrfToken?: string;
+    } = {
+      accessToken: result.accessToken,
+      accessTokenExpiresAt: result.accessTokenExpiresAt,
+      isFirstLogin: result.isFirstLogin,
+      user: result.user,
+      tenant: result.tenant,
+    };
+    if (client === 'mobile') {
+      payload.refreshToken = result.refreshToken;
+      payload.csrfToken = csrfToken;
+    }
+    return success(res, payload, '注册成功');
   } catch (err) {
     return next(err);
   }
@@ -453,8 +522,28 @@ export const adminLogin: RequestHandler = async (req, res, next) => {
       deviceId,
       client,
     });
-    setCsrfTokenCookie(res);
-    return success(res, result, '登录成功');
+    setRefreshTokenCookie(res, result.refreshToken);
+    const csrfToken = setCsrfTokenCookie(res);
+    const payload: {
+      accessToken: string;
+      accessTokenExpiresAt: string;
+      isFirstLogin: boolean;
+      user: typeof result.user;
+      tenant: typeof result.tenant;
+      refreshToken?: string;
+      csrfToken?: string;
+    } = {
+      accessToken: result.accessToken,
+      accessTokenExpiresAt: result.accessTokenExpiresAt,
+      isFirstLogin: result.isFirstLogin,
+      user: result.user,
+      tenant: result.tenant,
+    };
+    if (client === 'mobile') {
+      payload.refreshToken = result.refreshToken;
+      payload.csrfToken = csrfToken;
+    }
+    return success(res, payload, '登录成功');
   } catch (err) {
     return next(err);
   }

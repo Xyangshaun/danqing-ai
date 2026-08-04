@@ -254,6 +254,18 @@ export interface FeishuCallbackResponse {
   user: UserProfile;
   /** 当前激活租户信息 */
   tenant: TenantInfo;
+  /**
+   * refresh_token(仅 client=mobile 时返回)
+   * RN 无法可靠读取 Set-Cookie,故 mobile 分支在响应体返回,
+   * 由移动端自行安全存储(expo-secure-store),刷新时以 Cookie header 回传 /auth/refresh。
+   * web/admin 走 HttpOnly Cookie 模式,该字段为 undefined。
+   */
+  refreshToken?: string;
+  /**
+   * CSRF token(仅 client=mobile 时返回,与 refreshToken 同周期下发)
+   * 刷新时以 X-CSRF-Token 头回传,后端 csrfMiddleware 校验双提交。
+   */
+  csrfToken?: string;
 }
 
 /** POST /auth/refresh 响应 */
@@ -1285,6 +1297,7 @@ export interface AdminArtworkListItem {
 /** GET /api/admin/artworks 查询参数 */
 export interface ListAdminArtworksQuery extends PaginationQuery {
   tenantId?: string;
+  userId?: string;
   workType?: ArtType;
   status?: AnalysisStatus;
   reviewStatus?: ReviewStatus;

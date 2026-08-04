@@ -42,13 +42,14 @@ let pendingQueue: Array<() => void> = [];
 /** 触发 token 刷新(单飞) */
 async function triggerRefresh(): Promise<boolean> {
   if (isRefreshing) {
-    // 已有刷新在进行,等待
+    // 已有刷新在进行,等待其完成(无论成功与否都会被唤醒)
     await new Promise<void>((resolve) => {
       pendingQueue.push(resolve);
     });
     return !isTokenExpired();
   }
   isRefreshing = true;
+  let refreshed = false;
   try {
     const res = await axios.post<ApiResponse<{ accessToken: string; accessTokenExpiresAt: string }>>(
       '/api/v1/auth/refresh',
@@ -57,17 +58,18 @@ async function triggerRefresh(): Promise<boolean> {
     );
     if (res.data?.code === 0 && res.data.data) {
       setAccessToken(res.data.data.accessToken, res.data.data.accessTokenExpiresAt);
-      // 唤醒队列
-      pendingQueue.forEach((fn) => fn());
-      pendingQueue = [];
-      return true;
+      refreshed = true;
     }
-    return false;
   } catch {
-    return false;
+    refreshed = false;
   } finally {
+    // 无论成功与否都必须唤醒排队请求,避免永久挂起;
+    // 失败时排队请求会通过 isTokenExpired() 判定为 false 并走 redirectToLogin。
+    pendingQueue.forEach((fn) => fn());
+    pendingQueue = [];
     isRefreshing = false;
   }
+  return refreshed;
 }
 
 /** 跳转登录(清 token + 跳转) */

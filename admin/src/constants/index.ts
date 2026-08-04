@@ -53,6 +53,11 @@ export const PERM = {
   apiKeyWrite: 'admin:apikey:write',
   // 系统健康
   systemHealth: 'admin:system:health',
+  // 邀请码 / 批量导入(Phase 5)
+  invitationWrite: 'admin:invitation:write',
+  // 预设管理(Phase 5)
+  presetRead: 'admin:preset:read',
+  presetWrite: 'admin:preset:write',
 } as const;
 
 /** 角色 → 中文 */

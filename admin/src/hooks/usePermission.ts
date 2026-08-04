@@ -53,6 +53,7 @@ export function usePermission() {
       apiKeyRead: hasPermission(PERM.apiKeyRead),
       apiKeyWrite: hasPermission(PERM.apiKeyWrite),
       systemHealth: hasPermission(PERM.systemHealth),
+      invitationWrite: hasPermission(PERM.invitationWrite),
     },
   };
 }

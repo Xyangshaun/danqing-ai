@@ -15,9 +15,13 @@ import type {
 
 type ClientTypeLike = 'web' | 'admin' | 'mobile' | 'marketing';
 
-/** 飞书回调地址(构建时注入,避免硬编码) */
+/**
+ * 飞书回调地址(构建期由 define 注入)。
+ * 注意:必须连续书写 process.env.FEISHU_REDIRECT_URI,
+ * 以精确匹配 config/config.ts 中 define 的键,否则构建期不会替换。
+ */
 const FEISHU_REDIRECT_URI =
-  (typeof process !== 'undefined' && (process as { env?: Record<string, string> }).env?.FEISHU_REDIRECT_URI) ||
+  (typeof process !== 'undefined' && process.env.FEISHU_REDIRECT_URI) ||
   'http://localhost:8000/auth/feishu/callback';
 
 /** 获取飞书授权 URL */

@@ -20,6 +20,7 @@ import { prisma } from '../config/prisma.js';
 export interface ListAdminArtworksFilter {
   currentTenantId: string;
   targetTenantId?: string;
+  userId?: string;
   workType?: ArtType;
   status?: AnalysisStatus;
   reviewStatus?: ReviewStatus;
@@ -40,6 +41,7 @@ export class AdminContentRepository {
 
     where.tenantId = filter.targetTenantId ?? filter.currentTenantId;
 
+    if (filter.userId) where.userId = filter.userId;
     if (filter.workType) where.workType = filter.workType;
     if (filter.status) where.status = filter.status;
     if (filter.reviewStatus) where.reviewStatus = filter.reviewStatus;

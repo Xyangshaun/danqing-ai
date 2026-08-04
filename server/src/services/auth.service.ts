@@ -18,7 +18,7 @@ import { getSmsGateway } from './sms-gateway.service.js';
 import { generateState, isValidStateFormat, generateUuid, safeEqual } from '../utils/crypto.js';
 import { hashPassword, verifyPassword, validatePasswordComplexity } from '../utils/password.js';
 import { BusinessError } from '../middlewares/error-handler.js';
-import { ErrorCode, type UserProfile, type TenantInfo, type TenantMembership, type FeishuAuthorizeResponse, type AuthRefreshResponse, type AuthLogoutResponse, type AuthMeResponse, type UserRole, type PhoneOtpResponse, type PhoneVerifyResponse, type InvitationRedeemResponse, type AdminLoginResponse } from '../types/api-contract.js';
+import { ErrorCode, type UserProfile, type TenantInfo, type TenantMembership, type FeishuAuthorizeResponse, type AuthRefreshResponse, type AuthLogoutResponse, type AuthMeResponse, type UserRole, type PhoneOtpResponse } from '../types/api-contract.js';
 import type { AuthType } from '../types/arbitration.js';
 import { logger } from '../utils/logger.js';
 import type { Tenant, User } from '@prisma/client';
@@ -401,7 +401,7 @@ class AuthServiceClass {
     client: 'web' | 'admin' | 'mobile';
     userId?: string; // bind 场景必传
     tenantId?: string; // bind 场景必传
-  }): Promise<PhoneVerifyResponse> {
+  }): Promise<AuthLoginResult> {
     // 1. 校验验证码
     await this.consumeOtp(params.phone, params.code, params.purpose);
 
@@ -432,7 +432,7 @@ class AuthServiceClass {
     deviceId: string;
     client: 'web' | 'admin' | 'mobile';
     existingUserId?: string; // 已登录用户兑换邀请码加入新租户
-  }): Promise<InvitationRedeemResponse> {
+  }): Promise<AuthLoginResult> {
     // 1. 校验邀请码
     const invitation = await invitationRepository.findValidByCode(params.code);
     if (!invitation) {
@@ -509,13 +509,7 @@ class AuthServiceClass {
       isFirstLogin,
     });
 
-    return {
-      accessToken: result.accessToken,
-      accessTokenExpiresAt: result.accessTokenExpiresAt,
-      isFirstLogin,
-      user: result.user,
-      tenant: result.tenant,
-    };
+    return result;
   }
 
   // ============================================================
@@ -536,7 +530,7 @@ class AuthServiceClass {
     userAgent: string;
     deviceId: string;
     client: 'web' | 'admin' | 'mobile';
-  }): Promise<AdminLoginResponse> {
+  }): Promise<AuthLoginResult> {
     // 1. 校验邀请码(必须是 admin 角色)
     const invitation = await invitationRepository.findValidByCode(params.invitationCode);
     if (!invitation) {
@@ -615,13 +609,7 @@ class AuthServiceClass {
       isFirstLogin: true,
     });
 
-    return {
-      accessToken: result.accessToken,
-      accessTokenExpiresAt: result.accessTokenExpiresAt,
-      isFirstLogin: true,
-      user: result.user,
-      tenant: result.tenant,
-    };
+    return result;
   }
 
   /**
@@ -634,7 +622,7 @@ class AuthServiceClass {
     userAgent: string;
     deviceId: string;
     client: 'web' | 'admin' | 'mobile';
-  }): Promise<AdminLoginResponse> {
+  }): Promise<AuthLoginResult> {
     // 1. 查询用户(按邮箱)
     const user = await userRepository.findByEmail(params.email);
     if (!user) {
@@ -683,13 +671,7 @@ class AuthServiceClass {
       isFirstLogin: false,
     });
 
-    return {
-      accessToken: result.accessToken,
-      accessTokenExpiresAt: result.accessTokenExpiresAt,
-      isFirstLogin: false,
-      user: result.user,
-      tenant: result.tenant,
-    };
+    return result;
   }
 
   // ============================================================
@@ -784,7 +766,7 @@ class AuthServiceClass {
     userAgent: string;
     deviceId: string;
     client: 'web' | 'admin' | 'mobile';
-  }): Promise<PhoneVerifyResponse> {
+  }): Promise<AuthLoginResult> {
     // 1. 若带邀请码:校验并加入租户
     let tenant: Tenant;
     let role: UserRole = 'student';
@@ -848,13 +830,7 @@ class AuthServiceClass {
       isFirstLogin: true,
     });
 
-    return {
-      accessToken: result.accessToken,
-      accessTokenExpiresAt: result.accessTokenExpiresAt,
-      isFirstLogin: true,
-      user: result.user,
-      tenant: result.tenant,
-    };
+    return result;
   }
 
   /**
@@ -866,7 +842,7 @@ class AuthServiceClass {
     userAgent: string;
     deviceId: string;
     client: 'web' | 'admin' | 'mobile';
-  }): Promise<PhoneVerifyResponse> {
+  }): Promise<AuthLoginResult> {
     const user = await userRepository.findByPhone(params.phone);
     if (!user) {
       throw new BusinessError(ErrorCode.RESOURCE_NOT_FOUND, '该手机号未注册', 404);
@@ -900,13 +876,7 @@ class AuthServiceClass {
       isFirstLogin: false,
     });
 
-    return {
-      accessToken: result.accessToken,
-      accessTokenExpiresAt: result.accessTokenExpiresAt,
-      isFirstLogin: false,
-      user: result.user,
-      tenant: result.tenant,
-    };
+    return result;
   }
 
   /**
@@ -920,7 +890,7 @@ class AuthServiceClass {
     userAgent: string;
     deviceId: string;
     client: 'web' | 'admin' | 'mobile';
-  }): Promise<PhoneVerifyResponse> {
+  }): Promise<AuthLoginResult> {
     if (!params.userId || !params.tenantId) {
       throw new BusinessError(ErrorCode.UNAUTHORIZED, 'bind 场景必须已登录', 401);
     }
@@ -951,13 +921,7 @@ class AuthServiceClass {
       isFirstLogin: false,
     });
 
-    return {
-      accessToken: result.accessToken,
-      accessTokenExpiresAt: result.accessTokenExpiresAt,
-      isFirstLogin: false,
-      user: result.user,
-      tenant: result.tenant,
-    };
+    return result;
   }
 
   /**
@@ -969,7 +933,7 @@ class AuthServiceClass {
     userAgent: string;
     deviceId: string;
     client: 'web' | 'admin' | 'mobile';
-  }): Promise<PhoneVerifyResponse> {
+  }): Promise<AuthLoginResult> {
     // 生成临时重置 token(UUID)
     const resetToken = generateUuid();
     await redis().set(
@@ -1003,13 +967,7 @@ class AuthServiceClass {
 
     logger.info({ userId: user.id, resetToken: resetToken.slice(0, 8) + '...' }, '[auth] phone reset verified');
 
-    return {
-      accessToken: result.accessToken,
-      accessTokenExpiresAt: result.accessTokenExpiresAt,
-      isFirstLogin: false,
-      user: result.user,
-      tenant: result.tenant,
-    };
+    return result;
   }
 
   /**
@@ -1023,13 +981,7 @@ class AuthServiceClass {
     clientIp: string;
     userAgent: string;
     isFirstLogin: boolean;
-  }): Promise<{
-    accessToken: string;
-    accessTokenExpiresAt: string;
-    refreshToken: string;
-    user: UserProfile;
-    tenant: TenantInfo;
-  }> {
+  }): Promise<AuthLoginResult> {
     const { user, tenant } = params;
 
     // 签发 JWT
@@ -1065,6 +1017,7 @@ class AuthServiceClass {
       accessToken: accessResult.token,
       accessTokenExpiresAt: accessResult.expiresAt.toISOString(),
       refreshToken: refreshResult.token,
+      isFirstLogin: params.isFirstLogin,
       user: this.toUserProfile(user),
       tenant: this.toTenantInfo(tenant),
     };

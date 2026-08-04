@@ -5,18 +5,43 @@
 // - 多租户层级(parentId)
 // ============================================================
 
-import { useRef, useState } from 'react';
+import { useRef, useState, useCallback, useEffect } from 'react';
 import type { ActionType, ProColumns } from '@ant-design/pro-components';
 import { ProTable, PageContainer } from '@ant-design/pro-components';
-import { Tag, Button, App, Modal, Form, Input, InputNumber, Select } from 'antd';
-import { PlusOutlined, EditOutlined } from '@ant-design/icons';
+import {
+  Tag,
+  Button,
+  App,
+  Modal,
+  Form,
+  Input,
+  InputNumber,
+  Select,
+  Drawer,
+  Tabs,
+  Table,
+  Alert,
+  Space,
+  Empty,
+} from 'antd';
+import { PlusOutlined, EditOutlined, TeamOutlined, CopyOutlined, MinusCircleOutlined } from '@ant-design/icons';
 import type {
   AdminTenantListItem,
   TenantType,
   TenantPlan,
   TenantStatus,
+  AdminInvitationInfo,
+  UserRole,
+  BatchImportStudentsResponse,
 } from '@/types/api';
-import { listTenants, createTenant, updateTenant } from '@/services/system';
+import {
+  listTenants,
+  createTenant,
+  updateTenant,
+  listInvitations,
+  createInvitation,
+  batchImportStudents,
+} from '@/services/system';
 import Access from '@/components/Access';
 import { useConfirmAction } from '@/components/ConfirmAction';
 import {
@@ -29,6 +54,9 @@ import {
   TENANT_STATUS_LABEL,
   TENANT_STATUS_COLOR,
   TENANT_STATUS_OPTIONS,
+  ROLE_LABEL,
+  ROLE_OPTIONS,
+  ROLE_COLOR,
 } from '@/constants';
 import { formatDateTime } from '@/utils/format';
 
@@ -107,6 +135,89 @@ export default function TenantsPage() {
       () => updateTenant(record.id, { status: next }),
     ).then(() => tableRef.current?.reload());
   };
+
+  // ============ 成员/邀请 抽屉 ============
+  const [memberDrawerOpen, setMemberDrawerOpen] = useState(false);
+  const [memberTenant, setMemberTenant] = useState<AdminTenantListItem | null>(null);
+  const [invitations, setInvitations] = useState<AdminInvitationInfo[]>([]);
+  const [invitationsLoading, setInvitationsLoading] = useState(false);
+  const [createInvOpen, setCreateInvOpen] = useState(false);
+  const [createInvForm] = Form.useForm();
+  const [batchForm] = Form.useForm();
+  const [batchResult, setBatchResult] = useState<BatchImportStudentsResponse | null>(null);
+  const [batchSubmitting, setBatchSubmitting] = useState(false);
+
+  const loadInvitations = useCallback(async (tenantId: string) => {
+    setInvitationsLoading(true);
+    try {
+      const res = await listInvitations(tenantId);
+      setInvitations(res ?? []);
+    } catch {
+      setInvitations([]);
+    } finally {
+      setInvitationsLoading(false);
+    }
+  }, []);
+
+  const openMemberDrawer = (record: AdminTenantListItem) => {
+    setMemberTenant(record);
+    setMemberDrawerOpen(true);
+    setBatchResult(null);
+    loadInvitations(record.id);
+  };
+
+  useEffect(() => {
+    if (memberDrawerOpen && memberTenant) {
+      loadInvitations(memberTenant.id);
+    }
+  }, [memberDrawerOpen, memberTenant, loadInvitations]);
+
+  const openCreateInv = () => {
+    createInvForm.resetFields();
+    createInvForm.setFieldsValue({ role: 'student', maxUses: 1, expiresHours: 168 });
+    setCreateInvOpen(true);
+  };
+
+  const onCreateInvSubmit = async () => {
+    if (!memberTenant) return;
+    const values = await createInvForm.validateFields();
+    await createInvitation(memberTenant.id, {
+      role: values.role as UserRole,
+      maxUses: values.maxUses as number,
+      expiresHours: values.expiresHours as number,
+    });
+    message.success('邀请码已创建');
+    setCreateInvOpen(false);
+    loadInvitations(memberTenant.id);
+  };
+
+  const copyCode = (code: string) => {
+    navigator.clipboard.writeText(code);
+    message.success('已复制邀请码');
+  };
+
+  const onBatchImport = async () => {
+    if (!memberTenant) return;
+    const values = await batchForm.validateFields();
+    const students = (values.students ?? []) as { name: string; phone?: string; email?: string }[];
+    if (students.length === 0) {
+      message.warning('请至少添加一名学生');
+      return;
+    }
+    setBatchSubmitting(true);
+    try {
+      const res = await batchImportStudents(memberTenant.id, {
+        students,
+        role: (values.role as UserRole) ?? 'student',
+      });
+      setBatchResult(res);
+      message.success(`导入完成:成功 ${res.imported} 人,失败 ${res.failed.length} 人`);
+      tableRef.current?.reload();
+    } finally {
+      setBatchSubmitting(false);
+    }
+  };
+
 
   const columns: ProColumns<AdminTenantListItem>[] = [
     {
@@ -190,12 +301,17 @@ export default function TenantsPage() {
     {
       title: '操作',
       valueType: 'option',
-      width: 160,
+      width: 220,
       fixed: 'right',
       render: (_, r) => [
         <Access key="edit" permission={PERM.tenantWrite}>
           <a onClick={() => openEdit(r)}>
             <EditOutlined /> 编辑
+          </a>
+        </Access>,
+        <Access key="members" permission={PERM.invitationWrite}>
+          <a onClick={() => openMemberDrawer(r)}>
+            <TeamOutlined /> 成员
           </a>
         </Access>,
         <Access key="toggle" permission={PERM.tenantWrite}>
@@ -278,6 +394,231 @@ export default function TenantsPage() {
               </Form.Item>
             </>
           )}
+        </Form>
+      </Modal>
+
+      {/* 成员 / 邀请码 / 批量导入 抽屉 */}
+      <Drawer
+        title={memberTenant ? `成员管理 · ${memberTenant.name}` : '成员管理'}
+        open={memberDrawerOpen}
+        onClose={() => setMemberDrawerOpen(false)}
+        width={720}
+        destroyOnClose
+      >
+        {memberTenant && (
+          <Tabs
+            defaultActiveKey="invitations"
+            items={[
+              {
+                key: 'invitations',
+                label: `邀请码 (${invitations.length})`,
+                children: (
+                  <div>
+                    <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ color: '#8c8c8c', fontSize: 13 }}>
+                        席位 {memberTenant.memberCount}/{memberTenant.maxSeats}
+                      </span>
+                      <Button type="primary" icon={<PlusOutlined />} onClick={openCreateInv} size="small">
+                        创建邀请码
+                      </Button>
+                    </div>
+                    <Table<AdminInvitationInfo>
+                      size="small"
+                      rowKey="id"
+                      loading={invitationsLoading}
+                      dataSource={invitations}
+                      pagination={false}
+                      scroll={{ y: 420 }}
+                      locale={{ emptyText: <Empty description="暂无邀请码" /> }}
+                      columns={[
+                        {
+                          title: '邀请码',
+                          dataIndex: 'code',
+                          width: 180,
+                          render: (_, r) => (
+                            <Space>
+                              <code style={{ background: '#f5f0e3', padding: '2px 6px', borderRadius: 3, fontSize: 12 }}>
+                                {r.code}
+                              </code>
+                              <Button
+                                type="text"
+                                size="small"
+                                icon={<CopyOutlined />}
+                                onClick={() => copyCode(r.code)}
+                              />
+                            </Space>
+                          ),
+                        },
+                        {
+                          title: '角色',
+                          dataIndex: 'role',
+                          width: 80,
+                          render: (r: UserRole) => <Tag color={ROLE_COLOR[r]}>{ROLE_LABEL[r]}</Tag>,
+                        },
+                        {
+                          title: '使用量',
+                          dataIndex: 'usedCount',
+                          width: 100,
+                          render: (_, r) => (
+                            <span>
+                              {r.usedCount}/{r.maxUses}
+                              {r.usedCount >= r.maxUses && <Tag color="default" style={{ marginLeft: 4 }}>已用尽</Tag>}
+                            </span>
+                          ),
+                        },
+                        {
+                          title: '过期时间',
+                          dataIndex: 'expiresAt',
+                          width: 150,
+                          render: (v: string) => {
+                            const expired = new Date(v).getTime() < Date.now();
+                            return (
+                              <span style={{ color: expired ? '#c8392e' : undefined }}>
+                                {formatDateTime(v)}
+                                {expired && <Tag color="error" style={{ marginLeft: 4 }}>已过期</Tag>}
+                              </span>
+                            );
+                          },
+                        },
+                        {
+                          title: '创建时间',
+                          dataIndex: 'createdAt',
+                          width: 150,
+                          render: (v: string) => formatDateTime(v),
+                        },
+                      ]}
+                    />
+                  </div>
+                ),
+              },
+              {
+                key: 'batch',
+                label: '批量导入',
+                children: (
+                  <div>
+                    <Alert
+                      type="info"
+                      showIcon
+                      style={{ marginBottom: 16 }}
+                      message="批量导入学生"
+                      description="有手机号的学生将直接创建账号并加入租户;无手机号的学生将生成一次性邀请码供其自行注册。单次最多 500 人。"
+                    />
+                    <Form form={batchForm} layout="vertical" initialValues={{ role: 'student', students: [{ name: '' }] }}>
+                      <Form.Item label="导入角色" name="role" rules={[{ required: true }]}>
+                        <Select options={ROLE_OPTIONS} style={{ width: 200 }} />
+                      </Form.Item>
+                      <Form.List name="students">
+                        {(fields, { add, remove }) => (
+                          <>
+                            {fields.map((field) => (
+                              <Space key={field.key} align="baseline" style={{ display: 'flex', marginBottom: 8 }}>
+                                <Form.Item
+                                  {...field}
+                                  name={[field.name, 'name']}
+                                  rules={[{ required: true, message: '姓名' }]}
+                                  style={{ marginBottom: 0 }}
+                                >
+                                  <Input placeholder="姓名" style={{ width: 120 }} />
+                                </Form.Item>
+                                <Form.Item
+                                  {...field}
+                                  name={[field.name, 'phone']}
+                                  style={{ marginBottom: 0 }}
+                                >
+                                  <Input placeholder="手机号(可选)" style={{ width: 160 }} />
+                                </Form.Item>
+                                <Form.Item
+                                  {...field}
+                                  name={[field.name, 'email']}
+                                  rules={[{ type: 'email', message: '邮箱格式错误' }]}
+                                  style={{ marginBottom: 0 }}
+                                >
+                                  <Input placeholder="邮箱(可选)" style={{ width: 180 }} />
+                                </Form.Item>
+                                {fields.length > 1 && (
+                                  <MinusCircleOutlined
+                                    onClick={() => remove(field.name)}
+                                    style={{ color: '#c8392e' }}
+                                  />
+                                )}
+                              </Space>
+                            ))}
+                            <Button type="dashed" onClick={() => add({ name: '' })} icon={<PlusOutlined />} block>
+                              添加学生
+                            </Button>
+                          </>
+                        )}
+                      </Form.List>
+                      <Button
+                        type="primary"
+                        onClick={onBatchImport}
+                        loading={batchSubmitting}
+                        style={{ marginTop: 16 }}
+                      >
+                        开始导入
+                      </Button>
+                    </Form>
+                    {batchResult && (
+                      <Alert
+                        type={batchResult.failed.length > 0 ? 'warning' : 'success'}
+                        showIcon
+                        style={{ marginTop: 16 }}
+                        message={`导入完成:成功 ${batchResult.imported} 人,失败 ${batchResult.failed.length} 人`}
+                        description={
+                          <div>
+                            {batchResult.failed.length > 0 && (
+                              <div style={{ marginBottom: 8 }}>
+                                <b>失败明细:</b>
+                                <ul style={{ margin: '4px 0 0', paddingLeft: 20 }}>
+                                  {batchResult.failed.map((f, i) => (
+                                    <li key={i}>{f.name}:{f.reason}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                            {batchResult.invitationCodes.length > 0 && (
+                              <div>
+                                <b>生成的邀请码:</b>
+                                <ul style={{ margin: '4px 0 0', paddingLeft: 20 }}>
+                                  {batchResult.invitationCodes.map((c, i) => (
+                                    <li key={i}>
+                                      {c.name}:<code>{c.code}</code>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                          </div>
+                        }
+                      />
+                    )}
+                  </div>
+                ),
+              },
+            ]}
+          />
+        )}
+      </Drawer>
+
+      {/* 创建邀请码 Modal */}
+      <Modal
+        title="创建邀请码"
+        open={createInvOpen}
+        onOk={onCreateInvSubmit}
+        onCancel={() => setCreateInvOpen(false)}
+        width={460}
+        destroyOnClose
+      >
+        <Form form={createInvForm} layout="vertical">
+          <Form.Item label="邀请角色" name="role" rules={[{ required: true }]}>
+            <Select options={ROLE_OPTIONS} />
+          </Form.Item>
+          <Form.Item label="最大使用次数" name="maxUses" rules={[{ required: true }]}>
+            <InputNumber min={1} max={100} style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item label="有效时长(小时)" name="expiresHours" rules={[{ required: true }]} extra="最长 720 小时(30 天)">
+            <InputNumber min={1} max={720} style={{ width: '100%' }} />
+          </Form.Item>
         </Form>
       </Modal>
     </PageContainer>
