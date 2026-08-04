@@ -1,0 +1,5 @@
+User-Agent: *
+Allow: /
+
+Host: https://www.danqing.site
+Sitemap: https://www.danqing.site/sitemap.xml
