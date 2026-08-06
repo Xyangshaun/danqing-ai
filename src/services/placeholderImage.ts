@@ -122,10 +122,10 @@ export function placeholderImage(
   <circle cx="${blob2X}" cy="${blob2Y}" r="${Math.floor(Math.max(w, h) * 0.35)}" fill="url(#blob2)"/>
   <g opacity="0.95">
     <circle cx="${dotX}" cy="${dotY}" r="${dotR}" fill="${accent}" opacity="0.92"/>
-    <text x="${dotX}" y="${dotY + 1}" font-family="'Songti SC','SimSun',serif" font-size="${Math.floor(dotR * 0.95)}" fill="${bg}" text-anchor="middle" dominant-baseline="middle" font-weight="600">丹</text>
+    <text x="${dotX}" y="${dotY + 1}" font-family="Songti SC,SimSun,serif" font-size="${Math.floor(dotR * 0.95)}" fill="${bg}" text-anchor="middle" dominant-baseline="middle" font-weight="600">丹</text>
   </g>
-  <text x="${w / 2}" y="${h / 2}" font-family="'Songti SC','SimSun','STSong',serif" font-size="${titleFontSize}" fill="#1a1a1a" text-anchor="middle" dominant-baseline="middle" font-weight="500">${title}</text>
-  ${subtitle ? `<text x="${w / 2}" y="${h / 2 + titleFontSize * 0.95}" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif" font-size="${subFontSize}" fill="#1a1a1a" opacity="0.55" text-anchor="middle" dominant-baseline="middle">${subtitle}</text>` : ''}
+  <text x="${w / 2}" y="${h / 2}" font-family="Songti SC,SimSun,STSong,serif" font-size="${titleFontSize}" fill="#1a1a1a" text-anchor="middle" dominant-baseline="middle" font-weight="500">${title}</text>
+  ${subtitle ? `<text x="${w / 2}" y="${h / 2 + titleFontSize * 0.95}" font-family="-apple-system,BlinkMacSystemFont,PingFang SC,Microsoft YaHei,sans-serif" font-size="${subFontSize}" fill="#1a1a1a" opacity="0.55" text-anchor="middle" dominant-baseline="middle">${subtitle}</text>` : ''}
   <rect x="0.5" y="0.5" width="${w - 1}" height="${h - 1}" fill="none" stroke="#1a1a1a" stroke-opacity="0.06" stroke-width="1"/>
 </svg>`;
 
