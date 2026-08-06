@@ -52,10 +52,21 @@ export function Navbar() {
       <header
         className={`fixed inset-x-0 top-0 z-50 transition-all duration-500 ease-ink ${
           scrolled
-            ? 'bg-paper-50/85 backdrop-blur-md shadow-ink-sm border-b border-ink-100/60'
-            : 'bg-transparent border-b border-transparent'
+            ? 'border-b border-ink-100/40 bg-paper-50/70 shadow-ink-sm backdrop-blur-xl'
+            : 'border-b border-transparent bg-transparent'
         }`}
       >
+        {/* 滚动后底部金线装饰 */}
+        {scrolled && (
+          <div
+            className="pointer-events-none absolute inset-x-0 bottom-0 h-px opacity-60"
+            aria-hidden="true"
+            style={{
+              background:
+                'linear-gradient(90deg, transparent 0%, rgba(201, 169, 97, 0.4) 30%, rgba(201, 169, 97, 0.4) 70%, transparent 100%)',
+            }}
+          />
+        )}
         <nav className="container-content flex h-16 items-center justify-between md:h-18">
           <Logo size="md" />
 

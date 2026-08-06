@@ -52,6 +52,8 @@ type SectionHeaderProps = {
   eyebrow?: string;
   title: React.ReactNode;
   description?: React.ReactNode;
+  /** 英文副标题,增强排版层次和国际感(借鉴 TTT ise 封面中文大标题+英文小字层级) */
+  subtitleEn?: string;
   align?: 'left' | 'center';
   variant?: 'default' | 'light';
   className?: string;
@@ -64,6 +66,7 @@ export function SectionHeader({
   eyebrow,
   title,
   description,
+  subtitleEn,
   align = 'left',
   variant = 'default',
   className = '',
@@ -82,8 +85,18 @@ export function SectionHeader({
           {eyebrow}
         </span>
       )}
+      {/* 英文副标题:大标题上方的半透明小字 */}
+      {subtitleEn && (
+        <p
+          className={`mt-3 text-xs font-medium uppercase tracking-[0.25em] ${
+            isLight ? 'text-paper-200/40' : 'text-ink-300'
+          }`}
+        >
+          {subtitleEn}
+        </p>
+      )}
       <h2
-        className={`mt-4 text-display-md font-semibold leading-tight ${
+        className={`mt-2 text-display-md font-semibold leading-tight ${
           isLight ? 'text-paper-50' : 'text-ink-900'
         }`}
       >

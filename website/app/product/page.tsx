@@ -6,6 +6,7 @@ import { RevealOnScroll } from '@/components/ui/RevealOnScroll';
 import { CTASection } from '@/components/ui/CTASection';
 import { JsonLd } from '@/components/seo/JsonLd';
 import { buildMetadata, breadcrumbJsonLd } from '@/lib/seo';
+import { BRAND_ART } from '@/lib/artworks';
 
 export const metadata: Metadata = buildMetadata({
   title: '产品功能 - 三大分析维度与四种创意形式',
@@ -164,6 +165,18 @@ export default function ProductPage() {
                 </li>
               ))}
             </ul>
+            {/* 品牌画作配图 */}
+            <div className="relative mt-8 overflow-hidden rounded-lg border border-ink-100/40 shadow-ink-lg">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={BRAND_ART}
+                alt="灵感融合 · 丹青水墨意象"
+                loading="lazy"
+                className="aspect-[16/9] w-full object-cover"
+              />
+              <div className="pointer-events-none absolute inset-2 border border-paper-50/40" aria-hidden="true" />
+              <div className="absolute inset-x-0 bottom-0 h-1/4 bg-gradient-to-t from-ink-900/40 to-transparent" />
+            </div>
           </RevealOnScroll>
 
           <RevealOnScroll direction="up" delay={0.1}>

@@ -49,15 +49,29 @@ const accentText = {
   gold: 'text-gold-600',
 };
 
+const accentTextGradient = {
+  cinnabar: 'text-gradient-cinnabar',
+  stone: 'text-stone-500',
+  gold: 'text-gradient-gold',
+};
+
+const accentBgSoft = {
+  cinnabar: 'bg-cinnabar-50/50',
+  stone: 'bg-stone-50/50',
+  gold: 'bg-gold-50/50',
+};
+
 /**
  * 功能展示:三大分析维度
  * 左右交错布局,每维度配 SVG 视觉示意
+ * 视觉卡片:玻璃材质 + 渐变边框光 + 内高光
  */
 export function FeatureShowcase() {
   return (
     <Section spacing="lg" background="muted" id="features">
       <SectionHeader
         eyebrow="功能展示"
+        subtitleEn="AI Diagnosis"
         title={<>三大分析维度,深度理解每一张作业</>}
         description="构图、色彩、笔触——画面的骨架、血肉与肌理。丹青有AI 以专业美院教学标准,逐一拆解。"
       />
@@ -71,7 +85,7 @@ export function FeatureShowcase() {
                 {/* 文字 */}
                 <div className={reversed ? 'md:order-2' : ''}>
                   <div className="flex items-baseline gap-4">
-                    <span className={`font-serif text-6xl font-semibold ${accentText[feature.accent]} opacity-70`}>
+                    <span className={`font-serif text-6xl font-semibold ${accentTextGradient[feature.accent]} opacity-80`}>
                       {feature.no}
                     </span>
                     <div>
@@ -93,10 +107,20 @@ export function FeatureShowcase() {
                     ))}
                   </ul>
                 </div>
-                {/* 视觉 */}
+                {/* 视觉:玻璃卡片 + 渐变边框光 + AI 数据叠加层 */}
                 <div className={reversed ? 'md:order-1' : ''}>
-                  <div className="ink-card aspect-[4/3] p-6">
-                    {feature.visual}
+                  <div className="group relative aspect-[4/3]">
+                    {/* 外发光层 */}
+                    <div
+                      className={`absolute -inset-1 rounded-lg ${accentBgSoft[feature.accent]} opacity-0 blur-xl transition-opacity duration-700 ease-ink group-hover:opacity-100`}
+                      aria-hidden="true"
+                    />
+                    {/* 主卡片 */}
+                    <div className="ink-card relative h-full overflow-hidden p-6">
+                      {feature.visual}
+                      {/* AI 数据叠加层:悬停时浮现,展示 AI 分析数据(借鉴 TTT ise 分屏"代码 vs 效果"对比) */}
+                      <AIDataOverlay accent={feature.accent} featureKey={feature.title} />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -189,5 +213,83 @@ function BrushVisual() {
       <circle cx="220" cy="150" r="3" fill="#c8392e" opacity="0.6" />
       <text x="40" y="285" fontSize="10" fill="#6b6b6b" fontFamily="sans-serif">笔触轨迹 / 力度 / 韵律</text>
     </svg>
+  );
+}
+
+/* ---------- AI 数据叠加层(借鉴 TTT ise 分屏"代码 vs 效果"对比叙事) ---------- */
+
+const AI_DATA: Record<string, { score: number; items: { label: string; value: string }[] }> = {
+  构图分析: {
+    score: 87,
+    items: [
+      { label: '视觉重心', value: '右上 1/3' },
+      { label: '平衡度', value: '92%' },
+      { label: '构图类型', value: '三分法' },
+    ],
+  },
+  色彩分析: {
+    score: 84,
+    items: [
+      { label: '主色调', value: '暖赭石' },
+      { label: '色相关系', value: '邻近色' },
+      { label: '明暗对比', value: '中强' },
+    ],
+  },
+  笔触分析: {
+    score: 91,
+    items: [
+      { label: '平均速度', value: '中速偏快' },
+      { label: '力度分布', value: '重轻重' },
+      { label: '韵律评分', value: 'A' },
+    ],
+  },
+};
+
+const accentAIColor = {
+  cinnabar: { dot: 'bg-cinnabar-400', bar: 'bg-cinnabar-400', score: 'text-cinnabar-300' },
+  stone: { dot: 'bg-stone-400', bar: 'bg-stone-400', score: 'text-stone-300' },
+  gold: { dot: 'bg-gold-400', bar: 'bg-gold-400', score: 'text-gold-300' },
+};
+
+function AIDataOverlay({ accent, featureKey }: { accent: 'cinnabar' | 'stone' | 'gold'; featureKey: string }) {
+  const data = AI_DATA[featureKey];
+  if (!data) return null;
+  const c = accentAIColor[accent];
+
+  return (
+    <div className="pointer-events-none absolute inset-0 flex items-end justify-end p-4 opacity-0 transition-opacity duration-500 ease-ink group-hover:opacity-100">
+      <div className="glass-panel-dark w-44 rounded-md p-3.5 text-xs text-paper-100 backdrop-blur-xl">
+        {/* 顶部:AI 标识 + 评分 */}
+        <div className="mb-2.5 flex items-center justify-between">
+          <span className="flex items-center gap-1.5 text-[10px] uppercase tracking-widest text-gold-400">
+            <span className="relative inline-block h-1.5 w-1.5">
+              <span className={`absolute inset-0 rounded-full ${c.dot}`} />
+              <span className={`absolute inset-0 animate-ping rounded-full ${c.dot} opacity-60`} />
+            </span>
+            AI VISION
+          </span>
+          <span className={`font-serif text-lg font-semibold ${c.score}`}>
+            {data.score}
+            <span className="ml-0.5 text-[10px] text-paper-200/50">/100</span>
+          </span>
+        </div>
+        {/* 进度条 */}
+        <div className="mb-2.5 h-1 w-full overflow-hidden rounded-full bg-white/10">
+          <div
+            className={`h-full ${c.bar} rounded-full transition-all duration-700 ease-out`}
+            style={{ width: `${data.score}%` }}
+          />
+        </div>
+        {/* 数据项 */}
+        <div className="space-y-1.5">
+          {data.items.map((item) => (
+            <div key={item.label} className="flex items-center justify-between text-[11px]">
+              <span className="text-paper-200/60">{item.label}</span>
+              <span className="font-medium text-paper-100">{item.value}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
   );
 }

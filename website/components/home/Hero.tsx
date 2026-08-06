@@ -1,30 +1,133 @@
+'use client';
+
 import React from 'react';
 import Link from 'next/link';
+import { motion, useReducedMotion, useScroll, useTransform } from 'framer-motion';
 import { CTA_LINKS, SITE } from '@/lib/site';
+import { MagneticButton } from '@/components/ui/MagneticButton';
+import { HERO_ART } from '@/lib/artworks';
 
 /**
  * 首页 Hero 区(LCP 关键)
- * - 服务端组件,文字直出,不依赖 JS 渲染
- * - CSS 动画入场,避免 framer-motion 阻塞首屏
- * - 水墨主视觉用 SVG,无外部图片请求
+ * - 服务端直出文字,动效由客户端增强
+ * - 保留三阶段水墨动画(墨滴落下 → 涟漪 → 散开墨团)
+ * - 右侧水墨山水画作主视觉,增强第一眼艺术感与品牌识别
+ * - 滚动视差:背景水墨晕染与画作随滚动以不同速度移动,营造深度
+ * - 立体层次:水墨晕染 + 科技网格 + 玻璃信息卡 + 朱砂印章 + 山水画作
  */
+
+const EASE = [0.22, 1, 0.36, 1] as const;
+
 export function Hero() {
+  const prefersReduced = useReducedMotion();
+  const heroRef = React.useRef<HTMLDivElement>(null);
+  // 滚动视差:整个 Hero 内容随滚动上移/淡出,背景层速度不同
+  const { scrollYProgress } = useScroll({
+    target: heroRef,
+    offset: ['start start', 'end start'],
+  });
+  const contentY = useTransform(scrollYProgress, [0, 1], [0, 120]);
+  const contentOpacity = useTransform(scrollYProgress, [0, 0.7], [1, 0]);
+  const artY = useTransform(scrollYProgress, [0, 1], [0, -60]);
+  const bgY = useTransform(scrollYProgress, [0, 1], [0, 200]);
+
   return (
-    <section className="relative overflow-hidden bg-paper-100">
-      {/* 背景水墨晕染层 */}
-      <div
+    <section ref={heroRef} className="relative overflow-hidden bg-paper-100">
+      {/* 背景层 1:水墨晕染(滚动视差,最慢) */}
+      <motion.div
+        style={prefersReduced ? undefined : { y: bgY }}
         className="pointer-events-none absolute inset-0"
+        aria-hidden="true"
+      >
+        <div
+          className="absolute inset-0"
+          style={{
+            background:
+              'radial-gradient(ellipse 70% 50% at 75% 30%, rgba(26, 26, 26, 0.07) 0%, transparent 60%), radial-gradient(ellipse 50% 60% at 15% 80%, rgba(201, 169, 97, 0.1) 0%, transparent 55%), radial-gradient(ellipse 40% 50% at 90% 90%, rgba(200, 57, 46, 0.06) 0%, transparent 60%)',
+          }}
+        />
+      </motion.div>
+
+      {/* 背景层 2:科技感网格(极淡) */}
+      <div className="grid-bg pointer-events-none absolute inset-0" aria-hidden="true" />
+
+      {/* 背景层 3:顶部金色高光渐变 */}
+      <div
+        className="pointer-events-none absolute inset-x-0 top-0 h-1/2"
         aria-hidden="true"
         style={{
           background:
-            'radial-gradient(ellipse 70% 50% at 75% 30%, rgba(26, 26, 26, 0.07) 0%, transparent 60%), radial-gradient(ellipse 50% 60% at 15% 80%, rgba(201, 169, 97, 0.1) 0%, transparent 55%), radial-gradient(ellipse 40% 50% at 90% 90%, rgba(200, 57, 46, 0.06) 0%, transparent 60%)',
+            'linear-gradient(180deg, rgba(201, 169, 97, 0.04) 0%, transparent 100%)',
         }}
       />
 
-      {/* 右侧水墨主视觉 SVG */}
-      <HeroInkVisual />
+      {/* 三阶段水墨动画:墨滴落下 → 涟漪 → 散开墨团(右侧偏上位置) */}
+      <div
+        className="pointer-events-none absolute right-[18%] top-0 z-0 h-[60%] w-[40%] md:right-[22%]"
+        aria-hidden="true"
+      >
+        <div className="hero-ink-drop" />
+        <div className="hero-ink-ripple" />
+      </div>
 
-      <div className="container-content relative z-10 flex min-h-[88vh] flex-col justify-center pt-12 pb-20 md:min-h-[92vh]">
+      {/* 右侧水墨主视觉:山水画作(滚动视差,替代纯 SVG 墨团) */}
+      <motion.div
+        style={prefersReduced ? undefined : { y: artY }}
+        className="pointer-events-none absolute inset-0 z-0"
+        aria-hidden="true"
+      >
+        <div className="hero-ink-bloom absolute inset-0">
+          {/* 山水画作:右侧竖版,带宣纸边框与晕染效果 */}
+          <div className="absolute right-0 top-1/2 hidden w-[44%] max-w-[560px] -translate-y-1/2 md:block">
+            <div className="relative overflow-hidden rounded-lg border border-ink-100/40 shadow-ink-lg">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={HERO_ART}
+                alt="丹青有AI 水墨山水画作"
+                className="aspect-[3/4] w-full object-cover"
+                loading="eager"
+              />
+              {/* 宣纸内衬边框 */}
+              <div className="pointer-events-none absolute inset-2 border border-paper-50/40" aria-hidden="true" />
+              {/* 底部渐变遮罩 */}
+              <div className="absolute inset-x-0 bottom-0 h-1/4 bg-gradient-to-t from-ink-900/40 to-transparent" />
+              {/* 竖排题款 */}
+              <div className="absolute bottom-4 right-4 text-right">
+                <span
+                  className="font-serif text-sm font-medium text-paper-50/90"
+                  style={{ writingMode: 'vertical-rl', letterSpacing: '0.3em' }}
+                >
+                  山水·丹青
+                </span>
+              </div>
+            </div>
+            {/* 朱砂印章 */}
+            <div className="hero-brand-emerge absolute -left-6 top-8 rotate-[-6deg]">
+              <div className="flex h-16 w-16 items-center justify-center rounded-sm bg-cinnabar-500 shadow-ink">
+                <span className="font-serif text-xl font-bold text-paper-50">DQ</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        {/* 竖排金色题款:丹青不渝 */}
+        <div className="hero-brand-emerge pointer-events-none absolute right-[8%] top-[16%] hidden md:block">
+          <span
+            className="font-serif text-lg font-medium text-gold-600/80"
+            style={{ writingMode: 'vertical-rl', letterSpacing: '0.4em' }}
+          >
+            丹青不渝
+          </span>
+        </div>
+      </motion.div>
+
+      {/* 右下角浮动玻璃信息卡(桌面端) */}
+      <HeroStatsCard />
+
+      {/* 主内容区(滚动视差:随滚动上移淡出) */}
+      <motion.div
+        style={prefersReduced ? undefined : { y: contentY, opacity: contentOpacity }}
+        className="container-content relative z-10 flex min-h-[88vh] flex-col justify-center pt-12 pb-20 md:min-h-[92vh]"
+      >
         <div className="max-w-3xl">
           {/* Eyebrow */}
           <div
@@ -34,33 +137,66 @@ export function Hero() {
             面向高校艺术教育的 AI 作业诊断系统
           </div>
 
+          {/* English Tagline */}
+          <motion.p
+            initial={prefersReduced ? false : { opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, delay: 0.15, ease: EASE }}
+            className="mt-3 text-xs font-medium uppercase tracking-[0.3em] text-ink-300"
+          >
+            AI-Powered Art Education · Danqing You AI
+          </motion.p>
+
           {/* 主标题:丹青有AI */}
-          <h1
-            className="mt-6 text-display-xl font-semibold leading-[1.05] text-ink-900 opacity-0"
-            style={{ animation: 'ink-fade-in 0.9s 0.25s cubic-bezier(0.22,1,0.36,1) forwards' }}
+          <motion.h1
+            initial={prefersReduced ? false : { opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.9, delay: 0.25, ease: EASE }}
+            className="mt-4 text-display-xl font-semibold leading-[1.05] text-gradient-ink"
           >
             丹青有AI
-            <span className="block mt-2 text-ink-700">
-              让艺术教育<span className="text-cinnabar-500">更智能</span>
+            <span className="mt-2 block text-ink-700">
+              让艺术教育<span className="text-gradient-cinnabar">更智能</span>
             </span>
-          </h1>
+          </motion.h1>
+
+          {/* 核心功能速览:第一眼识别产品核心能力 */}
+          <motion.div
+            initial={prefersReduced ? false : { opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.9, delay: 0.35, ease: EASE }}
+            className="mt-6 flex flex-wrap items-center gap-2"
+          >
+            {['构图分析', '色彩分析', '笔触分析', '绘画 · 设计 · 雕塑'].map((k) => (
+              <span
+                key={k}
+                className="inline-flex items-center rounded-full border border-ink-100/70 bg-paper-50/60 px-3 py-1 text-xs font-medium text-ink-600 backdrop-blur-sm"
+              >
+                {k}
+              </span>
+            ))}
+          </motion.div>
 
           {/* Slogan 描述 */}
-          <p
-            className="mt-7 max-w-xl text-lg leading-relaxed text-ink-500 opacity-0 md:text-xl"
-            style={{ animation: 'ink-fade-in 0.9s 0.4s cubic-bezier(0.22,1,0.36,1) forwards' }}
+          <motion.p
+            initial={prefersReduced ? false : { opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.9, delay: 0.4, ease: EASE }}
+            className="mt-6 max-w-xl text-lg leading-relaxed text-ink-500 md:text-xl"
           >
             以专业美院标准,3 秒智能分析绘画、设计、产品设计、雕塑四种创意形式的
             <span className="text-ink-800 font-medium">构图、色彩、笔触</span>。
             为教师减负,让学生成长可见。
-          </p>
+          </motion.p>
 
           {/* CTA 双按钮 */}
-          <div
-            className="mt-10 flex flex-col items-start gap-4 opacity-0 sm:flex-row sm:items-center"
-            style={{ animation: 'ink-fade-in 0.9s 0.55s cubic-bezier(0.22,1,0.36,1) forwards' }}
+          <motion.div
+            initial={prefersReduced ? false : { opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.9, delay: 0.55, ease: EASE }}
+            className="mt-10 flex flex-col items-start gap-4 sm:flex-row sm:items-center"
           >
-            <a
+            <MagneticButton
               href={CTA_LINKS.trial}
               target="_blank"
               rel="noopener noreferrer"
@@ -71,32 +207,27 @@ export function Hero() {
               <span className="transition-transform duration-300 ease-ink group-hover:translate-x-1" aria-hidden="true">
                 →
               </span>
-            </a>
+            </MagneticButton>
             <Link href="/product" className="btn-secondary" data-track="hero-cta-learn">
               了解产品
             </Link>
-          </div>
+          </motion.div>
 
-          {/* 信任信号 */}
-          <div
-            className="mt-10 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-ink-400 opacity-0"
-            style={{ animation: 'ink-fade-in 0.9s 0.7s cubic-bezier(0.22,1,0.36,1) forwards' }}
+          {/* 信任信号:卡片化 */}
+          <motion.div
+            initial={prefersReduced ? false : { opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.9, delay: 0.7, ease: EASE }}
+            className="mt-12 flex flex-wrap items-center gap-3"
           >
-            <span className="inline-flex items-center gap-2">
-              <span className="inline-block h-1.5 w-1.5 rounded-full bg-gold-400" />
-              3 秒级响应 SLA
-            </span>
-            <span className="inline-flex items-center gap-2">
-              <span className="inline-block h-1.5 w-1.5 rounded-full bg-cinnabar-400" />
-              专业美院标准
-            </span>
-            <span className="inline-flex items-center gap-2">
-              <span className="inline-block h-1.5 w-1.5 rounded-full bg-stone-400" />
-              四种创意形式
-            </span>
-          </div>
+            <TrustBadge color="gold" label="3 秒级响应 SLA" />
+            <span className="h-3 w-px bg-ink-200" aria-hidden="true" />
+            <TrustBadge color="cinnabar" label="专业美院标准" />
+            <span className="h-3 w-px bg-ink-200" aria-hidden="true" />
+            <TrustBadge color="stone" label="四种创意形式" />
+          </motion.div>
         </div>
-      </div>
+      </motion.div>
 
       {/* 底部滚动提示 */}
       <div className="pointer-events-none absolute bottom-6 left-1/2 z-10 hidden -translate-x-1/2 flex-col items-center gap-2 text-ink-300 md:flex">
@@ -108,115 +239,71 @@ export function Hero() {
 }
 
 /**
- * Hero 水墨主视觉(纯 SVG)
- * - 大墨团晕染 + 飞白笔触 + 朱砂印章
- * - 右侧定位,移动端隐藏避免遮挡文字
+ * 信任徽章:圆点 + 文字,带轻微玻璃感
  */
-function HeroInkVisual() {
+function TrustBadge({ color, label }: { color: 'gold' | 'cinnabar' | 'stone'; label: string }) {
+  const dotColor = {
+    gold: 'bg-gold-400',
+    cinnabar: 'bg-cinnabar-400',
+    stone: 'bg-stone-400',
+  }[color];
   return (
-    <div
-      className="pointer-events-none absolute inset-0 z-0 opacity-0"
-      style={{ animation: 'ink-spread 1.8s 0.3s cubic-bezier(0.22,1,0.36,1) forwards' }}
+    <span className="inline-flex items-center gap-2 rounded-full border border-ink-100/60 bg-paper-50/60 px-3 py-1.5 text-xs text-ink-600 backdrop-blur-sm">
+      <span className={`inline-block h-1.5 w-1.5 rounded-full ${dotColor}`} />
+      {label}
+    </span>
+  );
+}
+
+/**
+ * Hero 右下角浮动玻璃信息卡(桌面端)
+ * 显示核心指标,增加视觉锚点与立体层次
+ */
+function HeroStatsCard() {
+  return (
+    <motion.div
+      initial={false}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 1, delay: 1, ease: EASE }}
+      className="pointer-events-none absolute bottom-12 right-10 z-10 hidden opacity-0 lg:block"
+      style={{ animation: 'ink-fade-in 1s 1s cubic-bezier(0.22,1,0.36,1) forwards' }}
       aria-hidden="true"
     >
-      <svg
-        className="absolute right-0 top-1/2 h-[90%] w-[55%] -translate-y-1/2 md:w-[50%]"
-        viewBox="0 0 600 700"
-        fill="none"
-        xmlns="http://www.w3.org/2000/svg"
-        preserveAspectRatio="xMidYMid slice"
-      >
-        <defs>
-          {/* 墨团晕染滤镜 */}
-          <filter id="hero-ink" x="-30%" y="-30%" width="160%" height="160%">
-            <feTurbulence type="fractalNoise" baseFrequency="0.008 0.012" numOctaves="3" seed="9" result="noise" />
-            <feDisplacementMap in="SourceGraphic" in2="noise" scale="60" xChannelSelector="R" yChannelSelector="G" />
-            <feGaussianBlur stdDeviation="6" />
-          </filter>
-          <filter id="hero-ink-2" x="-30%" y="-30%" width="160%" height="160%">
-            <feTurbulence type="fractalNoise" baseFrequency="0.015 0.02" numOctaves="2" seed="4" result="noise" />
-            <feDisplacementMap in="SourceGraphic" in2="noise" scale="30" xChannelSelector="R" yChannelSelector="G" />
-            <feGaussianBlur stdDeviation="3" />
-          </filter>
-          <radialGradient id="ink-grad" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stopColor="#1a1a1a" stopOpacity="0.85" />
-            <stop offset="60%" stopColor="#1a1a1a" stopOpacity="0.4" />
-            <stop offset="100%" stopColor="#1a1a1a" stopOpacity="0" />
-          </radialGradient>
-          <radialGradient id="stone-grad" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stopColor="#2e5c6e" stopOpacity="0.5" />
-            <stop offset="100%" stopColor="#2e5c6e" stopOpacity="0" />
-          </radialGradient>
-        </defs>
-
-        {/* 主墨团 */}
-        <g filter="url(#hero-ink)">
-          <ellipse cx="380" cy="320" rx="220" ry="200" fill="url(#ink-grad)" />
-        </g>
-
-        {/* 石青淡墨辅团 */}
-        <g filter="url(#hero-ink-2)" opacity="0.7">
-          <ellipse cx="480" cy="180" rx="120" ry="100" fill="url(#stone-grad)" />
-        </g>
-
-        {/* 飞白笔触 */}
-        <g filter="url(#hero-ink-2)" opacity="0.5">
-          <path
-            d="M 120 500 Q 280 460, 460 490 T 580 480"
-            stroke="#1a1a1a"
-            strokeWidth="10"
-            fill="none"
-            strokeLinecap="round"
-          />
-          <path
-            d="M 180 560 Q 320 540, 440 555"
-            stroke="#1a1a1a"
-            strokeWidth="3"
-            fill="none"
-            strokeLinecap="round"
-            opacity="0.6"
-          />
-        </g>
-
-        {/* 飞溅小墨点 */}
-        <g filter="url(#hero-ink-2)">
-          <circle cx="180" cy="200" r="8" fill="#1a1a1a" opacity="0.4" />
-          <circle cx="520" cy="420" r="5" fill="#1a1a1a" opacity="0.5" />
-          <circle cx="240" cy="380" r="4" fill="#c9a961" opacity="0.6" />
-          <circle cx="450" cy="560" r="3" fill="#1a1a1a" opacity="0.4" />
-        </g>
-
-        {/* 朱砂印章 */}
-        <g transform="translate(440, 80) rotate(-6)">
-          <rect x="0" y="0" width="72" height="72" rx="2" fill="#c8392e" opacity="0.92" filter="url(#hero-ink-2)" />
-          <text
-            x="36"
-            y="48"
-            textAnchor="middle"
-            fontFamily="Songti SC, SimSun, serif"
-            fontSize="32"
-            fontWeight="700"
-            fill="#faf8f3"
-            letterSpacing="-1"
-          >
-            DQ
-          </text>
-        </g>
-
-        {/* 金色题款(竖排) */}
-        <text
-          x="560"
-          y="280"
-          fontFamily="Songti SC, SimSun, serif"
-          fontSize="18"
-          fill="#c9a961"
-          opacity="0.7"
-          writingMode="tb"
-          letterSpacing="4"
-        >
-          丹青不渝
-        </text>
-      </svg>
-    </div>
+      <div className="glass-card relative w-64 p-5">
+        <div className="mb-4 flex items-center justify-between">
+          <span className="text-[10px] font-medium uppercase tracking-[0.2em] text-gold-600">
+            实时指标
+          </span>
+          <span className="inline-flex h-1.5 w-1.5 rounded-full bg-cinnabar-400">
+            <span className="absolute inline-flex h-1.5 w-1.5 animate-ping rounded-full bg-cinnabar-400 opacity-60" />
+          </span>
+        </div>
+        <div className="space-y-3">
+          <div className="flex items-baseline justify-between">
+            <span className="text-xs text-ink-500">平均响应</span>
+            <span className="font-serif text-lg font-semibold text-ink-900">
+              2.8<span className="ml-0.5 text-xs text-ink-400">s</span>
+            </span>
+          </div>
+          <div className="h-px bg-ink-100/60" />
+          <div className="flex items-baseline justify-between">
+            <span className="text-xs text-ink-500">本日分析</span>
+            <span className="font-serif text-lg font-semibold text-ink-900">
+              1,284<span className="ml-1 text-xs text-cinnabar-500">+12%</span>
+            </span>
+          </div>
+          <div className="h-px bg-ink-100/60" />
+          <div className="flex items-baseline justify-between">
+            <span className="text-xs text-ink-500">服务高校</span>
+            <span className="font-serif text-lg font-semibold text-ink-900">
+              32<span className="ml-0.5 text-xs text-ink-400">所</span>
+            </span>
+          </div>
+        </div>
+        <div className="mt-4 -mb-1 text-right text-[9px] tracking-wider text-ink-300">
+          {SITE.name}
+        </div>
+      </div>
+    </motion.div>
   );
 }

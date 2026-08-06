@@ -61,7 +61,20 @@ export default function ProfileTab() {
     router.push('/login');
   };
   const onMenuPress = (key: string) => {
-    Alert.alert('占位', `${key} 功能待实现`);
+    // 账号设置 / 消息通知 / 关于我们 跳转对应页面
+    switch (key) {
+      case '账号设置':
+        router.push('/settings');
+        break;
+      case '消息通知':
+        router.push('/notifications');
+        break;
+      case '关于我们':
+        router.push('/about');
+        break;
+      default:
+        break;
+    }
   };
   const doLogout = async () => {
     setLoggingOut(true);

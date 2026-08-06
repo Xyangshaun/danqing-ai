@@ -1,9 +1,12 @@
 import type { Metadata } from 'next';
-import { Hero } from '@/components/home/Hero';
+import { HeroWithIntro } from '@/components/home/HeroWithIntro';
 import { CoreValue } from '@/components/home/CoreValue';
+import { ArtGallery } from '@/components/home/ArtGallery';
+import { CreativeForms } from '@/components/home/CreativeForms';
 import { FeatureShowcase } from '@/components/home/FeatureShowcase';
 import { Scenarios } from '@/components/home/Scenarios';
 import { DataEndorsement } from '@/components/home/DataEndorsement';
+import { FutureDirection } from '@/components/home/FutureDirection';
 import { CTASection } from '@/components/ui/CTASection';
 import { JsonLd } from '@/components/seo/JsonLd';
 import { buildMetadata, productJsonLd, faqJsonLd } from '@/lib/seo';
@@ -51,11 +54,14 @@ export default function HomePage() {
       <JsonLd data={productJsonLd()} />
       <JsonLd data={faqJsonLd(HOME_FAQ)} />
 
-      <Hero />
+      <HeroWithIntro />
       <CoreValue />
+      <ArtGallery />
+      <CreativeForms />
       <FeatureShowcase />
       <Scenarios />
       <DataEndorsement />
+      <FutureDirection />
       <CTASection
         title="免费试用,无需信用卡"
         description="3 秒智能分析,专业美院标准。即刻体验 AI 如何改变艺术作业诊断。"

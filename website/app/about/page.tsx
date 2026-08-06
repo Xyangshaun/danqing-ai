@@ -6,6 +6,7 @@ import { CTASection } from '@/components/ui/CTASection';
 import { JsonLd } from '@/components/seo/JsonLd';
 import { buildMetadata, breadcrumbJsonLd } from '@/lib/seo';
 import { SITE, CTA_LINKS } from '@/lib/site';
+import { BRAND_ART } from '@/lib/artworks';
 
 export const metadata: Metadata = buildMetadata({
   title: '关于我们 - 品牌故事与团队',
@@ -55,6 +56,20 @@ export default function AboutPage() {
             <h2 className="mt-4 text-display-md font-semibold leading-tight text-ink-900">
               为什么叫"丹青有AI"
             </h2>
+            {/* 品牌画作配图 */}
+            <RevealOnScroll direction="up" delay={0.1}>
+              <div className="relative mt-8 overflow-hidden rounded-lg border border-ink-100/40 shadow-ink-lg">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={BRAND_ART}
+                  alt="丹青有AI 品牌水墨意象"
+                  loading="lazy"
+                  className="aspect-square w-full object-cover"
+                />
+                <div className="pointer-events-none absolute inset-2 border border-paper-50/40" aria-hidden="true" />
+                <div className="absolute inset-x-0 bottom-0 h-1/4 bg-gradient-to-t from-ink-900/40 to-transparent" />
+              </div>
+            </RevealOnScroll>
           </div>
           <div className="md:col-span-7">
             <div className="space-y-5 text-base leading-[1.85] text-ink-500">

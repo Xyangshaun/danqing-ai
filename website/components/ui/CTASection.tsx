@@ -1,6 +1,7 @@
 import React from 'react';
 import { Section } from './Section';
 import { InkDecoration } from './InkDecoration';
+import { MagneticButton } from './MagneticButton';
 import { CTA_LINKS } from '@/lib/site';
 
 type CTASectionProps = {
@@ -53,7 +54,7 @@ export function CTASection({
             {description}
           </p>
           <div className="mt-9 flex flex-col items-center justify-center gap-4 sm:flex-row">
-            <a
+            <MagneticButton
               href={primaryHref}
               target="_blank"
               rel="noopener noreferrer"
@@ -61,7 +62,7 @@ export function CTASection({
               data-track="cta-section-primary"
             >
               {primaryLabel}
-            </a>
+            </MagneticButton>
             {secondaryLabel && (
               <a
                 href={secondaryHref}

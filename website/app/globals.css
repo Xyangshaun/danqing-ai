@@ -108,30 +108,122 @@
     @apply inline-block h-px w-8 bg-gold-400;
   }
 
-  /* 按钮:朱砂主按钮 */
+  /* 按钮:朱砂主按钮(渐变 + 内高光 + 立体阴影) */
   .btn-primary {
-    @apply inline-flex items-center justify-center gap-2 rounded-ink bg-cinnabar-500 px-7 py-3.5 text-sm font-medium text-paper-50 shadow-ink-sm transition-all duration-300 ease-ink hover:bg-cinnabar-600 hover:shadow-ink active:scale-[0.98];
+    @apply relative inline-flex items-center justify-center gap-2 overflow-hidden rounded-ink px-7 py-3.5 text-sm font-medium text-paper-50 transition-all duration-300 ease-ink active:scale-[0.98];
+    background-image: linear-gradient(135deg, #d85f50 0%, #c8392e 50%, #a82a20 100%);
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.2) inset,
+      0 -1px 0 rgba(0, 0, 0, 0.12) inset,
+      0 4px 14px rgba(200, 57, 46, 0.28),
+      0 2px 4px rgba(26, 26, 26, 0.08);
+  }
+  .btn-primary::before {
+    content: '';
+    @apply absolute inset-0 opacity-0 transition-opacity duration-300;
+    background-image: linear-gradient(135deg, rgba(255, 255, 255, 0.18) 0%, transparent 60%);
+  }
+  .btn-primary:hover::before {
+    @apply opacity-100;
+  }
+  .btn-primary:hover {
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.25) inset,
+      0 -1px 0 rgba(0, 0, 0, 0.15) inset,
+      0 6px 22px rgba(200, 57, 46, 0.38),
+      0 2px 6px rgba(26, 26, 26, 0.1);
+    transform: translateY(-1px);
   }
 
-  /* 按钮:墨黑次按钮 */
+  /* 按钮:墨黑次按钮(玻璃质感) */
   .btn-secondary {
-    @apply inline-flex items-center justify-center gap-2 rounded-ink border border-ink-200 bg-paper-50 px-7 py-3.5 text-sm font-medium text-ink-700 transition-all duration-300 ease-ink hover:border-ink-400 hover:bg-paper-100 active:scale-[0.98];
+    @apply inline-flex items-center justify-center gap-2 rounded-ink border border-ink-200/80 bg-paper-50/70 px-7 py-3.5 text-sm font-medium text-ink-700 backdrop-blur-md transition-all duration-300 ease-ink hover:border-ink-300 hover:bg-paper-50 active:scale-[0.98];
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.6) inset,
+      0 1px 2px rgba(26, 26, 26, 0.04);
+  }
+  .btn-secondary:hover {
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.7) inset,
+      0 4px 12px rgba(26, 26, 26, 0.06);
+    transform: translateY(-1px);
   }
 
   /* 按钮:金色描边(高端感) */
   .btn-gold {
-    @apply inline-flex items-center justify-center gap-2 rounded-ink border border-gold-400 bg-transparent px-7 py-3.5 text-sm font-medium text-gold-700 transition-all duration-300 ease-ink hover:bg-gold-50 hover:border-gold-500 active:scale-[0.98];
+    @apply inline-flex items-center justify-center gap-2 rounded-ink border border-gold-400/80 bg-gold-50/30 px-7 py-3.5 text-sm font-medium text-gold-700 backdrop-blur-md transition-all duration-300 ease-ink hover:bg-gold-50 hover:border-gold-500 active:scale-[0.98];
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.5) inset,
+      0 0 0 1px rgba(201, 169, 97, 0.08),
+      0 2px 8px rgba(201, 169, 97, 0.12);
+  }
+  .btn-gold:hover {
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.6) inset,
+      0 0 0 1px rgba(201, 169, 97, 0.15),
+      0 6px 18px rgba(201, 169, 97, 0.2);
+    transform: translateY(-1px);
   }
 
-  /* 卡片:宣纸感,避免 AI 模板堆砌 */
+  /* 卡片:宣纸感 + 立体层次(多层阴影 + 内高光 + 渐变边框) */
   .ink-card {
-    @apply relative overflow-hidden rounded-lg border border-ink-100 bg-paper-50/80 p-8 shadow-ink-sm backdrop-blur-sm transition-all duration-500 ease-ink hover:shadow-ink;
+    @apply relative overflow-hidden rounded-lg border border-ink-100/80 bg-paper-50/80 p-8 backdrop-blur-md transition-all duration-500 ease-ink;
+    background-image:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.5) 0%, transparent 50%),
+      linear-gradient(180deg, rgba(250, 248, 243, 0.9) 0%, rgba(250, 248, 243, 0.7) 100%);
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.7) inset,
+      0 1px 2px rgba(26, 26, 26, 0.04),
+      0 4px 12px rgba(26, 26, 26, 0.05);
+  }
+  .ink-card:hover {
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.8) inset,
+      0 2px 4px rgba(26, 26, 26, 0.05),
+      0 12px 32px rgba(26, 26, 26, 0.08),
+      0 0 0 1px rgba(201, 169, 97, 0.12);
+    transform: translateY(-3px);
+    border-color: rgba(201, 169, 97, 0.3);
   }
 
-  /* 数字大字:数据背书用 */
+  /* 玻璃卡片:现代半透明材质(用于强调内容) */
+  .glass-card {
+    @apply relative overflow-hidden rounded-lg border border-ink-100/60 bg-paper-50/60 backdrop-blur-xl transition-all duration-500 ease-ink;
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.8) inset,
+      0 4px 16px rgba(26, 26, 26, 0.05);
+  }
+  .glass-card:hover {
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.9) inset,
+      0 8px 28px rgba(26, 26, 26, 0.08),
+      0 0 0 1px rgba(201, 169, 97, 0.15);
+  }
+
+  /* 深色背景上的玻璃卡片 */
+  .glass-card-dark {
+    @apply relative overflow-hidden rounded-lg border border-paper-200/10 bg-paper-50/[0.04] backdrop-blur-xl transition-all duration-500 ease-ink;
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.06) inset,
+      0 4px 16px rgba(0, 0, 0, 0.2);
+  }
+  .glass-card-dark:hover {
+    @apply border-paper-200/20 bg-paper-50/[0.07];
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.1) inset,
+      0 8px 28px rgba(0, 0, 0, 0.3),
+      0 0 0 1px rgba(201, 169, 97, 0.2);
+    transform: translateY(-2px);
+  }
+
+  /* 数字大字:数据背书用,渐变描边 */
   .stat-number {
-    @apply font-serif text-5xl font-semibold text-ink-900 md:text-6xl;
+    @apply font-serif text-5xl font-semibold md:text-6xl;
     font-feature-settings: 'tnum';
+    background-image: linear-gradient(180deg, #1a1a1a 0%, #2e2e2e 60%, #4a4a4a 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
   }
 
   /* 文章正文排版 */
@@ -188,6 +280,63 @@
     background-image: radial-gradient(ellipse 80% 60% at 50% 0%, rgba(26, 26, 26, 0.05) 0%, transparent 70%);
   }
 
+  /* 科技感网格背景(极淡) */
+  .grid-bg {
+    background-image:
+      linear-gradient(to right, rgba(26, 26, 26, 0.04) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(26, 26, 26, 0.04) 1px, transparent 1px);
+    background-size: 56px 56px;
+    -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 50%, black 0%, transparent 75%);
+    mask-image: radial-gradient(ellipse 80% 60% at 50% 50%, black 0%, transparent 75%);
+  }
+
+  /* 深色背景上的科技感网格 */
+  .grid-bg-dark {
+    background-image:
+      linear-gradient(to right, rgba(250, 248, 243, 0.05) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(250, 248, 243, 0.05) 1px, transparent 1px);
+    background-size: 56px 56px;
+    -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 50%, black 0%, transparent 75%);
+    mask-image: radial-gradient(ellipse 80% 60% at 50% 50%, black 0%, transparent 75%);
+  }
+
+  /* 渐变文字:墨黑渐变 */
+  .text-gradient-ink {
+    background-image: linear-gradient(180deg, #1a1a1a 0%, #2e2e2e 70%, #4a4a4a 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  /* 渐变文字:朱砂渐变 */
+  .text-gradient-cinnabar {
+    background-image: linear-gradient(135deg, #d85f50 0%, #c8392e 60%, #a82a20 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  /* 渐变文字:金色渐变 */
+  .text-gradient-gold {
+    background-image: linear-gradient(135deg, #d0b063 0%, #c9a961 50%, #a8854a 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  /* 描边数字(用于大编号,立体感) */
+  .text-stroke-number {
+    -webkit-text-stroke: 1.5px rgba(26, 26, 26, 0.5);
+    color: transparent;
+  }
+
+  /* 发光边框(用于强调卡片) */
+  .glow-border {
+    box-shadow:
+      0 0 0 1px rgba(201, 169, 97, 0.2),
+      0 8px 24px rgba(201, 169, 97, 0.12);
+  }
+
   /* 竖排文字(印章/装饰) */
   .writing-vertical {
     writing-mode: vertical-rl;
@@ -205,6 +354,429 @@
     -webkit-mask-image: linear-gradient(to bottom, black 70%, transparent 100%);
     mask-image: linear-gradient(to bottom, black 70%, transparent 100%);
   }
+
+  /* 渐变分割线(章节过渡) */
+  .divider-gradient {
+    background-image: linear-gradient(90deg, transparent 0%, rgba(201, 169, 97, 0.4) 50%, transparent 100%);
+  }
+
+  /* ========== 水墨 Loader — 全屏入场动画容器 ==========
+     实际渲染由 InkLoaderCanvas (Canvas 物理模拟) 负责 */
+  .ink-loader {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    background-color: theme('colors.paper.100');
+    transition: opacity 0.6s cubic-bezier(0.22, 1, 0.36, 1),
+                visibility 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .ink-loader.is-fading {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+  }
+
+  /* ---- 内容区淡入(与 loader 淡出协调) ---- */
+  .content-reveal {
+    animation: content-fade-in 0.8s cubic-bezier(0.22, 1, 0.36, 1) 1.4s both;
+  }
+
+  @keyframes content-fade-in {
+    0% {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /* ========== 三阶段 Hero 水墨动画 ========== */
+  /* 阶段 1:墨滴落下 */
+  .hero-ink-drop {
+    position: absolute;
+    top: 12%;
+    left: 50%;
+    width: 24px;
+    height: 24px;
+    margin-left: -12px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #2d2d2d 0%, #1a1a1a 60%, #0d0d0d 100%);
+    box-shadow: 0 6px 16px rgba(26, 26, 26, 0.3);
+    opacity: 0;
+    animation: hero-drop-fall 1.2s 0.2s theme('transitionTimingFunction.ink') forwards;
+  }
+  @keyframes hero-drop-fall {
+    0% { transform: translateY(-40px) scale(0.6); opacity: 0; }
+    20% { opacity: 1; }
+    70% { transform: translateY(180px) scale(1); opacity: 1; }
+    85% { transform: translateY(180px) scale(1.15, 0.85); opacity: 0.9; }
+    100% { transform: translateY(180px) scale(1.4, 0.6); opacity: 0; }
+  }
+
+  /* 阶段 2:溅落涟漪 */
+  .hero-ink-ripple {
+    position: absolute;
+    top: calc(12% + 200px);
+    left: 50%;
+    width: 48px;
+    height: 48px;
+    margin-left: -24px;
+    border-radius: 50%;
+    border: 2px solid rgba(26, 26, 26, 0.4);
+    opacity: 0;
+    animation: hero-ripple-spread 1.4s 1s theme('transitionTimingFunction.ink') forwards;
+  }
+  .hero-ink-ripple::after {
+    content: '';
+    position: absolute;
+    inset: 8px;
+    border-radius: 50%;
+    border: 1px solid rgba(26, 26, 26, 0.25);
+    animation: hero-ripple-spread 1.4s 1.15s theme('transitionTimingFunction.ink') forwards;
+  }
+  @keyframes hero-ripple-spread {
+    0% { transform: scale(0.2); opacity: 0; }
+    30% { opacity: 0.8; }
+    100% { transform: scale(3.5); opacity: 0; }
+  }
+
+  /* 阶段 3:散开大墨团(配合 SVG 滤镜) */
+  .hero-ink-bloom {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    transform: scale(0.6);
+    animation: hero-bloom-spread 2s 1.6s theme('transitionTimingFunction.ink') forwards;
+  }
+  @keyframes hero-bloom-spread {
+    0% { transform: scale(0.6); opacity: 0; }
+    40% { opacity: 0.85; }
+    100% { transform: scale(1); opacity: 1; }
+  }
+
+  /* 品牌文案浮现:丹青不渝 + slogan */
+  .hero-brand-emerge {
+    opacity: 0;
+    transform: translateY(20px);
+    animation: hero-brand-rise 1.4s 2.4s theme('transitionTimingFunction.ink') forwards;
+  }
+  @keyframes hero-brand-rise {
+    0% { opacity: 0; transform: translateY(20px); }
+    100% { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ========== 磁吸按钮(光斑跟随) ========== */
+  .btn-magnetic {
+    position: relative;
+    overflow: hidden;
+    isolation: isolate;
+  }
+  .btn-magnetic::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(
+      circle 120px at var(--mx, 50%) var(--my, 50%),
+      rgba(255, 255, 255, 0.25) 0%,
+      transparent 70%
+    );
+    opacity: 0;
+    transition: opacity 0.3s theme('transitionTimingFunction.ink');
+    pointer-events: none;
+    z-index: 1;
+  }
+  .btn-magnetic:hover::after {
+    opacity: 1;
+  }
+  .btn-magnetic > * {
+    position: relative;
+    z-index: 2;
+  }
+
+  /* ========== 3D 倾斜卡片(≤3° 克制视差) ========== */
+  .tilt-card {
+    transform-style: preserve-3d;
+    transition: transform 0.4s theme('transitionTimingFunction.ink');
+    will-change: transform;
+  }
+  .tilt-card-inner {
+    transform: translateZ(20px);
+    transform-style: preserve-3d;
+  }
+  .tilt-card-glow {
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(
+      circle at var(--mx, 50%) var(--my, 50%),
+      rgba(201, 169, 97, 0.12) 0%,
+      transparent 50%
+    );
+    opacity: 0;
+    transition: opacity 0.3s theme('transitionTimingFunction.ink');
+    pointer-events: none;
+    border-radius: inherit;
+  }
+  .tilt-card:hover .tilt-card-glow {
+    opacity: 1;
+  }
+
+  /* ========== 文字逐字浮现(书法落笔节奏) ========== */
+  .char-reveal {
+    display: inline-block;
+    opacity: 0;
+    transform: translateY(8px);
+    animation: char-rise 0.5s theme('transitionTimingFunction.ink') forwards;
+  }
+  @keyframes char-rise {
+    0% { opacity: 0; transform: translateY(8px); }
+    100% { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ========== Bento Grid 创作形式布局 ========== */
+  .bento-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    grid-auto-rows: minmax(160px, auto);
+    gap: 1.25rem;
+  }
+  @media (max-width: 768px) {
+    .bento-grid {
+      grid-template-columns: repeat(2, 1fr);
+      grid-auto-rows: minmax(140px, auto);
+      gap: 0.875rem;
+    }
+  }
+  /* 特色大卡:占 4 列 2 行 */
+  .bento-cell-featured {
+    grid-column: span 4;
+    grid-row: span 2;
+  }
+  /* 普通小卡:占 2 列 1 行 */
+  .bento-cell {
+    grid-column: span 2;
+    grid-row: span 1;
+  }
+  /* 宽幅卡:占 6 列 1 行(整行 banner) */
+  .bento-cell-wide {
+    grid-column: span 6;
+    grid-row: span 1;
+  }
+  @media (max-width: 768px) {
+    .bento-cell-featured {
+      grid-column: span 2;
+      grid-row: span 2;
+    }
+    .bento-cell {
+      grid-column: span 1;
+      grid-row: span 1;
+    }
+    .bento-cell-wide {
+      grid-column: span 2;
+      grid-row: span 1;
+    }
+  }
+
+  /* Bento 卡片图片渐变遮罩 */
+  .bento-visual {
+    position: relative;
+    overflow: hidden;
+  }
+  .bento-visual img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.7s theme('transitionTimingFunction.ink');
+  }
+  .bento-cell-wrap:hover .bento-visual img,
+  .bento-cell-featured-wrap:hover .bento-visual img {
+    transform: scale(1.06);
+  }
+  .bento-overlay {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(to top, rgba(15, 15, 15, 0.78) 0%, rgba(15, 15, 15, 0.2) 45%, transparent 70%);
+  }
+  .bento-badge {
+    @apply inline-flex items-center rounded-ink px-2.5 py-1 text-xs font-medium backdrop-blur-md;
+    background: rgba(255, 255, 255, 0.14);
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    color: #faf8f3;
+  }
+
+  /* ========== 玻璃拟态浮层(深色背景用) ========== */
+  .glass-panel-dark {
+    @apply relative overflow-hidden rounded-lg border border-paper-200/10 bg-ink-900/40 backdrop-blur-xl;
+    background-image: linear-gradient(135deg, rgba(255, 255, 255, 0.06) 0%, rgba(255, 255, 255, 0.02) 100%);
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.06) inset,
+      0 8px 28px rgba(0, 0, 0, 0.25);
+  }
+
+  /* ========== 流动进度条(AI 分析反馈) ========== */
+  .ink-progress {
+    position: relative;
+    width: 100%;
+    height: 4px;
+    background: rgba(26, 26, 26, 0.08);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .ink-progress-bar {
+    position: absolute;
+    inset: 0;
+    width: 40%;
+    background: linear-gradient(90deg, transparent 0%, theme('colors.cinnabar.500') 50%, transparent 100%);
+    border-radius: 2px;
+    animation: ink-progress-flow 1.8s theme('transitionTimingFunction.ink') infinite;
+  }
+  @keyframes ink-progress-flow {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(350%); }
+  }
+}
+
+/* ================================================================
+   水墨光标涟漪 — 多层动画系统
+   墨滴撞击 → 三层涟漪扩散 → 墨花溅射
+   ================================================================ */
+
+/* 容器:定位到点击坐标,所有子元素以此为原点 */
+.ink-ripple-container {
+  position: fixed;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  z-index: 9999;
+}
+
+/* ---- 1. 中心墨滴撞击 ---- */
+.ink-drop-impact {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 14px;
+  height: 14px;
+  margin-left: -7px;
+  margin-top: -7px;
+  border-radius: 9999px;
+  background: radial-gradient(
+    circle,
+    rgba(26, 26, 26, 0.85) 0%,
+    rgba(26, 26, 26, 0.5) 45%,
+    rgba(26, 26, 26, 0.15) 75%,
+    transparent 100%
+  );
+  animation: ink-drop-impact 0.55s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes ink-drop-impact {
+  0% {
+    transform: scale(0);
+    opacity: 0;
+  }
+  15% {
+    transform: scale(1.3);
+    opacity: 1;
+  }
+  35% {
+    transform: scale(0.9);
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}
+
+/* ---- 2. 三层涟漪波纹 ---- */
+.ink-ripple-ring {
+  position: absolute;
+  left: 0;
+  top: 0;
+  border-radius: 9999px;
+  border: 1.5px solid rgba(26, 26, 26, 0.35);
+  pointer-events: none;
+  opacity: 0;
+}
+
+/* 第一层:快速内圈 */
+.ink-ripple-ring--1 {
+  width: 20px;
+  height: 20px;
+  margin-left: -10px;
+  margin-top: -10px;
+  border-color: rgba(26, 26, 26, 0.45);
+  animation: ink-ripple-expand 0.7s cubic-bezier(0.22, 1, 0.36, 1) 0.05s forwards;
+}
+
+/* 第二层:中速中圈 */
+.ink-ripple-ring--2 {
+  width: 20px;
+  height: 20px;
+  margin-left: -10px;
+  margin-top: -10px;
+  border-color: rgba(26, 26, 26, 0.3);
+  border-width: 1px;
+  animation: ink-ripple-expand 0.95s cubic-bezier(0.22, 1, 0.36, 1) 0.12s forwards;
+}
+
+/* 第三层:慢速外圈(带微弱朱砂色调) */
+.ink-ripple-ring--3 {
+  width: 20px;
+  height: 20px;
+  margin-left: -10px;
+  margin-top: -10px;
+  border-color: rgba(200, 57, 46, 0.15);
+  border-width: 1px;
+  animation: ink-ripple-expand 1.2s cubic-bezier(0.22, 1, 0.36, 1) 0.2s forwards;
+}
+
+@keyframes ink-ripple-expand {
+  0% {
+    transform: scale(0.3);
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  100% {
+    transform: scale(6);
+    opacity: 0;
+  }
+}
+
+/* ---- 3. 墨花溅射粒子 ---- */
+.ink-splash-particle {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: var(--size, 3px);
+  height: var(--size, 3px);
+  margin-left: calc(var(--size, 3px) / -2);
+  margin-top: calc(var(--size, 3px) / -2);
+  border-radius: 9999px;
+  background: rgba(26, 26, 26, 0.7);
+  opacity: 0;
+  animation: ink-splash-fly 0.65s cubic-bezier(0.16, 1, 0.3, 1) var(--delay, 0s) forwards;
+}
+
+@keyframes ink-splash-fly {
+  0% {
+    transform: translate(0, 0) scale(0.5);
+    opacity: 0;
+  }
+  20% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate(var(--tx, 30px), var(--ty, 30px)) scale(0.2);
+    opacity: 0;
+  }
 }
 
 /* 尊重减少动画偏好 */
@@ -213,6 +785,7 @@
   *::before,
   *::after {
     animation-duration: 0.01ms !important;
+    animation-delay: 0s !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
