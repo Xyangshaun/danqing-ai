@@ -4,6 +4,8 @@
 // 严禁日志输出:access_token / refresh_token 明文 / App Secret / 完整手机号 / 完整邮箱
 // ============================================================
 
+import fs from 'node:fs';
+import path from 'node:path';
 import winston from 'winston';
 import { env } from '../config/env.js';
 
@@ -64,40 +66,54 @@ function maskEmail(value: string): string {
 }
 
 /**
- * 深度脱敏对象(递归)
+ * 深度脱敏对象(原地递归 mutate)
+ *
+ * 关键设计:必须原地修改传入对象并返回同一引用,不可创建新对象。
+ * winston 的 info 对象携带 Symbol 键元数据(Symbol.for('level')/Symbol.for('message')/
+ * Symbol.for('splat')),这些是非枚举属性,Object.entries/Object.keys 不会遍历到。
+ * 若创建新对象(如 `const out = {}; Object.entries(obj).forEach(...)`)会丢失这些 Symbol,
+ * 导致 winston Console/File transport 静默丢弃日志条目(app.log/out.log 0 字节)。
+ *
+ * 修复历史:G7 修复日志丢失问题 —— redactFormat 返回新对象导致 transports 静默失败。
  */
 function redact(obj: unknown): unknown {
   if (obj === null || obj === undefined) return obj;
   if (typeof obj === 'string') return obj;
-  if (Array.isArray(obj)) return obj.map((v) => redact(v));
-  if (typeof obj === 'object') {
-    const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
-      const keyLower = k.toLowerCase();
-      if (SENSITIVE_KEYS.includes(keyLower) || SENSITIVE_KEYS.includes(k)) {
-        if (typeof v === 'string') {
-          // token 类按 8 字符脱敏
-          out[k] = maskToken(v);
-        } else {
-          out[k] = '****';
-        }
-      } else if (keyLower === 'phone' || keyLower === 'mobile' || keyLower === 'phone_number') {
-        out[k] = typeof v === 'string' ? maskPhone(v) : '****';
-      } else if (keyLower === 'email') {
-        out[k] = typeof v === 'string' ? maskEmail(v) : '****';
-      } else {
-        out[k] = redact(v);
+  if (Array.isArray(obj)) {
+    // 数组:递归 mutate 元素(数组元素本身无敏感键,只处理嵌套对象)
+    for (let i = 0; i < obj.length; i++) {
+      const v = obj[i];
+      if (v !== null && typeof v === 'object') {
+        redact(v);
       }
     }
-    return out;
+    return obj;
+  }
+  if (typeof obj === 'object') {
+    const o = obj as Record<string, unknown>;
+    for (const k of Object.keys(o)) {
+      const keyLower = k.toLowerCase();
+      const v = o[k];
+      if (SENSITIVE_KEYS.includes(keyLower) || SENSITIVE_KEYS.includes(k)) {
+        // token 类按 8 字符脱敏
+        o[k] = typeof v === 'string' ? maskToken(v) : '****';
+      } else if (keyLower === 'phone' || keyLower === 'mobile' || keyLower === 'phone_number') {
+        o[k] = typeof v === 'string' ? maskPhone(v) : '****';
+      } else if (keyLower === 'email') {
+        o[k] = typeof v === 'string' ? maskEmail(v) : '****';
+      } else if (v !== null && typeof v === 'object') {
+        redact(v);
+      }
+    }
+    return obj;
   }
   return obj;
 }
 
 const redactFormat = winston.format((info) => {
   if (info && typeof info === 'object') {
-    const redacted = redact(info) as winston.Logform.TransformableInfo;
-    return redacted;
+    // 原地 mutate,保留 winston Symbol 元数据 —— 不可返回新对象
+    redact(info);
   }
   return info;
 });
@@ -131,13 +147,32 @@ export function initLogger(): winston.Logger {
     return loggerInstance;
   }
   const cfg = env();
+
+  // 确保 logs 目录存在(File transport 兜底需要)
+  const logDir = path.resolve(process.cwd(), 'logs');
+  try {
+    fs.mkdirSync(logDir, { recursive: true });
+  } catch {
+    // 忽略:目录已存在或无权限,File transport 会自行处理错误
+  }
+
   loggerInstance = winston.createLogger({
     level: cfg.logLevel,
     format: logFormat,
     defaultMeta: { service: 'danqing-ai-server' },
     transports: [
+      // stdout/stderr(PM2 捕获,当前环境因非 TTY socket 导致 Console transport 不落地)
       new winston.transports.Console({
         format: consoleFormat,
+      }),
+      // 文件兜底:直接写 ./logs/app.log,绕过 stdout/stderr 链路
+      // 解决 PM2 fork + Node 20 ESM + 非 TTY 环境下 Console transport 日志丢失问题
+      new winston.transports.File({
+        filename: path.join(logDir, 'app.log'),
+        format: consoleFormat,
+        level: cfg.logLevel,
+        maxsize: 10 * 1024 * 1024, // 10MB 单文件上限
+        maxFiles: 5, // 最多保留 5 个轮转文件(app.log, app.log.1, ... app.log.5)
       }),
     ],
     exitOnError: false,

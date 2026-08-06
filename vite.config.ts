@@ -27,7 +27,9 @@ export default defineConfig({
       emitFile: false,
     }),
   ],
-  base: '/',
+  // 业务应用部署在 /app/ 路径,base 必须为 '/app/' 以保证资源引用正确
+  // (若为 '/' 则资源请求 /assets/xxx.js 会被 Nginx 路由到官网目录导致 404)
+  base: '/app/',
   server: {
     proxy: {
       '/api': {

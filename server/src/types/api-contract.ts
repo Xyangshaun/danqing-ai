@@ -79,6 +79,15 @@ export enum ErrorCode {
   ANALYSIS_RESULT_FAILED = 6003,
   ANALYSIS_NOT_FOUND = 6004,
   ANALYSIS_IMAGE_INVALID = 6005,
+  // 跨端批删(M-0 追加,DOC-2026-08-002)
+  ANALYSIS_BATCH_LIMIT_EXCEEDED = 6006, // 批删条数超限(>100)
+  // AI 图像生成(61xx 段,M-0 追加,DOC-2026-08-008)
+  GENERATION_QUOTA_EXCEEDED = 6101,          // 生成配额已用完(计入订阅配额)
+  GENERATION_TASK_NOT_FOUND = 6102,          // 生成任务不存在/跨租户
+  GENERATION_PROVIDER_UNAVAILABLE = 6103,    // 双提供商均不可用
+  GENERATION_FAILED = 6104,                  // 生成失败
+  GENERATION_IMAGE_INVALID = 6105,           // 输入草稿图无法解析
+  GENERATION_RATE_LIMITED = 6106,            // 生成接口被限流(5次/分钟)
   // 订阅相关错误码(7xxx)
   SUBSCRIPTION_NOT_FOUND = 7001,
   SUBSCRIPTION_PLAN_INVALID = 7002,
@@ -101,6 +110,8 @@ export enum ErrorCode {
   ADMIN_REFUND_FAILED = 8012,
   ADMIN_PERMISSION_INSUFFICIENT = 8013,
   ADMIN_RESOURCE_CONFLICT = 8014,
+  // 管理后台高危操作幂等确认(M-0 追加,DOC-2026-08-014)
+  ADMIN_CONFIRM_PASSWORD_MISMATCH = 8015,    // 高危操作密码校验失败
   // 知识库实时检索相关错误码(8101-8103,Phase 5 预留)
   KNOWLEDGE_NOT_FOUND = 8101,
   KNOWLEDGE_INDEX_ERROR = 8102,
@@ -133,6 +144,10 @@ export enum ErrorCode {
   PHASE5_PHONE_VERIFICATION_FAILED = 9107,
   PHASE5_INVITATION_INVALID = 9108,
   PHASE5_ADMIN_AUTH_FAILED = 9109,
+  // 租户级仲裁配置覆盖(M-0 追加,DOC-2026-08-004)
+  ARBITRATION_CONFIG_INVALID = 9110, // 仲裁配置校验失败(权重未归一化/取值越界)
+  // 可观测性指标(M-0 追加,DOC-2026-08-012)
+  METRICS_DATA_UNAVAILABLE = 9201,   // 指标数据暂不可用
   // 预留接口相关错误码(99xx)
   NOT_IMPLEMENTED = 9901, // 预留接口未实现
 }
@@ -220,6 +235,17 @@ export const ERROR_HTTP_STATUS: Readonly<Record<number, number>> = Object.freeze
   [ErrorCode.PHASE5_INVITATION_INVALID]: 400,
   [ErrorCode.PHASE5_ADMIN_AUTH_FAILED]: 401,
   [ErrorCode.NOT_IMPLEMENTED]: 501,
+  // ---- M-0 新增错误码 HTTP 状态映射(DOC-2026-08-002/004/008/012/014) ----
+  [ErrorCode.ANALYSIS_BATCH_LIMIT_EXCEEDED]: 400,
+  [ErrorCode.GENERATION_QUOTA_EXCEEDED]: 402,
+  [ErrorCode.GENERATION_TASK_NOT_FOUND]: 404,
+  [ErrorCode.GENERATION_PROVIDER_UNAVAILABLE]: 502,
+  [ErrorCode.GENERATION_FAILED]: 500,
+  [ErrorCode.GENERATION_IMAGE_INVALID]: 400,
+  [ErrorCode.GENERATION_RATE_LIMITED]: 429,
+  [ErrorCode.ADMIN_CONFIRM_PASSWORD_MISMATCH]: 403,
+  [ErrorCode.ARBITRATION_CONFIG_INVALID]: 400,
+  [ErrorCode.METRICS_DATA_UNAVAILABLE]: 503,
 });
 
 // ============ 3.3 认证相关类型 ============
@@ -371,6 +397,8 @@ export interface TenantInfo {
   usedQuota?: number;
   /** 当月分析配额上限(仅 current 接口返回,-1 表示无限) */
   maxQuota?: number;
+  /** 租户级仲裁配置覆盖(未配置为 null;P-04 追加,DOC-2026-08-005) */
+  arbitrationConfig?: ArbitrationConfig | null;
 }
 
 /** GET /tenants/current 响应 */
@@ -1202,6 +1230,8 @@ export interface LockAdminUserRequest {
   locked: boolean;
   /** 锁定原因(可选) */
   reason?: string;
+  /** 高危操作确认密码(可选;dangerLevel=high 时必填,M-0 DOC-2026-08-014) */
+  confirmPassword?: string;
 }
 
 /** POST /api/admin/users/:id/lock 响应 */
@@ -2167,12 +2197,12 @@ export interface ListModuleRegistryQuery extends PaginationQuery {
 /** GET /modules/registry 响应 */
 export type ListModuleRegistryResponse = PaginatedData<ModuleRegistryEntry>;
 
-// ---------- 3.11.3 UI 配置与组件数据(预留) ----------
+// ---------- 3.11.3 UI 配置与组件数据(激活,M-0 DOC-2026-08-013) ----------
 //
 /**
- * @reserved 预留接口
- * @status planned
- * @target_version v2.0
+ * @implemented 已激活(P-03,M-0 标注激活)
+ * @status implemented
+ * @target_version v1.x
  * @description UI 配置与组件数据传递
  * @future_direction 支持主题切换、布局自定义、看板组件化配置
  */
@@ -2352,12 +2382,12 @@ export interface UpdateDashboardRequest {
 /** PATCH /ui/dashboard/:userId 响应 */
 export type UpdateDashboardResponse = DashboardConfig;
 
-// ---------- 3.11.4 功能参数与流程控制(预留) ----------
+// ---------- 3.11.4 功能参数与流程控制(激活,M-0 DOC-2026-08-013) ----------
 //
 /**
- * @reserved 预留接口
- * @status planned
- * @target_version v2.0
+ * @implemented 已激活(P-03,M-0 标注激活)
+ * @status implemented
+ * @target_version v1.x
  * @description 功能参数调整与流程控制
  * @future_direction 支持 feature flag 灰度发布、系统参数热更新、工作流编排
  */

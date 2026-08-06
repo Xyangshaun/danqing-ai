@@ -99,7 +99,8 @@ export interface LazyImageOptions {
 }
 
 export interface LazyImageResult {
-  imgRef: React.RefObject<HTMLImageElement>;
+  /** 回调 ref,直接赋给 <img ref={imgRef}>;元素挂载时建立懒加载观察 */
+  imgRef: (node: HTMLImageElement | null) => void;
   loadedSrc: string | undefined;
   isLoaded: boolean;
   isError: boolean;
@@ -126,10 +127,11 @@ export function useLazyImage(
     once = true,
   } = options;
 
-  const imgRef = useRef<HTMLImageElement>(null);
   const observerRef = useRef<IntersectionObserver | null>(null);
   // 缓存当前已加载的 src,用于 load/error 事件比较(避免 placeholder 触发 isLoaded)
   const activeSrcRef = useRef<string | undefined>(undefined);
+  // 记录 observer 依附的元素(回调 ref 与 effect 共享)
+  const elRef = useRef<HTMLImageElement | null>(null);
 
   // 当前应展示的 src:未触发前用 placeholder,触发后用真实 src
   const [loadedSrc, setLoadedSrc] = useState<string | undefined>(
@@ -137,6 +139,17 @@ export function useLazyImage(
   );
   const [isLoaded, setIsLoaded] = useState(false);
   const [isError, setIsError] = useState(false);
+
+  // 统一比较 img.src 与目标 src:对 data URI 做前缀比较(浏览器会规范化
+  // 百分号编码大小写/空白,导致完整串 includes 失配),对普通 URL 用 includes
+  const srcMatches = useCallback((elSrc: string, target: string | undefined): boolean => {
+    if (!target) return false;
+    if (target.startsWith('data:')) {
+      // data URI:比较 scheme + mime + 前 64 字符指纹即可唯一确定
+      return elSrc.slice(0, 96) === target.slice(0, 96);
+    }
+    return elSrc.includes(target);
+  }, []);
 
   // 清理 observer
   const disconnect = useCallback(() => {
@@ -146,6 +159,46 @@ export function useLazyImage(
       logLazy('disconnect', activeSrcRef.current);
     }
   }, []);
+
+  // 在指定元素上建立 IntersectionObserver 观察(供 effect 与回调 ref 共用)
+  const attachObserver = useCallback(
+    (el: HTMLImageElement) => {
+      const target = activeSrcRef.current;
+      if (!target || target.startsWith('data:')) return;
+      if (typeof IntersectionObserver === 'undefined') return;
+      disconnect();
+      const observer = new IntersectionObserver(
+        (entries) => {
+          for (const entry of entries) {
+            if (entry.isIntersecting) {
+              logLazy('intersect', target, { rootMargin, threshold });
+              setLoadedSrc(target);
+              if (once) disconnect();
+            }
+          }
+        },
+        { rootMargin, threshold },
+      );
+      observerRef.current = observer;
+      observer.observe(el);
+      logLazy('observe', target, { rootMargin, threshold });
+    },
+    [rootMargin, threshold, once, disconnect],
+  );
+
+  // 回调 ref:元素挂载时建立观察,卸载时断开。
+  // 解决 useEffect 先于 ref 赋值导致 imgRef.current 为 null、观察永不建立的时序竞态。
+  const imgRef = useCallback(
+    (node: HTMLImageElement | null) => {
+      elRef.current = node;
+      if (node) {
+        attachObserver(node);
+      } else {
+        disconnect();
+      }
+    },
+    [attachObserver, disconnect],
+  );
 
   // src 变化时:重置状态并重新观察
   useEffect(() => {
@@ -165,6 +218,17 @@ export function useLazyImage(
     activeSrcRef.current = src;
     setIsLoaded(false);
     setIsError(false);
+
+    // data URI(素材库/风格库内联 SVG)同步可解码、零网络:
+    // 无需 IntersectionObserver 懒加载,直接赋值 + 立即标记完成,
+    // 避免 observer/ref 时序问题导致骨架屏常驻。
+    if (src.startsWith('data:')) {
+      setLoadedSrc(src);
+      setIsLoaded(true);
+      logLazy('data-uri-direct', src);
+      return;
+    }
+
     setLoadedSrc(placeholder);
 
     // SSR 安全检查:不支持 IntersectionObserver 时直接加载真实 src
@@ -174,32 +238,11 @@ export function useLazyImage(
       return;
     }
 
-    const el = imgRef.current;
+    // 元素未挂载时等待回调 ref 建立观察(见 attachObserver)
+    const el = elRef.current;
     if (!el) return;
-
-    // 创建 observer
-    const observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (entry.isIntersecting) {
-            logLazy('intersect', src, {
-              rootMargin,
-              threshold,
-              boundingClientRect: entry.boundingClientRect,
-            });
-            setLoadedSrc(src);
-            if (once) {
-              disconnect();
-            }
-          }
-        }
-      },
-      { rootMargin, threshold },
-    );
-    observerRef.current = observer;
-    observer.observe(el);
-    logLazy('observe', src, { rootMargin, threshold });
-
+    attachObserver(el);
+    // eslint-disable-next-line consistent-return
     return () => {
       disconnect();
     };
@@ -215,14 +258,14 @@ export function useLazyImage(
   // 监听 img 的 load/error 事件,自动维护 isLoaded/isError
   // 仅当 loadedSrc 是真实 src(非 placeholder)时才标记状态
   useEffect(() => {
-    const el = imgRef.current;
+    const el = elRef.current;
     if (!el) return;
     // 当前 loadedSrc 不是真实 src(是 placeholder 或 undefined),无需监听
     if (!loadedSrc || loadedSrc === placeholder) return;
 
     const handleLoad = () => {
       // 仅当 img.src 与当前 activeSrc 一致时才标记(避免 src 切换竞态)
-      if (activeSrcRef.current && el.src.includes(activeSrcRef.current)) {
+      if (srcMatches(el.src, activeSrcRef.current)) {
         setIsLoaded(true);
         setIsError(false);
         logLazy('loaded', activeSrcRef.current, {
@@ -232,7 +275,7 @@ export function useLazyImage(
       }
     };
     const handleError = () => {
-      if (activeSrcRef.current && el.src.includes(activeSrcRef.current)) {
+      if (srcMatches(el.src, activeSrcRef.current)) {
         setIsError(true);
         setIsLoaded(false);
         logLazy('error', activeSrcRef.current);
@@ -240,15 +283,28 @@ export function useLazyImage(
     };
     el.addEventListener('load', handleLoad);
     el.addEventListener('error', handleError);
-    // 若图片已加载完成(浏览器缓存),complete=true 且 naturalWidth>0
+    // 若图片已加载完成(浏览器缓存或 data URI 同步解码),complete=true 且 naturalWidth>0
+    // data URI 在赋值后可能已同步完成,需立即兜底判定,否则骨架屏/失败态卡住
     if (el.complete && el.naturalWidth > 0) {
-      handleLoad();
+      // 强制标记(data URI 无前缀失配风险,直接用当前 activeSrc)
+      if (activeSrcRef.current) {
+        setIsLoaded(true);
+        setIsError(false);
+        logLazy('loaded', activeSrcRef.current, { cached: true, naturalWidth: el.naturalWidth });
+      } else {
+        handleLoad();
+      }
+    } else if (el.complete && el.naturalWidth === 0 && el.src.startsWith('data:')) {
+      // data URI complete 但解码失败(损坏)→ 直接置错误态
+      setIsError(true);
+      setIsLoaded(false);
+      logLazy('error', activeSrcRef.current, { cached: true });
     }
     return () => {
       el.removeEventListener('load', handleLoad);
       el.removeEventListener('error', handleError);
     };
-  }, [loadedSrc, placeholder]);
+  }, [loadedSrc, placeholder, srcMatches]);
 
   return {
     imgRef,
