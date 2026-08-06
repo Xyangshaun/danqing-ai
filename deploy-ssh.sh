@@ -25,6 +25,15 @@ if [ "$HITS" -gt 0 ]; then
 fi
 echo "OK: 0 trae-api-cn URLs in new bundle"
 
+# 3.25. 校验:确保新 bundle 没有 localhost 硬编码
+LOCALHOST_HITS=$(grep -rE 'localhost:3000|localhost:5173|127\.0\.0\.1:3000|127\.0\.0\.1:5173' /tmp/dist.new/assets/*.js | wc -l)
+if [ "$LOCALHOST_HITS" -gt 0 ]; then
+  echo "FAIL: new bundle still has $LOCALHOST_HITS localhost references"
+  grep -rE 'localhost:3000|localhost:5173|127\.0\.0\.1:3000|127\.0\.0\.1:5173' /tmp/dist.new/assets/*.js | head -5
+  exit 1
+fi
+echo "OK: 0 localhost URLs in new bundle"
+
 # 3.5. 校验:index-*.js 中是否包含 /api/v1 与 danqing.site 飞书回调
 echo "[3.5/5] Verifying /api/v1 + danqing.site in bundle"
 BUNDLE=$(ls /tmp/dist.new/assets/index-*.js | head -1)
@@ -32,7 +41,7 @@ if ! grep -q '/api/v1' "$BUNDLE"; then
   echo "FAIL: /api/v1 missing from bundle"
   exit 1
 fi
-if ! grep -q 'danqing.site/auth/feishu/callback' "$BUNDLE"; then
+if ! grep -q 'danqing.site/app/auth/feishu/callback' "$BUNDLE"; then
   echo "FAIL: danqing.site feishu callback missing from bundle"
   exit 1
 fi

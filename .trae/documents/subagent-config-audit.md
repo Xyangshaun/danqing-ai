@@ -37,11 +37,11 @@
 | 01 | product-architect | glm-5.2 | Read/Write/Edit/Glob/Grep/TodoWrite/WebSearch/WebFetch/Skill | Bash | GitHub | ✅ |
 | 02 | frontend-app | Doubao_1_6 | Read/Write/Edit/Glob/Grep/Bash/TodoWrite/Skill/LSP | (空) | GitHub | ✅ |
 | 03 | backend-service | Doubao_1_6 | Read/Write/Edit/Glob/Grep/Bash/TodoWrite/WebSearch/WebFetch/Skill/LSP | (空) | GitHub | ⚠️ 缺 lark-cli |
-| 04 | marketing-website | Doubao_1_6 | Read/Write/Edit/Glob/Grep/Bash/TodoWrite/WebSearch/WebFetch/Skill | (空) | GitHub | ⚠️ 缺 Vercel(选装) |
+| 04 | marketing-website | Doubao_1_6 | Read/Write/Edit/Glob/Grep/Bash/TodoWrite/WebSearch/WebFetch/Skill | (空) | GitHub | ✅(Vercel MCP 已废弃) |
 | 05 | mobile-app | Doubao_1_6 | Read/Write/Edit/Glob/Grep/Bash/TodoWrite/WebSearch/WebFetch/Skill | (空) | GitHub | ⚠️ 缺 lark-cli |
 | 06 | admin-dashboard | Doubao_1_6 | Read/Write/Edit/Glob/Grep/Bash/WebFetch/Skill | (空) | GitHub | ⚠️ 缺 lark-cli |
 | 07 | auth-oauth | glm-5.2 | Read/Write/Edit/Glob/Grep/Bash/TodoWrite/WebSearch/WebFetch/Skill | (空) | GitHub | ⚠️ 缺 lark-cli |
-| 08 | devops-qa | glm-5.2 | Read/Write/Edit/Glob/Grep/Bash/TodoWrite/WebSearch/WebFetch/Skill | (空) | GitHub | ⚠️ 缺 Vercel(选装) |
+| 08 | devops-qa | glm-5.2 | Read/Write/Edit/Glob/Grep/Bash/TodoWrite/WebSearch/WebFetch/Skill | (空) | GitHub | ✅(Vercel MCP 已废弃) |
 | 09 | ui-designer | glm-5.2 | Read/Write/Edit/Glob/Grep/TodoWrite/WebSearch/WebFetch/Skill | Bash | GitHub | ✅ |
 | 10 | api-test-pro | glm-5.2 | Read/Write/Edit/Glob/Grep/Bash/TodoWrite/WebFetch/Skill | (空) | GitHub | ✅ |
 | 11 | ai-integration-engineer | glm-5.2 | Read/Write/Edit/Glob/Grep/Bash/TodoWrite/WebSearch/WebFetch/Skill | (空) | GitHub | ✅ |
@@ -89,20 +89,9 @@ mcpServers:
 
 **方案 B**:删除 frontmatter 中的 `mcpServers` 字段,让 Subagent 加载 IDE 中所有已启用 MCP(默认行为)
 
-### 3.2 差异 2:Vercel MCP 绑定缺失(选装)
+### 3.2 ~~差异 2:Vercel MCP 绑定缺失~~(已废弃)
 
-**问题描述**:`project_memory.md` 指出"Vercel MCP 启用 Agent 为 04/08",但当前 04/08 frontmatter 仅声明 `GitHub`。
-
-**影响**:Phase 2 部署阶段(04 marketing-website / 08 devops-qa)将无法通过 MCP 调用 Vercel API。
-
-**修复方案**:Phase 2 启动前补全
-
-```yaml
-# 04-marketing-website.md / 08-devops-qa.md
-mcpServers:
-  - GitHub
-  - Vercel
-```
+**已不再需要**。当前生产部署使用腾讯云 VPS + Nginx + PM2(业务 Web/后端)与 GitHub Pages(官网),均不通过 Vercel API 操作。04/08 frontmatter 仅声明 `GitHub` 即满足需求。
 
 ### 3.3 MCP Server 名称一致性
 
@@ -179,12 +168,9 @@ mcpServers:
 - [ ] 2.2.9 验证:对话中测试 `@Agent 使用飞书 MCP 查询当前认证状态`
 - [ ] 2.2.10 **记录 MCP Server 精确名称**,用于 frontmatter 校对
 
-#### 2.3 Vercel MCP(选装,Phase 2 再装)
+#### 2.3 ~~Vercel MCP~~(已废弃,无需安装)
 
-- [ ] 2.3.1 登录 Vercel → 头像 → Settings → Tokens → Create
-- [ ] 2.3.2 Token Name:`danqing-ai-deploy`,Scope:Full Access,Expiration:90 days
-- [ ] 2.3.3 复制 token,保存到密码管理器
-- [ ] 2.3.4 TRAE IDE → MCP → 市场搜索 "Vercel" → 安装 → 填入 token → 保存
+> 当前部署使用腾讯云 VPS + GitHub Pages,不依赖 Vercel API。本节保留作历史记录。
 
 ### 第三阶段:补全 frontmatter MCP 绑定(可选,推荐)
 
@@ -204,9 +190,8 @@ mcpServers:
   mcpServers:
     - GitHub
     - lark-cli       # 替换为实际名称
-    - Vercel         # 替换为实际名称(若已装)
   ```
-- [ ] 3.6 编辑 `.trae/agents/04-marketing-website.md`,添加 Vercel(若已装)
+- [ ] 3.6 ~~编辑 `.trae/agents/04-marketing-website.md`,添加 Vercel~~(已废弃,无需添加)
 - [ ] 3.7 重启 TRAE IDE 使配置生效
 
 ### 第四阶段:验证 13 个 Subagent 加载(5 分钟)

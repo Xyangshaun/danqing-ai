@@ -175,7 +175,7 @@
                 </div>
               </div>
 
-              <div class="upload-zone" id="uploadZone">
+              <div class="upload-zone" id="uploadZone" role="button" tabindex="0" aria-label="上传作品图片">
                 <div class="upload-icon">
                   <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
@@ -186,6 +186,7 @@
                 <h3 class="upload-title">拖拽作品到这里，或点击上传</h3>
                 <p class="upload-desc">支持 JPG、PNG、WEBP 格式，单张不超过 20MB</p>
                 <p class="upload-formats">建议使用高清原图以获得更精准诊断</p>
+                <input type="file" id="fileInput" accept="image/jpeg,image/png,image/webp" hidden>
               </div>
 
               <div class="btn-group" style="margin-top: var(--space-xl); justify-content: center;">
@@ -295,16 +296,74 @@
       function initFormTypeSelect() {
         const options = document.querySelectorAll('.form-type-option');
         options.forEach(option => {
+          // P1e:div 可点击节点补键盘可达
+          option.setAttribute('role', 'button');
+          option.setAttribute('tabindex', '0');
           option.addEventListener('click', () => {
             options.forEach(o => o.classList.remove('selected'));
             option.classList.add('selected');
           });
+          option.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              option.click();
+            }
+          });
         });
+      }
+
+      // 上传状态
+      let selectedFile = null;
+      const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB
+      const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+
+      function showUploadTip(text) {
+        const title = document.querySelector('#uploadZone .upload-title');
+        if (title) title.textContent = text;
+      }
+
+      function validateFile(file) {
+        if (!file) return false;
+        if (!ALLOWED_TYPES.includes(file.type)) {
+          showUploadTip('仅支持 JPG、PNG、WEBP 格式');
+          return false;
+        }
+        if (file.size > MAX_FILE_SIZE) {
+          showUploadTip('文件超过 20MB 限制');
+          return false;
+        }
+        return true;
+      }
+
+      function handleFile(file) {
+        if (!validateFile(file)) {
+          selectedFile = null;
+          return;
+        }
+        selectedFile = file;
+        showUploadTip('已选择: ' + file.name);
       }
 
       function initUploadZone() {
         const zone = document.getElementById('uploadZone');
+        const fileInput = document.getElementById('fileInput');
         if (!zone) return;
+
+        // P1c:点击上传区触发文件选择(键盘可达)
+        zone.addEventListener('click', () => fileInput && fileInput.click());
+        zone.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            fileInput && fileInput.click();
+          }
+        });
+
+        // 文件选择
+        if (fileInput) {
+          fileInput.addEventListener('change', () => {
+            if (fileInput.files && fileInput.files[0]) handleFile(fileInput.files[0]);
+          });
+        }
 
         ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
           zone.addEventListener(eventName, (e) => {
@@ -320,11 +379,35 @@
         ['dragleave', 'drop'].forEach(eventName => {
           zone.addEventListener(eventName, () => zone.classList.remove('dragover'));
         });
+
+        // 拖拽文件(校验)
+        zone.addEventListener('drop', (e) => {
+          const files = e.dataTransfer && e.dataTransfer.files;
+          if (files && files[0]) handleFile(files[0]);
+        });
       }
 
+      // P1b:防重复点击
+      let isAnalyzing = false;
+
       function startAnalysis() {
+        const btn = document.getElementById('startAnalysisBtn');
         const panel = document.getElementById('analysisProgressPanel');
         if (!panel) return;
+
+        // P1c:未上传文件不允许进入诊断
+        if (!selectedFile) {
+          showUploadTip('请先上传作品图片');
+          return;
+        }
+
+        // P1b:已在分析中则忽略重复点击
+        if (isAnalyzing) return;
+        isAnalyzing = true;
+        if (btn) {
+          btn.disabled = true;
+          btn.textContent = '分析中...';
+        }
 
         panel.style.display = 'block';
         panel.scrollIntoView({ behavior: 'smooth' });

@@ -1043,7 +1043,7 @@ const TEMPLATES = {
 | 技术栈         | 引入新框架（如Next.js用于前端/后端Python/Vue等） | 保持现有React+Express技术栈                      |
 | 目录重构        | 重组目录结构、移动文件位置                     | 架构稳定优先                                    |
 | Admin后台     | 管理后台功能开发/优化                       | 复赛演示以学生端为主，admin暂不打磨                      |
-| Marketing官网 | 官网页面开发/部署                         | 独立项目，本次不涉及                                |
+| Marketing官网 | 官网页面开发/部署                         | 主仓库 `website/` 目录(Next.js 14 静态导出),本次不涉及                |
 | 移动端         | React Native App开发                | Phase 2内容                                 |
 | CLIP训练      | 本地训练/部署CLIP模型                     | 成本过高，通过TRAE API调用即可                       |
 | 真实MLLM部署    | 本地部署LLaVA/LLaMA等开源模型              | 资源消耗大，使用TRAE内置能力                          |

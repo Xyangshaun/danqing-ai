@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" role="img" aria-label="素描习作">
+  <defs>
+    <linearGradient id="bg8" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#efebe2"/>
+      <stop offset="1" stop-color="#ddd6c8"/>
+    </linearGradient>
+  </defs>
+  <rect width="400" height="300" fill="url(#bg8)"/>
+  <circle cx="200" cy="110" r="30" fill="#ffffff" stroke="#3a3a3a" stroke-width="2"/>
+  <path d="M170 140 L160 200 L240 200 L230 140 Z" fill="#ffffff" stroke="#3a3a3a" stroke-width="2"/>
+  <path d="M175 150 L225 150 M180 165 L220 165 M183 180 L217 180" fill="none" stroke="#8a8a8a" stroke-width="2"/>
+  <text x="200" y="268" text-anchor="middle" font-family="serif" font-size="18" fill="#5a5140">素描习作</text>
+</svg>

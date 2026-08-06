@@ -142,7 +142,8 @@ mcpServers:
 |---|---|---|
 | `GitHub` | GitHub PR/Issue/Actions | 全部 |
 | 飞书(lark-cli) | 飞书 OAuth/消息/通讯录 | 03/05/06/07/08 |
-| Vercel(可选) | Vercel 部署 | 04/08 |
+
+> **注**:Vercel MCP 已废弃。当前部署使用腾讯云 VPS + Nginx + PM2 与 GitHub Pages,不依赖 Vercel API。
 
 ---
 
@@ -204,7 +205,6 @@ mcpServers:
 ### 第二步:安装 MCP Server
 - [ ] 安装 GitHub MCP(填入 GitHub PAT)
 - [ ] 安装飞书 MCP(填入 App ID + App Secret)
-- [ ] (可选)安装 Vercel MCP
 
 ### 第三步:验证 Subagent 加载
 - [ ] 重启 TRAE IDE

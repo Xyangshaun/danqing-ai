@@ -225,8 +225,9 @@ GET {redirect_uri}?code={code}&state={state}
 项目前端使用 HashRouter(路由形如 `/#/dashboard`),但飞书回调到的是**标准路径** `/auth/feishu/callback?code=xxx&state=xxx`(不带 `#`)。直接配合 HashRouter 会出现路由解析问题。采用如下方案:
 
 1. **回调路径走后端,不走前端路由**(推荐,生产可用):
-   - 飞书重定向 URL 配置为后端:`https://api.域名/api/auth/feishu/callback`
-   - 后端处理完 code/state 后,`302` 跳转到前端 `https://www.域名/#/auth/feishu/success?session=...`(session 为一次性短 TTL 票据,前端用它换取 access_token,避免 URL 暴露 token)
+   - 飞书重定向 URL 配置为后端:`https://www.danqing.site/api/v1/auth/feishu/callback`
+   - 后端处理完 code/state 后,`302` 跳转到前端 `https://www.danqing.site/auth/feishu/callback?session=...`(session 为一次性短 TTL 票据,前端用它换取 access_token,避免 URL 暴露 token)
+   - **实际实现**:当前生产使用前端回调方案,飞书重定向 URL 为 `https://www.danqing.site/auth/feishu/callback`(见 `VITE_FEISHU_REDIRECT_URI`),Nginx `try_files` 兜底到 SPA index.html
 2. **开发环境妥协方案**(本地联调):
    - Vite dev server 默认会把所有路径 fallback 到 `index.html`,因此 `/auth/feishu/callback?code=...` 也能加载到 React App
    - 在 `App.tsx` 顶层 `useEffect` 检测 `window.location.pathname === '/auth/feishu/callback'`,从 `searchParams` 取 `code/state`,调用步骤 6 接口,完成后 `router.replace('/dashboard')`
@@ -691,7 +692,7 @@ const corsOptions = {
 };
 ```
 
-- 白名单来源:`CORS_ORIGINS` 环境变量,生产只配置 `https://www.域名`、`https://admin.域名`
+- 白名单来源:`CORS_ORIGINS` 环境变量,生产只配置 `https://www.danqing.site`(admin 后台共用同域名,通过子路径访问)
 - 禁止 `origin: '*'`(与 credentials 互斥,且违反最小权限)
 
 ### 3.3 Rate Limiting(限流)

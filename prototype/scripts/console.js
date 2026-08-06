@@ -127,23 +127,79 @@
 
   /**
    * 创作形式选择
+   * P1e:div 可点击节点补键盘可达
    */
   function initFormTypeSelect() {
     const options = document.querySelectorAll('.form-type-option');
     options.forEach(option => {
+      option.setAttribute('role', 'button');
+      option.setAttribute('tabindex', '0');
       option.addEventListener('click', () => {
         options.forEach(o => o.classList.remove('selected'));
         option.classList.add('selected');
+      });
+      option.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          option.click();
+        }
       });
     });
   }
 
   /**
    * 上传区交互
+   * P1c:增加文件校验 + input file
    */
+  let selectedFile = null;
+  const MAX_FILE_SIZE = 20 * 1024 * 1024;
+  const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+
+  function showUploadTip(text) {
+    const title = document.querySelector('#uploadZone .upload-title');
+    if (title) title.textContent = text;
+  }
+
+  function validateFile(file) {
+    if (!file) return false;
+    if (!ALLOWED_TYPES.includes(file.type)) {
+      showUploadTip('仅支持 JPG、PNG、WEBP 格式');
+      return false;
+    }
+    if (file.size > MAX_FILE_SIZE) {
+      showUploadTip('文件超过 20MB 限制');
+      return false;
+    }
+    return true;
+  }
+
+  function handleFile(file) {
+    if (!validateFile(file)) {
+      selectedFile = null;
+      return;
+    }
+    selectedFile = file;
+    showUploadTip('已选择: ' + file.name);
+  }
+
   function initUploadZone() {
     const zone = document.getElementById('uploadZone');
+    const fileInput = document.getElementById('fileInput');
     if (!zone) return;
+
+    zone.addEventListener('click', () => fileInput && fileInput.click());
+    zone.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        fileInput && fileInput.click();
+      }
+    });
+
+    if (fileInput) {
+      fileInput.addEventListener('change', () => {
+        if (fileInput.files && fileInput.files[0]) handleFile(fileInput.files[0]);
+      });
+    }
 
     ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
       zone.addEventListener(eventName, (e) => {
@@ -160,21 +216,35 @@
       zone.addEventListener(eventName, () => zone.classList.remove('dragover'));
     });
 
-    zone.addEventListener('drop', () => {
-      // 实际项目这里处理文件
-    });
-
-    zone.addEventListener('click', () => {
-      // 实际项目这里触发 input file
+    zone.addEventListener('drop', (e) => {
+      const files = e.dataTransfer && e.dataTransfer.files;
+      if (files && files[0]) handleFile(files[0]);
     });
   }
 
   /**
    * 开始分析（全局函数供 HTML 调用）
+   * P1b:防重复点击
    */
+  let isAnalyzing = false;
   window.startAnalysis = function() {
+    const btn = document.getElementById('startAnalysisBtn');
     const panel = document.getElementById('analysisProgressPanel');
     if (!panel) return;
+
+    // P1c:未上传文件不允许进入诊断
+    if (!selectedFile) {
+      showUploadTip('请先上传作品图片');
+      return;
+    }
+
+    // P1b:已在分析中则忽略重复点击
+    if (isAnalyzing) return;
+    isAnalyzing = true;
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = '分析中...';
+    }
 
     panel.style.display = 'block';
     panel.scrollIntoView({ behavior: 'smooth' });

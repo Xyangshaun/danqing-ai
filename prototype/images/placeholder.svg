@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" role="img" aria-label="图片加载失败">
+  <rect width="400" height="300" fill="#f0ece1"/>
+  <rect x="40" y="40" width="320" height="220" rx="8" fill="none" stroke="#c9bda6" stroke-width="2" stroke-dasharray="6 6"/>
+  <text x="200" y="160" text-anchor="middle" font-family="serif" font-size="16" fill="#9a8f7a">图片加载失败</text>
+</svg>

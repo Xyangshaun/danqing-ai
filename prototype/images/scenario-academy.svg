@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" role="img" aria-label="院校场景">
+  <defs>
+    <linearGradient id="bg7" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f1efe6"/>
+      <stop offset="1" stop-color="#dfd9c8"/>
+    </linearGradient>
+  </defs>
+  <rect width="400" height="300" fill="url(#bg7)"/>
+  <rect x="80" y="90" width="240" height="130" fill="#ffffff" stroke="#8a7a5a" stroke-width="2"/>
+  <path d="M80 90 L200 40 L320 90 Z" fill="#c41e3a" opacity="0.5"/>
+  <rect x="120" y="150" width="30" height="70" fill="#6a5a40"/>
+  <rect x="180" y="150" width="30" height="70" fill="#6a5a40"/>
+  <rect x="240" y="150" width="30" height="70" fill="#6a5a40"/>
+  <text x="200" y="268" text-anchor="middle" font-family="serif" font-size="18" fill="#4a4438">院校空间</text>
+</svg>

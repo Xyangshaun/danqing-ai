@@ -12,7 +12,7 @@ mcpServers:
 
 【项目背景】
 技术栈:Ant Design Pro 5 + TypeScript + UmiJS + ECharts。
-独立部署,域名 admin.域名,仅限内网或VPN访问。
+与业务 Web 同机部署(腾讯云 VPS 43.128.25.202),通过 Nginx 子路径或子域名访问,API 前缀 `/api/admin/`。
 
 【核心模块】
 1. 用户管理:用户列表(搜索/筛选/批量操作/导出)、角色管理(RBAC)、权限分配(菜单级+按钮级+数据级)、飞书组织架构同步

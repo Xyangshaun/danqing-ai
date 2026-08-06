@@ -22,6 +22,21 @@
     initTiltCards();
     initGlowButtons();
     initFxDemo();
+    initImageFallback();
+  }
+
+  /**
+   * P1a:图片加载失败降级
+   * 本地静态图加载失败时,替换为本地占位图,避免显示破图。
+   */
+  function initImageFallback() {
+    document.querySelectorAll('img[src]').forEach(img => {
+      img.addEventListener('error', () => {
+        if (img.dataset.fbApplied) return;
+        img.dataset.fbApplied = '1';
+        img.src = 'images/placeholder.svg';
+      });
+    });
   }
 
   // 是否减少动画（系统偏好）
@@ -205,6 +220,8 @@
     menuBtn.addEventListener('click', () => {
       const isOpen = menuBtn.classList.toggle('active');
       mobileMenu.classList.toggle('active', isOpen);
+      // P2:同步 aria-expanded 状态
+      menuBtn.setAttribute('aria-expanded', String(isOpen));
       document.body.style.overflow = isOpen ? 'hidden' : '';
     });
 
@@ -213,6 +230,7 @@
       link.addEventListener('click', () => {
         menuBtn.classList.remove('active');
         mobileMenu.classList.remove('active');
+        menuBtn.setAttribute('aria-expanded', 'false');
         document.body.style.overflow = '';
       });
     });
@@ -220,10 +238,16 @@
 
   /**
    * 滚动显示动画（Intersection Observer）
+   * P1d:不支持 IntersectionObserver 时直接显示,避免内容永久隐藏
    */
   function initScrollReveal() {
     const reveals = document.querySelectorAll('.reveal');
     if (!reveals.length) return;
+
+    if (typeof IntersectionObserver === 'undefined') {
+      reveals.forEach(el => el.classList.add('visible'));
+      return;
+    }
 
     const observer = new IntersectionObserver((entries) => {
       entries.forEach(entry => {
@@ -242,10 +266,16 @@
 
   /**
    * 数字计数动画
+   * P1d:不支持 IntersectionObserver 时直接播放
    */
   function initCounters() {
     const counters = document.querySelectorAll('[data-counter]');
     if (!counters.length) return;
+
+    if (typeof IntersectionObserver === 'undefined') {
+      counters.forEach(counter => animateCounter(counter));
+      return;
+    }
 
     const observer = new IntersectionObserver((entries) => {
       entries.forEach(entry => {

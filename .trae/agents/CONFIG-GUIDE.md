@@ -94,13 +94,14 @@ mcpServers:
 
 ## 🔧 步骤2:安装 MCP Server
 
-### MCP 清单(共3个)
+### MCP 清单(共2个)
 
 | MCP Server | 必要性 | 用途 | 启用 Agent |
 |---|---|---|---|
 | GitHub | ✅ 必装 | PR/Issue/Actions | 全部 13 个 |
 | 飞书(lark-cli) | ✅ 必装 | OAuth/消息/通讯录 | 03/05/06/07/08 |
-| Vercel | ⚠️ 选装 | 部署 | 04/08 |
+
+> **注**:Vercel MCP 已不再需要。当前生产部署使用腾讯云 VPS + Nginx + PM2(业务 Web/后端)与 GitHub Pages(官网),均不通过 Vercel API 操作。
 
 ---
 
@@ -201,20 +202,9 @@ https://admin.你的域名/auth/feishu/callback
 
 ---
 
-### 2.3 安装 Vercel MCP(选装,Phase 2 再装)
+### 2.3 ~~安装 Vercel MCP~~(已废弃)
 
-#### 获取 Vercel Token
-1. 登录 [Vercel](https://vercel.com/) → 头像 → Settings
-2. 左侧 Tokens → Create
-3. Token Name:`danqing-ai-deploy`
-4. Scope:Full Access 或指定团队
-5. Expiration:90 days
-6. Create → 立即复制 token
-
-#### 在 TRAE IDE 安装
-1. MCP → 市场搜索 "Vercel"
-2. 安装 → 填入 Vercel Token
-3. 保存
+> **已不再需要**。当前生产部署使用腾讯云 VPS(Nginx + PM2)与 GitHub Pages(`deploy-gh-pages.cjs`),不通过 Vercel API 操作。如未来需要恢复 Vercel 部署,再安装此 MCP。
 
 ---
 
@@ -342,7 +332,7 @@ https://admin.你的域名/auth/feishu/callback
 - **模型**:Doubao_1_6
 - **工具**:Read, Write, Edit, Glob, Grep, Bash, TodoWrite, WebSearch, WebFetch, Skill
 - **MCP**:GitHub
-- **文件范围**:独立 Next.js 项目
+- **文件范围**:`website/`(主仓库内 Next.js 14 静态导出项目)、根目录 `deploy-gh-pages.cjs`
 - **调用场景**:品牌官网建设、SEO优化、转化漏斗设计
 
 #### 5. mobile-app(移动端)
@@ -386,7 +376,7 @@ https://admin.你的域名/auth/feishu/callback
 - **模型**:glm-5.2
 - **工具**:Read, Write, Edit, Glob, Grep, Bash, TodoWrite, WebSearch, WebFetch, Skill
 - **MCP**:GitHub
-- **文件范围**:`.github/workflows/`, `Dockerfile`, `docker-compose.yml`, `vercel.json`
+- **文件范围**:`deploy/`、`ecosystem.config.cjs`、`deploy-gh-pages.cjs`、`server/.env.production`、`DEPLOYMENT.md`、`.trae/deploy-runbook-danqing.md`
 - **调用场景**:CI/CD流水线、多端部署、监控告警、自动化测试
 
 #### 12. performance-expert(性能优化)
@@ -501,7 +491,6 @@ https://admin.你的域名/auth/feishu/callback
 ### 第二步:安装 MCP
 - [ ] 安装 GitHub MCP(填入 Fine-grained PAT)
 - [ ] 安装飞书 MCP(填入 App ID + App Secret)
-- [ ] (可选)安装 Vercel MCP
 
 ### 第三步:验证 Subagent
 - [ ] 对话中输入 `@`,看到 13 个 Subagent
