@@ -410,6 +410,7 @@ export default function HomePage() {
                             <img
                               src={work.imageUrl}
                               alt="作品缩略图"
+                              loading="lazy"
                               className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                             />
                           ) : (
@@ -439,6 +440,7 @@ export default function HomePage() {
                               onClick={(e) => { e.stopPropagation(); navigate('/history'); }}
                               className="w-8 h-8 bg-white/95 backdrop-blur rounded-md flex items-center justify-center text-ink-700 hover:bg-cinnabar hover:text-white transition-colors shadow-card"
                               title="查看详情"
+                              aria-label="查看详情"
                             >
                               <Eye className="w-4 h-4" />
                             </button>
@@ -447,6 +449,7 @@ export default function HomePage() {
                               onClick={(e) => { e.stopPropagation(); navigate(`/analyze?type=${work.artType}`); }}
                               className="w-8 h-8 bg-white/95 backdrop-blur rounded-md flex items-center justify-center text-ink-700 hover:bg-cinnabar hover:text-white transition-colors shadow-card"
                               title="再次诊断"
+                              aria-label="再次诊断"
                             >
                               <RefreshCw className="w-4 h-4" />
                             </button>

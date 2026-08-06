@@ -11,7 +11,8 @@
 // - 对应后端 API 契约:.trae/documents/api-contract-v1.md
 //   统一响应格式:{ code, message, data, traceId },code=0 成功
 // ============================================================
-import axios, {
+import axios from 'axios';
+import type {
   AxiosError,
   AxiosInstance,
   AxiosResponse,
@@ -21,7 +22,7 @@ import Constants from 'expo-constants';
 import { router } from 'expo-router';
 import { useAuthStore } from '../store';
 import { authStorage } from '../utils/storage';
-import { ApiResponse, ErrorCode } from '../types/api-contract';
+import { type ApiResponse, ErrorCode } from '../types/api-contract';
 
 const extra = (Constants.expoConfig?.extra ?? {}) as {
   apiBaseUrl?: string;

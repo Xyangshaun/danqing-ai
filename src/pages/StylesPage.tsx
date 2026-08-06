@@ -125,6 +125,7 @@ export default function StylesPage() {
                         <img
                           src={config.coverImage}
                           alt={config.name}
+                          loading="lazy"
                           className={`w-full h-full object-cover group-hover:scale-105 transition-all duration-500 ${
                             coverLoadStates[key] === 'loaded' ? 'opacity-100' : 'opacity-0'
                           }`}
@@ -214,12 +215,13 @@ export default function StylesPage() {
             {/* Category Detail */}
             <div className="mb-6">
               <button
-                onClick={() => {
-                  setSelectedCategory(null);
-                  setSelectedStyle(null);
-                }}
-                className="flex items-center gap-2 text-ink-500 hover:text-ink-700 mb-4"
-              >
+              onClick={() => {
+                setSelectedCategory(null);
+                setSelectedStyle(null);
+              }}
+              aria-label="返回分类"
+              className="flex items-center gap-2 text-ink-500 hover:text-ink-700 mb-4"
+            >
                 <ArrowRight className="w-4 h-4 rotate-180" />
                 <span>返回分类</span>
               </button>
@@ -350,6 +352,7 @@ export default function StylesPage() {
                           e.stopPropagation();
                           toggleFavorite(artwork.id, artwork.title);
                         }}
+                        aria-label={favorites.has(artwork.id) ? '取消收藏' : '收藏'}
                         className="p-1.5 rounded-full hover:bg-rice-100 transition-all"
                       >
                         <Heart
@@ -392,6 +395,7 @@ export default function StylesPage() {
                   <img
                     src={selectedArtwork.imageUrl}
                     alt={selectedArtwork.title}
+                    loading="lazy"
                     className={`w-full h-full object-contain max-h-[60vh] md:max-h-[80vh] transition-opacity duration-500 ${
                       imageLoadStates[selectedArtwork.id] === 'loaded' ? 'opacity-100' : 'opacity-0'
                     }`}
@@ -418,6 +422,7 @@ export default function StylesPage() {
                   </div>
                   <button
                     onClick={() => setSelectedArtwork(null)}
+                    aria-label="关闭"
                     className="p-2 hover:bg-rice-100 rounded-full transition-all"
                   >
                     <X className="w-5 h-5 text-ink-700" />
@@ -483,6 +488,7 @@ export default function StylesPage() {
                 <div className="flex gap-3">
                   <button
                     onClick={() => toggleFavorite(selectedArtwork.id, selectedArtwork.title)}
+                    aria-label={favorites.has(selectedArtwork.id) ? '取消收藏' : '收藏'}
                     className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg transition-all ${
                       favorites.has(selectedArtwork.id)
                         ? 'bg-cinnabar text-white'

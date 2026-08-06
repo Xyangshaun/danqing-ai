@@ -52,6 +52,10 @@ module.exports = {
     'admin',
     'server',
     'prototype',
+    // dq-video: Remotion 视频模板,由外部工具生成,会自动重置,不参与 lint
+    'dq-video',
+    // mobile: React Native 独立项目,有自己的 lint 配置
+    'mobile',
     '*.config.js',
     '*.config.cjs',
     'src/test/**',

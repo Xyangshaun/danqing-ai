@@ -57,6 +57,37 @@ function createImageUrl(): string {
   return 'data:image/jpeg;base64, mock';
 }
 
+/**
+ * Mock 全局 Image 构造器,使其返回指定 width/height
+ * jsdom 默认 Image.width=0,导致 pixelCount=0 无法触发 complex 分支
+ * 使用后必须调用 restoreImageMock() 恢复
+ *
+ * 使用模块级变量保存原始 Image,避免在函数上挂载属性(触发 no-explicit-any)。
+ */
+let originalImageRef: typeof globalThis.Image | undefined;
+
+function mockImageDimensions(width: number, height: number): void {
+  originalImageRef = globalThis.Image;
+  vi.stubGlobal('Image', class MockImage {
+    width = width;
+    height = height;
+    src = '';
+    onload: (() => void) | null = null;
+    onerror: (() => void) | null = null;
+    addEventListener() {}
+    removeEventListener() {}
+  });
+}
+
+function restoreImageMock(): void {
+  if (originalImageRef) {
+    vi.stubGlobal('Image', originalImageRef);
+    originalImageRef = undefined;
+  } else {
+    vi.unstubAllGlobals();
+  }
+}
+
 // ============================================================
 // 1. decideAnalysisMode - server 不可用分支
 // ============================================================
@@ -69,16 +100,13 @@ describe('decideAnalysisMode - server 不可用', () => {
     expect(result.reason).toContain('后端服务不可用');
   });
 
-  it('server 不可用 + 高复杂度 (大文件) estimatedTime=5', () => {
-    // 大文件 → fileSizeMB > 5 → complexityScore += 10 → 总分可能 > 60
-    const file = createFile(6 * 1024 * 1024); // 6MB → fileSizeMB=6 > 5
+  it('server 不可用 + 大文件 (6MB) → client 模式, estimatedTime=3', () => {
+    // 6MB → min(30,36)=30; >5 加 10; mp=0; colors=16→1.33; elements=3→1 → score≈42
+    // painting weight=1.0 → weightedScore≈42 ≤ 60 → estimatedTime=3
+    const file = createFile(6 * 1024 * 1024);
     const result = decideAnalysisMode(file, createImageUrl(), 'painting', false);
     expect(result.mode).toBe('client');
-    // fileSizeMB=6 → score=min(30, 6*6)=30; >5 加 10; 总分约 40+,weightedScore > 60 取决于 artType
-    // painting weight=1.0 → weightedScore=40 → estimatedTime=3
-    // 但 6MB > 5MB 触发 +10 → 40+10=50, painting weight 1.0 → 50 → <=60 → estimatedTime=3
-    // 实际取决于精确计算,此处仅验证为 3 或 5
-    expect([3, 5]).toContain(result.estimatedTime);
+    expect(result.estimatedTime).toBe(3);
   });
 });
 
@@ -169,6 +197,39 @@ describe('decideAnalysisMode - 复杂度评估', () => {
     expect(result.reason).toContain('雕塑');
     expect(result.estimatedTime).toBe(4);
   });
+
+  it('mock Image 高分辨率 → complex 复杂度 + server 可用 → server 模式, estimatedTime=5', () => {
+    // mock Image 返回 4000x2000 → pixelCount=8M → +10; mp=8 → +25; colors=256 → +20; elements=50 → +15
+    // 1MB → +6; 总分=76 → complex (≥75) → server 模式, estimatedTime=5
+    mockImageDimensions(4000, 2000);
+    try {
+      const file = createFile(1 * 1024 * 1024);
+      const result = decideAnalysisMode(file, createImageUrl(), 'painting', true);
+      expect(result.complexity.level).toBe('complex');
+      expect(result.complexity.score).toBe(76);
+      expect(result.mode).toBe('server');
+      expect(result.reason).toContain('复杂度');
+      expect(result.estimatedTime).toBe(5);
+      expect(result.complexity.factors.pixelCount).toBe(8_000_000);
+    } finally {
+      restoreImageMock();
+    }
+  });
+
+  it('pixelCount > 4000000 分支覆盖: mock Image 3000x2000 → +10 bonus', () => {
+    // 3000x2000=6M pixels → >4M → +10 bonus
+    // 1MB → +6; mp=6 → +25; colors=min(256,1200)=256 → +20; elements=min(50,300)=50 → +15
+    // 总分=6+25+20+15+10=76 → complex
+    mockImageDimensions(3000, 2000);
+    try {
+      const file = createFile(1 * 1024 * 1024);
+      const result = decideAnalysisMode(file, createImageUrl(), 'painting', true);
+      expect(result.complexity.factors.pixelCount).toBe(6_000_000);
+      expect(result.complexity.level).toBe('complex');
+    } finally {
+      restoreImageMock();
+    }
+  });
 });
 
 // ============================================================
@@ -241,16 +302,29 @@ describe('artType 权重', () => {
     expect(result.estimatedTime).toBe(3);
   });
 
-  it('server 不可用 + 高 weightedScore (>60) → estimatedTime=5', () => {
-    // 构造 fileSizeMB > 5 → normal 复杂度 (score≈42)
-    // sculpture weight=1.4 → weightedScore≈42*1.4=58.8 → 仍 ≤60 → estimatedTime=3
-    // 要达到 >60 需要 score > 60/1.4 ≈ 42.86
-    // 6MB → 30+10+1.33+1=42.33 → sculpture 1.4 → 59.26 → 3
-    // 实际很难在 jsdom 触发 weightedScore > 60,跳过此精确断言
+  it('server 不可用 + sculpture + 大文件 (6MB) → client, estimatedTime=3', () => {
+    // 6MB → score≈42; sculpture weight=1.4 → weightedScore≈59 ≤ 60 → estimatedTime=3
     const file = createFile(6 * 1024 * 1024);
     const result = decideAnalysisMode(file, createImageUrl(), 'sculpture', false);
     expect(result.mode).toBe('client');
-    expect([3, 5]).toContain(result.estimatedTime);
+    expect(result.estimatedTime).toBe(3);
+  });
+
+  it('mock Image 高分辨率 → complex 复杂度 + server 不可用 → estimatedTime=5', () => {
+    // mock Image 返回 4000x2000 → pixelCount=8M → +10; mp=8 → +25; colors=256 → +20; elements=50 → +15
+    // 1MB → +6; 总分=6+25+20+15+10=76 → complex (≥75)
+    // server 不可用 → client 模式; weightedScore=76*1.0=76 > 60 → estimatedTime=5
+    mockImageDimensions(4000, 2000);
+    try {
+      const file = createFile(1 * 1024 * 1024); // 1MB
+      const result = decideAnalysisMode(file, createImageUrl(), 'painting', false);
+      expect(result.complexity.level).toBe('complex');
+      expect(result.mode).toBe('client');
+      expect(result.estimatedTime).toBe(5);
+      expect(result.complexity.factors.pixelCount).toBe(8_000_000);
+    } finally {
+      restoreImageMock();
+    }
   });
 });
 

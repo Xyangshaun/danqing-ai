@@ -181,6 +181,7 @@ export default function EmotionPage() {
                 <button
                   key={emotion.id}
                   onClick={() => setSelectedEmotion(emotion.name)}
+                  aria-label={emotion.name}
                   className={`group relative bg-rice-50 rounded-2xl p-6 shadow-card transition-all overflow-hidden ${
                     isSelected
                       ? 'ring-2 ring-cinnabar shadow-card-hover transform -translate-y-1'
@@ -285,6 +286,7 @@ export default function EmotionPage() {
                   <button
                     key={emotion.id}
                     onClick={() => setSecondaryEmotion(isSelected ? null : emotion.name)}
+                    aria-label={emotion.name}
                     className={`p-3 rounded-xl border-2 transition-all text-center ${
                       isSelected
                         ? 'border-cinnabar bg-cinnabar/5'
@@ -323,6 +325,7 @@ export default function EmotionPage() {
                 </div>
                 <button
                   onClick={() => setSecondaryEmotion(null)}
+                  aria-label="移除叠加情绪"
                   className="absolute -top-2 -right-2 w-6 h-6 bg-white rounded-full shadow flex items-center justify-center hover:bg-cinnabar hover:text-white transition-all"
                 >
                   <span className="text-xs">×</span>
@@ -465,6 +468,7 @@ export default function EmotionPage() {
           <button
             onClick={handleGenerate}
             disabled={generating}
+            aria-label="生成情绪画面"
             className="inline-flex items-center gap-3 px-12 py-4 rounded-xl transition-all disabled:opacity-50 transform hover:scale-105 shadow-card text-white font-serif text-lg"
             style={{ background: getGradient(currentEmotion.colorPalette, 1) }}
           >
@@ -530,6 +534,7 @@ export default function EmotionPage() {
               <div className="flex items-center gap-3">
                 <button
                   onClick={handleApplyToStyles}
+                  aria-label="应用到风格调色板"
                   className="flex items-center gap-2 px-3 py-1.5 text-sm border-2 rounded-lg transition-all hover:bg-cinnabar hover:text-white hover:border-cinnabar"
                   style={{ borderColor: `${currentEmotion.color}40`, color: currentEmotion.color }}
                   title="应用到风格调色板"
@@ -539,6 +544,7 @@ export default function EmotionPage() {
                 </button>
                 <button
                   onClick={handleGenerate}
+                  aria-label="换一批"
                   className="flex items-center gap-2 text-sm text-ink-500 hover:text-cinnabar transition-all"
                 >
                   <RefreshCw className="w-4 h-4" />
@@ -556,6 +562,7 @@ export default function EmotionPage() {
                     <img
                       src={url}
                       alt={`${selectedEmotion}画面 ${index + 1}`}
+                      loading="lazy"
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                     />
                     <div
@@ -573,12 +580,14 @@ export default function EmotionPage() {
                     <div className="flex gap-2">
                       <button
                         onClick={() => handleDownload(url, index)}
+                        aria-label="下载"
                         className="p-2 bg-ink-900/5 text-ink-700 rounded-lg hover:bg-cinnabar hover:text-white transition-all"
                         title="下载"
                       >
                         <Download className="w-4 h-4" />
                       </button>
                       <button
+                        aria-label="分享"
                         className="p-2 bg-ink-900/5 text-ink-700 rounded-lg hover:bg-ink-900 hover:text-rice-100 transition-all"
                         title="分享"
                       >

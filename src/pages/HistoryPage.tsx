@@ -236,6 +236,7 @@ function DetailModal({ result, onClose, onRediagnose }: { result: AnalysisResult
           <h2 className="font-serif text-xl font-bold text-ink-900">分析报告详情</h2>
           <button
             onClick={onClose}
+            aria-label="关闭"
             className="p-2 hover:bg-ink-100 rounded-lg transition-colors"
           >
             <X className="w-6 h-6 text-ink-600" />
@@ -261,6 +262,7 @@ function DetailModal({ result, onClose, onRediagnose }: { result: AnalysisResult
               <img
                 src={result.imageUrl}
                 alt="分析的作品"
+                loading="lazy"
                 className={`w-full max-h-64 object-contain transition-opacity duration-300 ${
                   detailImgState === 'loaded' ? 'opacity-100' : 'opacity-0'
                 }`}
@@ -321,6 +323,7 @@ function DetailModal({ result, onClose, onRediagnose }: { result: AnalysisResult
           {onRediagnose && (
             <button
               onClick={() => onRediagnose(result.artType)}
+              aria-label="重新诊断"
               className="inline-flex items-center gap-2 bg-cinnabar hover:bg-cinnabar-dark text-white rounded-md px-4 h-9 text-sm font-medium transition-colors"
             >
               <RefreshCw className="w-4 h-4" />
@@ -389,6 +392,7 @@ const HistoryCard = memo(function HistoryCard({
           <button
             onClick={() => onViewDetail(record)}
             title="查看详情"
+            aria-label="查看详情"
             className="w-8 h-8 bg-white/95 backdrop-blur rounded-md flex items-center justify-center text-ink-600 hover:text-ink-900 hover:bg-white shadow-card border border-ink-900/6 transition-colors"
           >
             <Eye className="w-4 h-4" />
@@ -396,6 +400,7 @@ const HistoryCard = memo(function HistoryCard({
           <button
             onClick={() => onRediagnose(record.artType)}
             title="再次诊断"
+            aria-label="再次诊断"
             className="w-8 h-8 bg-white/95 backdrop-blur rounded-md flex items-center justify-center text-ink-600 hover:text-cinnabar hover:bg-white shadow-card border border-ink-900/6 transition-colors"
           >
             <RefreshCw className="w-4 h-4" />
@@ -414,6 +419,7 @@ const HistoryCard = memo(function HistoryCard({
                 ref={imgRef}
                 src={loadedSrc}
                 alt={`分析记录 ${index + 1}`}
+                loading="lazy"
                 className={`w-32 h-32 object-cover rounded-xl transition-opacity duration-300 ${
                   isLoaded ? 'opacity-100' : 'opacity-0'
                 }`}
@@ -471,6 +477,7 @@ const HistoryCard = memo(function HistoryCard({
 
           <button
             onClick={() => onViewDetail(record)}
+            aria-label="查看详情"
             className="flex items-center gap-2 px-4 py-2 bg-ink-900/5 text-ink-700 rounded-lg hover:bg-ink-900 hover:text-rice-100 transition-all duration-300"
           >
             <Eye className="w-4 h-4" />
@@ -608,6 +615,35 @@ export default function HistoryPage() {
     },
   );
 
+  /* 调试日志(V2-D 性能验证):与 useLazyImage 风格一致
+   *   localStorage.setItem('lazyimg-debug', '0') 同时关闭本日志(共用开关)
+   *   测试环境(import.meta.env.MODE === 'test')自动关闭,避免 vitest 输出噪声
+   *   输出事件:
+   *   - [HistoryVirtual] enabled   虚拟列表启用(>50 条),展示真实/可见/总数
+   *   - [HistoryVirtual] disabled  数据量回落到普通列表
+   *   - [HistoryVirtual] scroll    可视范围跨行变化(可选,帮助观察滚动行为)
+   */
+  useEffect(() => {
+    // 测试环境自动关闭(与 useLazyImage/usePrefetch 一致)
+    const isTestEnv = (import.meta as { env?: { MODE?: string } }).env?.MODE === 'test';
+    if (isTestEnv) return;
+    const flag = typeof localStorage !== 'undefined' && localStorage.getItem('lazyimg-debug') !== '0';
+    if (!flag) return;
+    const ts = new Date().toISOString().slice(11, 23);
+    if (useVirtual) {
+      console.debug(
+        `[HistoryVirtual ${ts}] enabled`,
+        `total=${filteredHistory.length}`,
+        `visible=${visibleItems.length}`,
+        `containerH=${HISTORY_CONTAINER_HEIGHT}`,
+        `itemH=${HISTORY_ITEM_HEIGHT}`,
+      );
+    } else {
+      console.debug(`[HistoryVirtual ${ts}] disabled`, `total=${filteredHistory.length}`);
+    }
+    // 仅在启用状态 / 总数变化时触发,避免每次滚动都打印
+  }, [useVirtual, filteredHistory.length, visibleItems.length]);
+
   return (
     <div className="min-h-screen bg-rice-200 ink-texture pt-20 pb-20">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -683,6 +719,7 @@ export default function HistoryPage() {
                 <p className="text-ink-500 mb-4">尝试调整筛选条件或清除全部筛选</p>
                 <button
                   onClick={handleClearFilters}
+                  aria-label="清除筛选"
                   className="inline-flex items-center gap-2 px-4 h-9 bg-ink-900 text-rice-100 rounded-md hover:bg-ink-800 transition-colors text-sm font-medium"
                 >
                   <RefreshCw className="w-4 h-4" />

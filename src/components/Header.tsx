@@ -5,13 +5,21 @@ import {
   User, Image as ImageIcon, LogOut, Check, Sparkles,
   CheckCircle2, TrendingUp, RefreshCw, Trash2, Clock,
   Brush, PenTool, Box, Layers, History, Download, type LucideIcon,
+  ExternalLink,
 } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import LogoMark from './LogoMark';
 import { useToast } from './ToastProvider';
 import { useAuth } from '../hooks/useAuth';
 import TenantSwitcher, { RoleBadge } from './auth/TenantSwitcher';
-import { getAnalysisHistory, clearAnalysisHistory } from '../services/data-service';
+import {
+  getAnalysisHistory,
+  clearAnalysisHistory,
+  getSettings,
+  saveSettings,
+  LS_KEYS,
+  type UserSettings,
+} from '../services/data-service';
 import type { HistoryRecord, ArtType } from '../types';
 import {
   listNotifications,
@@ -252,8 +260,21 @@ export default function Header() {
   const [notifOpen, setNotifOpen] = useState(false);
   const [userOpen, setUserOpen] = useState(false);
   const [modeOpen, setModeOpen] = useState(false);
-  const [onlineMode, setOnlineMode] = useState<OnlineMode>('auto');
+  /* 需求5:onlineMode 从 localStorage 初始化,持久化 + 派发事件 */
+  const [onlineMode, setOnlineMode] = useState<OnlineMode>(() => {
+    try {
+      const v = localStorage.getItem(LS_KEYS.onlineMode);
+      if (v === 'local' || v === 'cloud' || v === 'auto') return v;
+    } catch { /* ignore */ }
+    return 'auto';
+  });
   const [unreadCount, setUnreadCount] = useState(0);
+
+  /* 需求1+4:帮助 + 快设面板状态 */
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  /* 需求4:快设面板中的本地偏好(theme/density/notifications,从 settings 同步) */
+  const [quickSettings, setQuickSettings] = useState<UserSettings | null>(null);
 
   /* 任务包 B:通知系统真实数据状态 */
   // apiNotifications:从后端拉取的通知列表(已登录时);未登录时为空,回退到 mock
@@ -265,6 +286,26 @@ export default function Header() {
   const notifRef = useRef<HTMLDivElement>(null);
   const userRef = useRef<HTMLDivElement>(null);
   const modeRef = useRef<HTMLDivElement>(null);
+  const helpRef = useRef<HTMLDivElement>(null);
+  const settingsRef = useRef<HTMLDivElement>(null);
+
+  /* 需求4:延迟关闭计时器(避免鼠标移动抖动导致面板闪烁) */
+  const settingsHoverTimer = useRef<number | null>(null);
+
+  /* 需求4:首次打开快设面板时加载 settings(惰性加载,避免每次渲染都读 LS) */
+  useEffect(() => {
+    if (!settingsOpen) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const s = await getSettings();
+        if (!cancelled) setQuickSettings(s);
+      } catch {
+        if (!cancelled) setQuickSettings(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [settingsOpen]);
 
   const meta = routeMeta[location.pathname] || routeMeta['/'];
 
@@ -393,6 +434,8 @@ export default function Header() {
       if (notifRef.current && !notifRef.current.contains(target)) setNotifOpen(false);
       if (userRef.current && !userRef.current.contains(target)) setUserOpen(false);
       if (modeRef.current && !modeRef.current.contains(target)) setModeOpen(false);
+      if (helpRef.current && !helpRef.current.contains(target)) setHelpOpen(false);
+      if (settingsRef.current && !settingsRef.current.contains(target)) setSettingsOpen(false);
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
@@ -704,11 +747,71 @@ export default function Header() {
           ? [] // 已登录加载中:暂显示空(避免闪烁)
           : mockNotifications; // 未登录:回退 mock
 
-  /* 选择运行模式 */
+  /* 选择运行模式(需求5:写入 localStorage + 派发事件,供 SettingsPage 同步 cloudSync) */
   const selectMode = (m: OnlineMode) => {
     setOnlineMode(m);
     setModeOpen(false);
+    try { localStorage.setItem(LS_KEYS.onlineMode, m); } catch { /* ignore */ }
+    window.dispatchEvent(new CustomEvent('online-mode-changed', { detail: m }));
   };
+
+  /* 需求1:切换帮助面板 */
+  const toggleHelp = () => {
+    setHelpOpen((o) => !o);
+    setNotifOpen(false);
+    setUserOpen(false);
+    setModeOpen(false);
+  };
+
+  /* 需求4:快设面板的局部 setter
+   * - theme/density:写 settings(走 saveSettings)+ 独立 LS 键(供 useTheme 立即响应)
+   * - notifications:写 settings
+   * - onlineMode:复用 selectMode */
+  const quickSetTheme = (t: UserSettings['theme']) => {
+    setQuickSettings((prev) => prev ? { ...prev, theme: t } : prev);
+    void saveSettings({ theme: t });
+    try { localStorage.setItem(LS_KEYS.theme, t); } catch { /* ignore */ }
+    toast.success(t === 'rice' ? '已切换米白主题' : t === 'ink' ? '已切换墨黑主题' : '已跟随系统主题');
+  };
+  const quickSetDensity = (d: UserSettings['density']) => {
+    setQuickSettings((prev) => prev ? { ...prev, density: d } : prev);
+    void saveSettings({ density: d });
+    try { localStorage.setItem(LS_KEYS.density, d); } catch { /* ignore */ }
+    toast.success(d === 'compact' ? '已切换紧凑密度' : d === 'comfortable' ? '已切换舒适密度' : '已切换宽松密度');
+  };
+  const quickSetNotifications = (key: keyof UserSettings['notifications'], value: boolean) => {
+    setQuickSettings((prev) => prev
+      ? { ...prev, notifications: { ...prev.notifications, [key]: value } }
+      : prev);
+    if (quickSettings) {
+      void saveSettings({ notifications: { ...quickSettings.notifications, [key]: value } });
+    }
+  };
+
+  /* 需求4:hover 触发快设面板(200ms 延迟关闭避免抖动) */
+  const openSettingsPanel = () => {
+    if (settingsHoverTimer.current !== null) {
+      window.clearTimeout(settingsHoverTimer.current);
+      settingsHoverTimer.current = null;
+    }
+    setSettingsOpen(true);
+  };
+  const closeSettingsPanelWithDelay = () => {
+    if (settingsHoverTimer.current !== null) {
+      window.clearTimeout(settingsHoverTimer.current);
+    }
+    settingsHoverTimer.current = window.setTimeout(() => {
+      setSettingsOpen(false);
+      settingsHoverTimer.current = null;
+    }, 200);
+  };
+  useEffect(() => {
+    return () => {
+      if (settingsHoverTimer.current !== null) {
+        window.clearTimeout(settingsHoverTimer.current);
+      }
+    };
+  }, []);
 
   /* 触发器显示：根据当前模式 + 网络状态推导 */
   const modeDisplay =
@@ -761,6 +864,7 @@ export default function Header() {
         {/* 中：全局搜索框（点击展开命令面板，hover 边框朱砂色） */}
         <button
           onClick={() => setCmdOpen(true)}
+          aria-label="打开搜索命令面板"
           className="flex-1 max-w-md mx-auto flex items-center gap-2 h-9 px-3 bg-rice-200 hover:bg-rice-300 border border-ink-900/8 hover:border-cinnabar/40 rounded-md text-sm text-ink-400 transition-colors group"
         >
           <Search className="w-4 h-4 group-hover:text-cinnabar transition-colors" />
@@ -778,6 +882,7 @@ export default function Header() {
               onClick={toggleMode}
               className="flex items-center gap-1.5 px-2 h-8 rounded-md text-2xs hover:bg-ink-900/5 transition-colors"
               title="切换运行模式"
+              aria-label="切换运行模式"
               aria-expanded={modeOpen}
             >
               <ModeIcon className={`w-3.5 h-3.5 ${modeDisplay.color}`} />
@@ -800,6 +905,7 @@ export default function Header() {
                       <button
                         key={m.id}
                         onClick={() => selectMode(m.id)}
+                        aria-label={m.label}
                         className={`w-full flex items-center gap-2.5 h-10 px-2 rounded-md text-left transition-colors ${
                           active ? 'bg-cinnabar/5' : 'hover:bg-ink-900/5'
                         }`}
@@ -894,6 +1000,7 @@ export default function Header() {
                       <button
                         key={n.apiId ?? n.id}
                         onClick={handleClick}
+                        aria-label={n.title}
                         className={`w-full flex items-start gap-2.5 px-3 py-2.5 text-left hover:bg-ink-900/3 transition-colors border-b border-ink-900/4 last:border-b-0 ${n.level ? notificationLevelAccent[n.level] : ''} ${isAuthenticated && !n.read ? 'bg-cinnabar/3' : ''}`}
                       >
                         <div className={`w-8 h-8 flex items-center justify-center rounded-md flex-shrink-0 ${n.iconClass}`}>
@@ -926,24 +1033,221 @@ export default function Header() {
             )}
           </div>
 
-          {/* 帮助 */}
-          <button
-            className="w-8 h-8 flex items-center justify-center text-ink-500 hover:text-ink-900 hover:bg-ink-900/5 rounded-md transition-colors"
-            title="帮助"
-            aria-label="帮助"
-          >
-            <HelpCircle className="w-4 h-4" />
-          </button>
+          {/* 帮助(需求1:点击展开 Popover,显示快捷键 + 文档链接 + 反馈入口) */}
+          <div ref={helpRef} className="relative">
+            <button
+              onClick={toggleHelp}
+              className={`w-8 h-8 flex items-center justify-center rounded-md transition-colors ${
+                helpOpen ? 'bg-ink-900/5 text-ink-900' : 'text-ink-500 hover:text-ink-900 hover:bg-ink-900/5'
+              }`}
+              title="帮助"
+              aria-label="帮助"
+              aria-expanded={helpOpen}
+            >
+              <HelpCircle className="w-4 h-4" />
+            </button>
 
-          {/* 设置 */}
-          <Link
-            to="/settings"
-            className="w-8 h-8 flex items-center justify-center text-ink-500 hover:text-ink-900 hover:bg-ink-900/5 rounded-md transition-colors"
-            title="设置"
-            aria-label="设置"
+            {helpOpen && (
+              <div className="absolute top-full right-0 mt-1 w-72 bg-rice-50 rounded-md shadow-overlay border border-ink-900/8 z-50 animate-slide-down overflow-hidden">
+                {/* 头部 */}
+                <div className="px-3 h-10 border-b border-ink-900/8 flex items-center">
+                  <p className="text-sm font-medium text-ink-900 flex items-center gap-1.5">
+                    <HelpCircle className="w-3.5 h-3.5 text-cinnabar" />
+                    帮助
+                  </p>
+                </div>
+
+                {/* 快捷键提示 */}
+                <div className="p-3 space-y-2">
+                  <p className="text-2xs font-semibold text-ink-400 uppercase tracking-wider">快捷键</p>
+                  <div className="space-y-1.5">
+                    {[
+                      { desc: '命令面板', keys: '⌘K / Ctrl+K' },
+                      { desc: '跳转模块', keys: '1-7' },
+                      { desc: '跳转设置', keys: '0' },
+                      { desc: '新建诊断', keys: 'N' },
+                      { desc: '关闭弹层', keys: 'Esc' },
+                    ].map((item) => (
+                      <div key={item.desc} className="flex justify-between items-center text-xs">
+                        <span className="text-ink-600">{item.desc}</span>
+                        <kbd className="px-1.5 py-0.5 bg-rice-200 border border-ink-900/10 rounded text-2xs font-mono text-ink-700">
+                          {item.keys}
+                        </kbd>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 文档与反馈入口(inline 提示,无实际跳转) */}
+                <div className="border-t border-ink-900/8 p-3 space-y-1.5">
+                  <a
+                    href="https://danqing.site/docs"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-between px-2 h-8 rounded-md text-xs text-ink-700 hover:bg-ink-900/5 transition-colors"
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <ExternalLink className="w-3.5 h-3.5 text-ink-500" />
+                      使用文档
+                    </span>
+                    <ArrowRight className="w-3 h-3 text-ink-400" />
+                  </a>
+                  <a
+                    href="mailto:feedback@danqing.site"
+                    className="flex items-center justify-between px-2 h-8 rounded-md text-xs text-ink-700 hover:bg-ink-900/5 transition-colors"
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <RefreshCw className="w-3.5 h-3.5 text-ink-500" />
+                      反馈与建议
+                    </span>
+                    <ArrowRight className="w-3 h-3 text-ink-400" />
+                  </a>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* 设置(需求4:hover 弹出快设面板,点击仍可跳转 /settings) */}
+          <div
+            ref={settingsRef}
+            className="relative"
+            onMouseEnter={openSettingsPanel}
+            onMouseLeave={closeSettingsPanelWithDelay}
           >
-            <Settings className="w-4 h-4" />
-          </Link>
+            <Link
+              to="/settings"
+              onClick={() => setSettingsOpen(false)}
+              className="w-8 h-8 flex items-center justify-center text-ink-500 hover:text-ink-900 hover:bg-ink-900/5 rounded-md transition-colors"
+              title="设置"
+              aria-label="设置"
+            >
+              <Settings className="w-4 h-4" />
+            </Link>
+
+            {settingsOpen && (
+              <div
+                className="absolute bottom-full mb-1 right-0 w-72 bg-rice-50 rounded-md shadow-overlay border border-ink-900/8 z-50 animate-slide-up overflow-hidden"
+                onMouseEnter={openSettingsPanel}
+                onMouseLeave={closeSettingsPanelWithDelay}
+              >
+                {/* 头部 */}
+                <div className="px-3 h-10 border-b border-ink-900/8 flex items-center justify-between">
+                  <p className="text-sm font-medium text-ink-900 flex items-center gap-1.5">
+                    <Settings className="w-3.5 h-3.5 text-cinnabar" />
+                    快速设置
+                  </p>
+                  <Link
+                    to="/settings"
+                    onClick={() => setSettingsOpen(false)}
+                    className="text-2xs text-ink-400 hover:text-cinnabar transition-colors flex items-center gap-0.5"
+                  >
+                    全部设置
+                    <ArrowRight className="w-3 h-3" />
+                  </Link>
+                </div>
+
+                {/* 主题切换 */}
+                <div className="p-3 space-y-2 border-b border-ink-900/8">
+                  <p className="text-2xs font-semibold text-ink-400 uppercase tracking-wider">主题</p>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {([
+                      { id: 'rice', label: '米白' },
+                      { id: 'ink', label: '墨黑' },
+                      { id: 'auto', label: '跟随' },
+                    ] as const).map((t) => (
+                      <button
+                        key={t.id}
+                        onClick={() => quickSetTheme(t.id)}
+                        className={`h-8 text-xs rounded-md border transition-all ${
+                          quickSettings?.theme === t.id
+                            ? 'border-cinnabar bg-cinnabar/5 text-cinnabar'
+                            : 'border-ink-900/10 text-ink-600 hover:bg-ink-900/5'
+                        }`}
+                      >
+                        {t.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 界面密度 */}
+                <div className="p-3 space-y-2 border-b border-ink-900/8">
+                  <p className="text-2xs font-semibold text-ink-400 uppercase tracking-wider">密度</p>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {([
+                      { id: 'compact', label: '紧凑' },
+                      { id: 'comfortable', label: '舒适' },
+                      { id: 'spacious', label: '宽松' },
+                    ] as const).map((d) => (
+                      <button
+                        key={d.id}
+                        onClick={() => quickSetDensity(d.id)}
+                        className={`h-8 text-xs rounded-md border transition-all ${
+                          quickSettings?.density === d.id
+                            ? 'border-cinnabar bg-cinnabar/5 text-cinnabar'
+                            : 'border-ink-900/10 text-ink-600 hover:bg-ink-900/5'
+                        }`}
+                      >
+                        {d.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 通知开关 */}
+                <div className="p-3 space-y-2 border-b border-ink-900/8">
+                  <p className="text-2xs font-semibold text-ink-400 uppercase tracking-wider">通知</p>
+                  <div className="space-y-1.5">
+                    {[
+                      { key: 'analysis' as const, label: '诊断完成' },
+                      { key: 'growth' as const, label: '成长周报' },
+                      { key: 'system' as const, label: '系统更新' },
+                    ].map((item) => (
+                      <button
+                        key={item.key}
+                        onClick={() => quickSetNotifications(item.key, !quickSettings?.notifications[item.key])}
+                        className="w-full flex items-center justify-between h-7 px-2 rounded-md text-xs text-ink-700 hover:bg-ink-900/5 transition-colors"
+                      >
+                        <span>{item.label}</span>
+                        <span className={`relative w-8 h-4 rounded-full transition-colors ${
+                          quickSettings?.notifications[item.key] ? 'bg-cinnabar' : 'bg-ink-900/15'
+                        }`}>
+                          <span className={`absolute top-0.5 w-3 h-3 bg-white rounded-full shadow-subtle transition-all ${
+                            quickSettings?.notifications[item.key] ? 'left-[14px]' : 'left-0.5'
+                          }`} />
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 运行模式 */}
+                <div className="p-3 space-y-2">
+                  <p className="text-2xs font-semibold text-ink-400 uppercase tracking-wider">运行模式</p>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {onlineModes.map((m) => {
+                      const Icon = m.icon;
+                      const active = onlineMode === m.id;
+                      return (
+                        <button
+                          key={m.id}
+                          onClick={() => selectMode(m.id)}
+                          className={`h-8 text-2xs rounded-md border transition-all flex items-center justify-center gap-1 ${
+                            active
+                              ? 'border-cinnabar bg-cinnabar/5 text-cinnabar'
+                              : 'border-ink-900/10 text-ink-600 hover:bg-ink-900/5'
+                          }`}
+                        >
+                          <Icon className="w-3 h-3" />
+                          {m.label.replace('模式', '')}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* 租户切换(已登录 + 多租户时显示;单租户时组件内部返回 null) */}
           {isAuthenticated && <TenantSwitcher />}
@@ -975,6 +1279,7 @@ export default function Header() {
                   <img
                     src={user.avatar}
                     alt={user.name}
+                    loading="lazy"
                     className="w-6 h-6 rounded-full object-cover border border-ink-900/10"
                     referrerPolicy="no-referrer"
                   />
@@ -1000,6 +1305,7 @@ export default function Header() {
                         <img
                           src={user.avatar}
                           alt={user.name}
+                          loading="lazy"
                           className="w-9 h-9 rounded-full object-cover border border-ink-900/10"
                           referrerPolicy="no-referrer"
                         />
@@ -1053,6 +1359,7 @@ export default function Header() {
                   <div className="p-1">
                     <button
                       onClick={() => void handleLogout()}
+                      aria-label="退出登录"
                       className="w-full flex items-center gap-2.5 h-10 px-2 rounded-md text-sm text-cinnabar hover:bg-cinnabar/5 transition-colors"
                     >
                       <LogOut className="w-4 h-4" />
@@ -1095,6 +1402,7 @@ export default function Header() {
               </kbd>
               <button
                 onClick={() => setCmdOpen(false)}
+                aria-label="关闭"
                 className="w-6 h-6 flex items-center justify-center text-ink-400 hover:text-ink-700 hover:bg-ink-900/5 rounded transition-colors"
               >
                 <X className="w-4 h-4" />
@@ -1139,6 +1447,7 @@ export default function Header() {
                       <button
                         onClick={() => item.action()}
                         onMouseEnter={() => setSelectedIndex(i)}
+                        aria-label={item.title}
                         className={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors ${
                           selected ? 'bg-cinnabar/5' : 'hover:bg-ink-900/3'
                         }`}

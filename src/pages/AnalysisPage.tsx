@@ -759,6 +759,7 @@ export default function AnalysisPage() {
                     <button
                       key={art.id}
                       onClick={() => setSelectedArtType(art.id)}
+                      aria-label={art.name}
                       className={`p-4 rounded-xl text-center transition-all ${
                         isSelected
                           ? 'bg-cinnabar text-white shadow-card'
@@ -809,6 +810,7 @@ export default function AnalysisPage() {
                   <img
                     src={restoredPreview}
                     alt="草稿缩略图"
+                    loading="lazy"
                     className="w-14 h-14 rounded-md object-cover border border-ink-900/10 flex-shrink-0"
                   />
                 ) : null}
@@ -866,6 +868,7 @@ export default function AnalysisPage() {
                 <img
                   src={imageUrl}
                   alt="上传的作品"
+                  loading="lazy"
                   className="w-full max-h-96 object-contain"
                   onError={(e) => {
                     const target = e.currentTarget;
@@ -1084,6 +1087,7 @@ export default function AnalysisPage() {
                 <img
                   src={result.imageUrl}
                   alt="分析的作品"
+                  loading="lazy"
                   className="w-full max-h-96 object-contain"
                   onError={(e) => {
                     /* 图片加载失败时显示占位图,避免空白 */
@@ -1606,6 +1610,7 @@ export default function AnalysisPage() {
             <div className="flex flex-wrap justify-center gap-4">
               <button
                 onClick={handleRetry}
+                aria-label="重新上传"
                 className="inline-flex items-center gap-2 px-6 py-3 border-2 border-ink-900 text-ink-900 rounded-lg hover:bg-ink-900 hover:text-rice-100 transition-all duration-300"
               >
                 <Upload className="w-5 h-5" />
@@ -1613,6 +1618,7 @@ export default function AnalysisPage() {
               </button>
               <button
                 onClick={() => setShowTypeSwitcher((v) => !v)}
+                aria-label="切换类型重测"
                 className="inline-flex items-center gap-2 px-6 py-3 border-2 border-[#5a8a7a] text-[#5a8a7a] rounded-lg hover:bg-[#5a8a7a] hover:text-rice-100 transition-all duration-300"
               >
                 <RefreshCw className="w-5 h-5" />
@@ -1636,6 +1642,7 @@ export default function AnalysisPage() {
                   a.click();
                   URL.revokeObjectURL(url);
                 }}
+                aria-label="导出报告"
                 className="inline-flex items-center gap-2 px-6 py-3 bg-ink-900 text-rice-100 rounded-lg hover:bg-cinnabar transition-all duration-300"
               >
                 <Download className="w-5 h-5" />
@@ -1654,6 +1661,7 @@ export default function AnalysisPage() {
                     toast.success('链接已复制', '可直接粘贴分享诊断结果');
                   }
                 }}
+                aria-label="分享报告"
                 className="inline-flex items-center gap-2 px-6 py-3 bg-cinnabar text-rice-100 rounded-lg hover:bg-stone transition-all duration-300"
               >
                 <Share2 className="w-5 h-5" />
@@ -1663,6 +1671,7 @@ export default function AnalysisPage() {
                 onClick={() => {
                   document.querySelector('footer')?.scrollIntoView({ behavior: 'smooth' });
                 }}
+                aria-label="查看历史记录"
                 className="inline-flex items-center gap-2 px-6 py-3 border-2 border-cinnabar text-cinnabar rounded-lg hover:bg-cinnabar hover:text-rice-100 transition-all duration-300"
               >
                 <span className="font-medium">查看历史记录</span>
@@ -1690,6 +1699,7 @@ export default function AnalysisPage() {
                         setStep('analyzing');
                       }}
                       disabled={isCurrent}
+                      aria-label={art.name}
                       className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-all duration-200 ${
                         isCurrent
                           ? 'bg-ink-900/10 text-ink-400 cursor-not-allowed'

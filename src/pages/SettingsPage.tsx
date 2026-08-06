@@ -1,14 +1,17 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Settings, User, Bell, Palette, Database, Cloud, Shield, Keyboard,
-  Check, Loader2, type LucideIcon, Server, Wifi, WifiOff, Loader,
+  Check, Loader2, type LucideIcon, Server, Wifi, WifiOff, Loader, Save, X,
 } from 'lucide-react';
 import {
   getSettings, saveSettings, clearAnalysisHistory, getAnalysisHistory,
-  type UserSettings,
+  type UserSettings, LS_KEYS,
 } from '../services/data-service';
 import { useToast } from '../components/ToastProvider';
 import { SkeletonBox } from '../components/PageSkeleton';
+import { useAuth } from '../hooks/useAuth';
+import { updateUserProfile } from '../services/api';
+import type { UserRole } from '../types/api-contract';
 
 type Section = {
   id: string;
@@ -31,7 +34,7 @@ const sections: Section[] = [
 /* localStorage 键名 —— 与全局 data-service 配置保持一致 */
 const LS_USE_API_KEY = 'danqing-ai-use-api';
 const LS_BACKEND_URL_KEY = 'danqing-ai-backend-url';
-const DEFAULT_BACKEND_URL = 'http://localhost:3000';
+const DEFAULT_BACKEND_URL = '/api/v1';
 
 /* 健康检查状态：idle(未检查) / checking / ok / fail */
 type HealthStatus = 'idle' | 'checking' | 'ok' | 'fail';
@@ -60,8 +63,29 @@ const DEFAULT_SETTINGS: UserSettings = {
   privacy: { anonymousAnalytics: true, localFirst: true, twoFactor: false },
 };
 
+/** 角色中文标签(只读展示用,后端 PATCH /users/role 仅 student 可自选一次) */
+const ROLE_LABEL: Record<UserRole, string> = {
+  admin: '管理员',
+  teacher: '教师',
+  student: '学生',
+  owner: '所有者',
+};
+
+/** OnlineMode 类型(与 Header 共享,通过 localStorage 同步) */
+type OnlineMode = 'local' | 'cloud' | 'auto';
+
+/** 从 localStorage 读取 onlineMode(初始化 cloudSync.enabled 用) */
+function readOnlineMode(): OnlineMode {
+  try {
+    const v = localStorage.getItem(LS_KEYS.onlineMode);
+    if (v === 'local' || v === 'cloud' || v === 'auto') return v;
+  } catch { /* ignore */ }
+  return 'auto';
+}
+
 export default function SettingsPage() {
   const toast = useToast();
+  const { user, isAuthenticated, refreshUser } = useAuth();
   /* 用 ref 持有最新 toast 上下文,供加载 useEffect 内部调用。
    * 原因:ToastProvider 的 context value 对象每次渲染都会重建,
    * 若把 `toast` 直接放入加载 effect 依赖,会在每次 toast 出现/消失时
@@ -73,6 +97,14 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [historyCount, setHistoryCount] = useState(0);
+
+  /* 账户编辑状态(对接 PATCH /users/profile)
+   * - editing:是否处于编辑模式
+   * - profileSaving:保存中防重入
+   * - draft:本地草稿(name/email/phone/avatar) */
+  const [editing, setEditing] = useState(false);
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [draft, setDraft] = useState({ name: '', email: '', phone: '', avatar: '' });
 
   /* 后端配置：从 localStorage 初始化，状态变更时自动持久化 */
   const [useApi, setUseApi] = useState<boolean>(readUseApi);
@@ -211,17 +243,100 @@ export default function SettingsPage() {
   }, [backendUrl]);
 
   /* 局部 setter：每个设置项变更时立即更新本地状态 + 异步落库到 dataService */
-  const setTheme = (t: UserSettings['theme']) => updateSettings({ theme: t });
-  const setDensity = (d: UserSettings['density']) => updateSettings({ density: d });
+  const setTheme = (t: UserSettings['theme']) => {
+    updateSettings({ theme: t });
+    // 同步写入独立 LS 键,供 useTheme hook 立即响应(避免解析整 settings 对象)
+    try { localStorage.setItem(LS_KEYS.theme, t); } catch { /* ignore */ }
+  };
+  const setDensity = (d: UserSettings['density']) => {
+    updateSettings({ density: d });
+    try { localStorage.setItem(LS_KEYS.density, d); } catch { /* ignore */ }
+  };
   const setNotifications = (
     updater: (n: UserSettings['notifications']) => UserSettings['notifications']
   ) => updateSettings({ notifications: updater(settings.notifications) });
   const setCloudSync = (
     updater: (c: UserSettings['cloudSync']) => UserSettings['cloudSync']
-  ) => updateSettings({ cloudSync: updater(settings.cloudSync) });
+  ) => {
+    const next = updater(settings.cloudSync);
+    updateSettings({ cloudSync: next });
+    /* 需求5:cloudSync.enabled 切换时,联动 onlineMode 并派发事件 */
+    if (next.enabled !== settings.cloudSync.enabled) {
+      const mode: OnlineMode = next.enabled ? 'cloud' : 'local';
+      try { localStorage.setItem(LS_KEYS.onlineMode, mode); } catch { /* ignore */ }
+      window.dispatchEvent(new CustomEvent('online-mode-changed', { detail: mode }));
+    }
+  };
   const setPrivacy = (
     updater: (p: UserSettings['privacy']) => UserSettings['privacy']
   ) => updateSettings({ privacy: updater(settings.privacy) });
+
+  /* 需求5:cloudSync.enabled 与 onlineMode 双向联动
+   * - 挂载时从 onlineMode 推导 cloudSync.enabled(初始同步)
+   * - 监听 Header 派发的 online-mode-changed 事件(用户在 Header 切换模式时) */
+  useEffect(() => {
+    const mode = readOnlineMode();
+    if (mode === 'cloud' && !settings.cloudSync.enabled) {
+      updateSettings({ cloudSync: { ...settings.cloudSync, enabled: true } });
+    } else if (mode === 'local' && settings.cloudSync.enabled) {
+      updateSettings({ cloudSync: { ...settings.cloudSync, enabled: false } });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail as OnlineMode | undefined;
+      if (detail === 'cloud' && !settings.cloudSync.enabled) {
+        updateSettings({ cloudSync: { ...settings.cloudSync, enabled: true } });
+      } else if (detail === 'local' && settings.cloudSync.enabled) {
+        updateSettings({ cloudSync: { ...settings.cloudSync, enabled: false } });
+      }
+    };
+    window.addEventListener('online-mode-changed', handler);
+    return () => window.removeEventListener('online-mode-changed', handler);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings.cloudSync.enabled, updateSettings]);
+
+  /* 账户编辑:进入编辑模式时,从 user 同步草稿 */
+  const startEditing = () => {
+    setDraft({
+      name: user?.name ?? '',
+      email: user?.email ?? '',
+      phone: user?.phone ?? '',
+      avatar: user?.avatar ?? '',
+    });
+    setEditing(true);
+  };
+
+  /* 保存账户:调 PATCH /users/profile,成功后 refreshUser 同步全局 */
+  const handleSaveProfile = async () => {
+    if (!isAuthenticated) {
+      toast.error('请先登录', '登录后才能修改个人资料');
+      return;
+    }
+    setProfileSaving(true);
+    try {
+      await updateUserProfile({
+        name: draft.name.trim() || undefined,
+        email: draft.email.trim() || null,
+        phone: draft.phone.trim() || null,
+        avatar: draft.avatar.trim() || undefined,
+      });
+      await refreshUser();
+      toast.success('个人资料已保存');
+      setEditing(false);
+    } catch {
+      // api.ts 已统一处理错误 Toast(silent:false 默认)
+    } finally {
+      setProfileSaving(false);
+    }
+  };
+
+  const cancelEditing = () => {
+    setEditing(false);
+    setDraft({ name: '', email: '', phone: '', avatar: '' });
+  };
 
   if (loading) {
     return (
@@ -285,6 +400,7 @@ export default function SettingsPage() {
               <button
                 key={s.id}
                 onClick={() => setActive(s.id)}
+                aria-label={s.label}
                 className={`w-full flex items-center gap-3 px-3 h-10 rounded-md text-sm transition-colors text-left ${
                   isActive
                     ? 'bg-ink-900 text-rice-100 shadow-subtle'
@@ -309,34 +425,136 @@ export default function SettingsPage() {
         <div className="max-w-2xl mx-auto">
           {active === 'account' && (
             <SectionBlock title="账户" desc="管理你的个人信息与身份">
+              {/* 头像预览(已登录时显示) */}
+              {isAuthenticated && user?.avatar && (
+                <Field label="当前头像">
+                  <div className="flex items-center gap-3">
+                    <img
+                      src={editing ? (draft.avatar || user.avatar) : user.avatar}
+                      alt={user.name}
+                      className="w-12 h-12 rounded-full object-cover border border-ink-900/10"
+                      referrerPolicy="no-referrer"
+                    />
+                    {editing && (
+                      <input
+                        value={draft.avatar}
+                        onChange={(e) => setDraft((d) => ({ ...d, avatar: e.target.value }))}
+                        placeholder="头像 URL"
+                        className="flex-1 h-9 px-3 bg-rice-50 border border-ink-900/10 rounded-md text-sm focus:border-cinnabar focus-ring transition-all"
+                      />
+                    )}
+                  </div>
+                </Field>
+              )}
+
               <Field label="用户名">
-                <input
-                  defaultValue="教师"
-                  className="w-full h-9 px-3 bg-rice-50 border border-ink-900/10 rounded-md text-sm focus:border-cinnabar focus-ring transition-all"
-                />
+                {editing ? (
+                  <input
+                    value={draft.name}
+                    onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
+                    placeholder="请输入用户名"
+                    className="w-full h-9 px-3 bg-rice-50 border border-ink-900/10 rounded-md text-sm focus:border-cinnabar focus-ring transition-all"
+                  />
+                ) : (
+                  <input
+                    value={user?.name ?? (isAuthenticated ? '' : '未登录')}
+                    readOnly
+                    className="w-full h-9 px-3 bg-rice-100 border border-ink-900/10 rounded-md text-sm text-ink-700 cursor-not-allowed"
+                  />
+                )}
               </Field>
+
               <Field label="邮箱">
-                <input
-                  defaultValue="2692963779@qq.com"
-                  className="w-full h-9 px-3 bg-rice-50 border border-ink-900/10 rounded-md text-sm focus:border-cinnabar focus-ring transition-all"
-                />
+                {editing ? (
+                  <input
+                    type="email"
+                    value={draft.email}
+                    onChange={(e) => setDraft((d) => ({ ...d, email: e.target.value }))}
+                    placeholder="请输入邮箱"
+                    className="w-full h-9 px-3 bg-rice-50 border border-ink-900/10 rounded-md text-sm focus:border-cinnabar focus-ring transition-all"
+                  />
+                ) : (
+                  <input
+                    value={user?.email ?? (isAuthenticated ? '' : '未登录')}
+                    readOnly
+                    className="w-full h-9 px-3 bg-rice-100 border border-ink-900/10 rounded-md text-sm text-ink-700 cursor-not-allowed"
+                  />
+                )}
               </Field>
+
+              <Field label="手机号">
+                {editing ? (
+                  <input
+                    type="tel"
+                    value={draft.phone}
+                    onChange={(e) => setDraft((d) => ({ ...d, phone: e.target.value }))}
+                    placeholder="请输入手机号"
+                    className="w-full h-9 px-3 bg-rice-50 border border-ink-900/10 rounded-md text-sm focus:border-cinnabar focus-ring transition-all"
+                  />
+                ) : (
+                  <input
+                    value={user?.phone ?? (isAuthenticated ? '' : '未登录')}
+                    readOnly
+                    className="w-full h-9 px-3 bg-rice-100 border border-ink-900/10 rounded-md text-sm text-ink-700 cursor-not-allowed"
+                  />
+                )}
+              </Field>
+
               <Field label="身份角色">
+                {/* 只读:角色由 onboarding 选择或管理员分配,此处仅展示 */}
                 <div className="flex gap-2">
-                  {['教师', '学生', '创作者'].map((r) => (
-                    <button
-                      key={r}
-                      className={`px-3 h-9 rounded-md text-sm transition-colors ${
-                        r === '教师'
-                          ? 'bg-ink-900 text-rice-100'
-                          : 'bg-rice-100 text-ink-600 hover:bg-rice-200'
-                      }`}
-                    >
-                      {r}
-                    </button>
-                  ))}
+                  <button
+                    type="button"
+                    disabled
+                    className="px-3 h-9 rounded-md text-sm bg-ink-900 text-rice-100 cursor-not-allowed"
+                  >
+                    {user?.role ? ROLE_LABEL[user.role] : '—'}
+                  </button>
+                  <span className="text-2xs text-ink-400 self-center">
+                    角色由首次登录引导或管理员分配,如需修改请联系管理员
+                  </span>
                 </div>
               </Field>
+
+              {/* 编辑/保存/取消按钮 */}
+              <div className="flex gap-2 pt-2">
+                {!editing ? (
+                  <button
+                    onClick={startEditing}
+                    disabled={!isAuthenticated}
+                    aria-label="编辑资料"
+                    className="px-4 h-9 text-sm bg-cinnabar hover:bg-cinnabar-dark text-white rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+                  >
+                    <Settings className="w-3.5 h-3.5" />
+                    编辑资料
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => void handleSaveProfile()}
+                      disabled={profileSaving}
+                      aria-label="保存"
+                      className="px-4 h-9 text-sm bg-cinnabar hover:bg-cinnabar-dark text-white rounded-md transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5"
+                    >
+                      {profileSaving ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Save className="w-3.5 h-3.5" />
+                      )}
+                      保存
+                    </button>
+                    <button
+                      onClick={cancelEditing}
+                      disabled={profileSaving}
+                      aria-label="取消"
+                      className="px-4 h-9 text-sm bg-rice-100 hover:bg-rice-200 text-ink-700 rounded-md transition-colors disabled:opacity-60 flex items-center gap-1.5"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                      取消
+                    </button>
+                  </>
+                )}
+              </div>
             </SectionBlock>
           )}
 
@@ -488,6 +706,7 @@ export default function SettingsPage() {
                     type="button"
                     onClick={handleHealthCheck}
                     disabled={healthStatus === 'checking'}
+                    aria-label="测试连接"
                     className="px-3 h-9 text-sm bg-ink-900 hover:bg-ink-800 text-rice-100 rounded-md transition-colors flex items-center gap-1.5 disabled:opacity-60 disabled:cursor-not-allowed flex-shrink-0"
                   >
                     {healthStatus === 'checking' ? (

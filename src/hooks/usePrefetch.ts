@@ -45,21 +45,53 @@ export interface PrefetchHandlers {
  *
  * @param routePath 路由路径(如 '/history')
  * @returns onMouseEnter / onFocus / onTouchStart 事件处理器
+ *
+ * 调试日志(V2-D 性能验证):与 useLazyImage 共用 lazyimg-debug 开关
+ *   localStorage.setItem('lazyimg-debug', '0') 关闭
+ *   输出事件:
+ *   - [Prefetch] prefetch   首次触发预加载(鼠标/焦点/触摸)
+ *   - [Prefetch] cached     路径已预加载,跳过(仅 DEBUG 时偶发输出)
+ *   - [Prefetch] loaded     chunk 加载成功
+ *   - [Prefetch] error      chunk 加载失败(始终输出,不依赖开关)
  */
 export function usePrefetch(routePath: string): PrefetchHandlers {
   const prefetch = useCallback(() => {
+    // 调试开关:与 useLazyImage 共用,默认开启,测试环境自动关闭
+    const debug =
+      typeof localStorage !== 'undefined' && localStorage.getItem('lazyimg-debug') !== '0' &&
+      (import.meta as { env?: { MODE?: string } }).env?.MODE !== 'test';
+
     // 已预加载,跳过
-    if (prefetchedRoutes.has(routePath)) return;
+    if (prefetchedRoutes.has(routePath)) {
+      if (debug) {
+        const ts = new Date().toISOString().slice(11, 23);
+        console.debug(`[Prefetch ${ts}] cached     ${routePath}`);
+      }
+      return;
+    }
     const importer = importMap[routePath];
     if (!importer) return;
+
+    if (debug) {
+      const ts = new Date().toISOString().slice(11, 23);
+      console.debug(`[Prefetch ${ts}] prefetch   ${routePath}`);
+    }
+
     // 标记为已预加载(在 import 之前标记,避免并发重复触发)
     prefetchedRoutes.add(routePath);
-    importer().catch((err) => {
-      // 失败时移除标记,允许下次重试
-      prefetchedRoutes.delete(routePath);
-      // 静默处理,仅 console.warn
-      console.warn(`[usePrefetch] 预加载路由 ${routePath} 失败:`, err);
-    });
+    importer()
+      .then(() => {
+        if (debug) {
+          const ts = new Date().toISOString().slice(11, 23);
+          console.debug(`[Prefetch ${ts}] loaded     ${routePath}`);
+        }
+      })
+      .catch((err) => {
+        // 失败时移除标记,允许下次重试
+        prefetchedRoutes.delete(routePath);
+        // 静默处理,仅 console.warn(失败始终输出,便于发现问题)
+        console.warn(`[Prefetch] 预加载路由 ${routePath} 失败:`, err);
+      });
   }, [routePath]);
 
   return {

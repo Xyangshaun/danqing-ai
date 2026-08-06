@@ -1,4 +1,4 @@
-import { type ReactNode } from 'react';
+import { memo, type ReactNode } from 'react';
 import { FileSearch, type LucideIcon } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
@@ -44,7 +44,7 @@ export interface EmptyStateProps {
   className?: string;
 }
 
-export default function EmptyState({
+function EmptyStateImpl({
   icon: Icon = FileSearch,
   title,
   desc,
@@ -146,3 +146,14 @@ export default function EmptyState({
     </div>
   );
 }
+
+/**
+ * React.memo 包裹(V2-D 性能优化):
+ *   - EmptyState 是纯展示组件,无 state/effect,渲染开销极低
+ *   - 主要使用场景:多个页面/弹窗的空状态占位,父组件重渲染时跳过 EmptyState
+ *   - 注意:icon(LucideIcon 类型)与 onAction(函数)是引用类型,
+ *     调用方应使用稳定引用(模块级常量 / useCallback)才能让 memo 生效;
+ *     字面量 props(title/desc/actionLabel 等)始终稳定,memo 总能起效
+ */
+const EmptyState = memo(EmptyStateImpl);
+export default EmptyState;

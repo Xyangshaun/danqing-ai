@@ -258,6 +258,7 @@ export default function FusePage() {
           </h3>
           <button
             onClick={() => setShowArtworkPicker(slot)}
+            aria-label="从素材库选择"
             className="flex items-center gap-1 text-sm text-cinnabar hover:underline"
           >
             <Grid3X3 className="w-4 h-4" />
@@ -290,6 +291,7 @@ export default function FusePage() {
             <img
               src={img}
               alt={`作品 ${slot}`}
+              loading="lazy"
               className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
             />
             <div className="absolute inset-0 bg-gradient-to-t from-ink-900/50 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -306,6 +308,7 @@ export default function FusePage() {
             )}
             <button
               onClick={() => handleClear(slot)}
+              aria-label="移除作品"
               className="absolute top-2 right-2 p-1.5 bg-white/90 backdrop-blur-sm text-ink-700 rounded-full hover:bg-cinnabar hover:text-white transition-all opacity-0 group-hover:opacity-100"
             >
               <X className="w-4 h-4" />
@@ -352,6 +355,7 @@ export default function FusePage() {
               <button
                 key={preset.id}
                 onClick={() => applyPreset(preset.id)}
+                aria-label={preset.name}
                 className="p-3 rounded-xl bg-rice-50 hover:bg-rice-100 border-2 border-transparent hover:border-cinnabar/30 transition-all text-left group"
               >
                 <div className="text-2xl mb-2">{preset.icon}</div>
@@ -378,6 +382,7 @@ export default function FusePage() {
             <button
               key={style.id}
               onClick={() => setSelectedStyle(style)}
+              aria-label={style.name}
               className={`p-4 rounded-xl border-2 transition-all text-left ${
                 selectedStyle.id === style.id
                   ? 'border-cinnabar bg-cinnabar/5'
@@ -410,6 +415,7 @@ export default function FusePage() {
               <button
                 key={method.id}
                 onClick={() => setSelectedMethod(method)}
+                aria-label={method.name}
                 className={`p-4 rounded-xl border-2 transition-all text-left ${
                   isSelected
                     ? 'border-cinnabar bg-cinnabar/5'
@@ -445,6 +451,7 @@ export default function FusePage() {
               <button
                 key={intensity.id}
                 onClick={() => setSelectedIntensity(intensity)}
+                aria-label={intensity.name}
                 className={`p-4 rounded-xl border-2 transition-all text-center ${
                   isSelected
                     ? 'border-cinnabar bg-cinnabar/5'
@@ -528,6 +535,7 @@ export default function FusePage() {
         </h3>
         <button
           onClick={() => setShowAnalysis(!showAnalysis)}
+          aria-label={showAnalysis ? '收起分析报告' : '展开分析报告'}
           className="text-sm text-ink-500 hover:text-cinnabar flex items-center gap-1"
         >
           {showAnalysis ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
@@ -653,6 +661,7 @@ export default function FusePage() {
         <div className="flex justify-center mb-6">
           <button
             onClick={() => setShowSettings(!showSettings)}
+            aria-label="融合标准设置"
             className="inline-flex items-center gap-2 px-5 py-2.5 bg-white rounded-full shadow-card hover:shadow-card-hover transition-all"
           >
             <Settings2 className="w-4 h-4 text-cinnabar" />
@@ -684,6 +693,7 @@ export default function FusePage() {
                   <img
                     src={image1}
                     alt="作品1"
+                    loading="lazy"
                     className="w-full h-full object-cover"
                     onError={(e) => { e.currentTarget.style.display = 'none'; }}
                   />
@@ -711,6 +721,7 @@ export default function FusePage() {
                   <img
                     src={image2}
                     alt="作品2"
+                    loading="lazy"
                     className="w-full h-full object-cover"
                     onError={(e) => { e.currentTarget.style.display = 'none'; }}
                   />
@@ -751,6 +762,7 @@ export default function FusePage() {
             <button
               onClick={handleFuse}
               disabled={fusing}
+              aria-label="开始灵感嫁接"
               className="inline-flex items-center gap-3 px-12 py-4 bg-gradient-to-r from-cinnabar to-stone text-white rounded-xl hover:opacity-90 transition-all disabled:opacity-50 transform hover:scale-105 shadow-card"
             >
               <Sparkles className="w-6 h-6" />
@@ -767,6 +779,7 @@ export default function FusePage() {
                 <img
                   src={image1}
                   alt="作品1"
+                  loading="lazy"
                   className="w-full h-full object-cover"
                   onError={(e) => { e.currentTarget.style.display = 'none'; }}
                 />
@@ -776,6 +789,7 @@ export default function FusePage() {
                 <img
                   src={image2}
                   alt="作品2"
+                  loading="lazy"
                   className="w-full h-full object-cover"
                   onError={(e) => { e.currentTarget.style.display = 'none'; }}
                 />
@@ -832,6 +846,7 @@ export default function FusePage() {
                 </span>
                 <button
                   onClick={handleDownload}
+                  aria-label="下载"
                   className="flex items-center gap-2 px-4 py-2 bg-ink-900 text-rice-100 rounded-lg hover:bg-cinnabar transition-all ml-2"
                 >
                   <Download className="w-4 h-4" />
@@ -839,6 +854,7 @@ export default function FusePage() {
                 </button>
                 <button
                   onClick={handleSaveToMaterials}
+                  aria-label="保存到素材库"
                   className="flex items-center gap-2 px-4 py-2 border-2 border-cinnabar/40 text-cinnabar rounded-lg hover:bg-cinnabar hover:text-white transition-all"
                   title="保存到素材库"
                 >
@@ -848,6 +864,7 @@ export default function FusePage() {
                 <button
                   onClick={handleFuse}
                   disabled={fusing}
+                  aria-label="重新生成"
                   className="flex items-center gap-2 px-4 py-2 border-2 border-ink-200 text-ink-700 rounded-lg hover:border-cinnabar hover:text-cinnabar transition-all"
                 >
                   <RefreshCw className={`w-4 h-4 ${fusing ? 'animate-spin' : ''}`} />
@@ -861,6 +878,7 @@ export default function FusePage() {
               <img
                 src={results[selectedResultIndex].url}
                 alt="融合结果"
+                loading="lazy"
                 className="w-full max-h-[600px] object-contain"
               />
             </div>
@@ -874,6 +892,7 @@ export default function FusePage() {
                     <button
                       key={result.id}
                       onClick={() => setSelectedResultIndex(i)}
+                      aria-label={`查看方案 ${i + 1}`}
                       className={`flex-shrink-0 w-24 h-24 rounded-lg overflow-hidden border-2 transition-all ${
                         selectedResultIndex === i
                           ? 'border-cinnabar ring-2 ring-cinnabar/30'
@@ -883,6 +902,7 @@ export default function FusePage() {
                       <img
                         src={result.url}
                         alt={`方案 ${i + 1}`}
+                        loading="lazy"
                         className="w-full h-full object-cover"
                       />
                     </button>
@@ -898,6 +918,7 @@ export default function FusePage() {
               <button
                 onClick={handleFuse}
                 disabled={fusing}
+                aria-label="换一批"
                 className="inline-flex items-center gap-2 px-6 py-2.5 border-2 border-ink-200 text-ink-700 rounded-lg hover:border-cinnabar hover:text-cinnabar transition-all"
               >
                 <Shuffle className="w-4 h-4" />
@@ -905,6 +926,7 @@ export default function FusePage() {
               </button>
               <button
                 onClick={() => setResults([])}
+                aria-label="保存到收藏"
                 className="inline-flex items-center gap-2 px-6 py-2.5 border-2 border-ink-200 text-ink-700 rounded-lg hover:border-cinnabar hover:text-cinnabar transition-all"
               >
                 <Save className="w-4 h-4" />
@@ -941,6 +963,7 @@ export default function FusePage() {
                 </h3>
                 <button
                   onClick={() => setShowArtworkPicker(null)}
+                  aria-label="关闭"
                   className="p-2 hover:bg-rice-100 rounded-full transition-all"
                 >
                   <X className="w-5 h-5 text-ink-700" />
@@ -981,6 +1004,7 @@ export default function FusePage() {
                     <button
                       key={artwork.id}
                       onClick={() => handleArtworkSelect(artwork, showArtworkPicker)}
+                      aria-label={artwork.title}
                       className="bg-rice-50 rounded-lg overflow-hidden hover:ring-2 hover:ring-cinnabar transition-all text-left group"
                     >
                       <div className="aspect-[4/3] overflow-hidden bg-ink-100">

@@ -14,9 +14,78 @@
 //   const { imgRef, loadedSrc, isLoaded, isError } = useLazyImage(src);
 //   <img ref={imgRef} src={loadedSrc} loading="lazy" />
 //   注:hook 内部已绑定 load/error 事件,调用方无需再绑定 onLoad/onError
+//
+// 调试日志(V2-D 性能验证):
+//   通过 localStorage.setItem('lazyimg-debug', '0') 可关闭;
+//   默认开启,输出以下事件到 console.debug:
+//   - [LazyImg] observe    IntersectionObserver 已创建并开始观察
+//   - [LazyImg] intersect  元素进入视口,准备加载真实 src
+//   - [LazyImg] loaded      图片加载完成
+//   - [LazyImg] error      图片加载失败
+//   - [LazyImg] disconnect  observer 已断开
+//   - [LazyImg] fallback   不支持 IntersectionObserver,直接加载
+//   - [LazyImg] src-change src 变化,重新观察
+//   - [LazyImg] no-src     src 为空,清空状态
 // ============================================================
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+
+/**
+ * 调试日志开关(可通过 localStorage 关闭)
+ *   localStorage.setItem('lazyimg-debug', '0') 关闭
+ *   localStorage.setItem('lazyimg-debug', '1') 开启(默认)
+ *
+ * 测试环境(import.meta.env.MODE === 'test' 或 NODE_ENV=test)默认关闭,
+ * 避免 vitest 输出被日志噪声污染。
+ */
+const LAZY_IMG_DEBUG = (() => {
+  // vitest 会设置 import.meta.env.MODE === 'test',生产构建/开发为 'production'/'development'
+  // 注:不再检查 process.env.NODE_ENV —— process 是 Node.js 全局,
+  // 在浏览器 Vite 构建中未声明会导致 TS 编译错误;MODE 已足够覆盖测试场景
+  const isTestEnv = (import.meta as { env?: { MODE?: string } }).env?.MODE === 'test';
+  if (isTestEnv) return false;
+  if (typeof localStorage === 'undefined') return false;
+  const flag = localStorage.getItem('lazyimg-debug');
+  // 默认开启(未设置视为开启);显式 '0' 关闭
+  return flag !== '0';
+})();
+
+/** 统一前缀 + 短 src 标识(截断到 40 字符,避免日志过长) */
+function logLazy(event: string, src?: string, extra?: unknown): void {
+  if (!LAZY_IMG_DEBUG) return;
+  const shortSrc = src ? (src.length > 40 ? '...' + src.slice(-37) : src) : '<empty>';
+  const ts = new Date().toISOString().slice(11, 23); // HH:mm:ss.SSS
+  console.debug(`[LazyImg ${ts}] ${event.padEnd(11)}`, shortSrc, extra ?? '');
+}
+
+/**
+ * 全局 img 资源加载观察器(零侵入,覆盖所有 <img loading="lazy"> 原生懒加载场景)
+ *
+ * 原生 loading="lazy" 没有 JS 钩子暴露"何时决定加载"。
+ * 通过 PerformanceObserver 监听 'resource' 条目,过滤 initiatorType==='img',
+ * 可以在图片真正发起网络请求时输出日志。
+ *
+ * 仅在浏览器环境 + LAZY_IMG_DEBUG 开启时初始化。
+ */
+if (typeof window !== 'undefined' && typeof PerformanceObserver !== 'undefined' && LAZY_IMG_DEBUG) {
+  try {
+    const observer = new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) {
+        const res = entry as PerformanceResourceTiming;
+        if (res.initiatorType === 'img' && res.name && !res.name.startsWith('data:')) {
+          logLazy('resource', res.name, {
+            duration: Math.round(res.duration),
+            size: res.transferSize,
+          });
+        }
+      }
+    });
+    observer.observe({ type: 'resource', buffered: true });
+    // 不在卸载时 disconnect:页面整个生命周期都观察
+  } catch {
+    // 某些浏览器不支持 type: 'resource' 的 buffered,忽略
+  }
+}
 
 export interface LazyImageOptions {
   /** rootMargin,默认 '200px'(提前 200px 加载) */
@@ -74,6 +143,7 @@ export function useLazyImage(
     if (observerRef.current) {
       observerRef.current.disconnect();
       observerRef.current = null;
+      logLazy('disconnect', activeSrcRef.current);
     }
   }, []);
 
@@ -81,6 +151,7 @@ export function useLazyImage(
   useEffect(() => {
     // 无 src 时直接清空
     if (!src) {
+      logLazy('no-src', activeSrcRef.current);
       activeSrcRef.current = undefined;
       setLoadedSrc(undefined);
       setIsLoaded(false);
@@ -89,6 +160,7 @@ export function useLazyImage(
       return;
     }
 
+    logLazy('src-change', src);
     // 重置状态
     activeSrcRef.current = src;
     setIsLoaded(false);
@@ -97,6 +169,7 @@ export function useLazyImage(
 
     // SSR 安全检查:不支持 IntersectionObserver 时直接加载真实 src
     if (typeof IntersectionObserver === 'undefined') {
+      logLazy('fallback', src, 'no-IntersectionObserver');
       setLoadedSrc(src);
       return;
     }
@@ -109,6 +182,11 @@ export function useLazyImage(
       (entries) => {
         for (const entry of entries) {
           if (entry.isIntersecting) {
+            logLazy('intersect', src, {
+              rootMargin,
+              threshold,
+              boundingClientRect: entry.boundingClientRect,
+            });
             setLoadedSrc(src);
             if (once) {
               disconnect();
@@ -120,6 +198,7 @@ export function useLazyImage(
     );
     observerRef.current = observer;
     observer.observe(el);
+    logLazy('observe', src, { rootMargin, threshold });
 
     return () => {
       disconnect();
@@ -146,12 +225,17 @@ export function useLazyImage(
       if (activeSrcRef.current && el.src.includes(activeSrcRef.current)) {
         setIsLoaded(true);
         setIsError(false);
+        logLazy('loaded', activeSrcRef.current, {
+          naturalWidth: el.naturalWidth,
+          naturalHeight: el.naturalHeight,
+        });
       }
     };
     const handleError = () => {
       if (activeSrcRef.current && el.src.includes(activeSrcRef.current)) {
         setIsError(true);
         setIsLoaded(false);
+        logLazy('error', activeSrcRef.current);
       }
     };
     el.addEventListener('load', handleLoad);

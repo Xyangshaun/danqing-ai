@@ -83,6 +83,7 @@ const ArtworkCard = memo(function ArtworkCard({
             ref={imgRef}
             src={loadedSrc}
             alt={artwork.title}
+            loading="lazy"
             className={`w-full h-full object-cover group-hover:scale-105 transition-all duration-500 ${
               isLoaded ? 'opacity-100' : 'opacity-0'
             }`}
@@ -116,6 +117,7 @@ const ArtworkCard = memo(function ArtworkCard({
           <div className="flex items-center gap-1">
             <button
               onClick={(e) => { e.stopPropagation(); onSendToFuse(artwork); }}
+              aria-label="用于嫁接"
               className="p-1.5 rounded-full hover:bg-cinnabar/10 hover:text-cinnabar text-ink-400 transition-all"
               title="用于嫁接"
             >
@@ -123,6 +125,7 @@ const ArtworkCard = memo(function ArtworkCard({
             </button>
             <button
               onClick={(e) => { e.stopPropagation(); onPickPack(artwork); }}
+              aria-label="加入素材包"
               className="p-1.5 rounded-full hover:bg-cinnabar/10 hover:text-cinnabar text-ink-400 transition-all"
               title="加入素材包"
             >
@@ -178,6 +181,7 @@ const ArtworkRow = memo(function ArtworkRow({
             ref={imgRef}
             src={loadedSrc}
             alt={artwork.title}
+            loading="lazy"
             className={`w-full h-full object-cover transition-opacity duration-300 ${
               isLoaded ? 'opacity-100' : 'opacity-0'
             }`}
@@ -193,6 +197,7 @@ const ArtworkRow = memo(function ArtworkRow({
           <div className="flex items-center gap-1">
             <button
               onClick={(e) => { e.stopPropagation(); onSendToFuse(artwork); }}
+              aria-label="用于嫁接"
               className="p-1.5 rounded-full hover:bg-cinnabar/10 hover:text-cinnabar text-ink-400 transition-all"
               title="用于嫁接"
             >
@@ -200,6 +205,7 @@ const ArtworkRow = memo(function ArtworkRow({
             </button>
             <button
               onClick={(e) => { e.stopPropagation(); onPickPack(artwork); }}
+              aria-label="加入素材包"
               className="p-1.5 rounded-full hover:bg-cinnabar/10 hover:text-cinnabar text-ink-400 transition-all"
               title="加入素材包"
             >
@@ -568,6 +574,7 @@ export default function MaterialsPage() {
             </div>
             <button
               onClick={() => setShowPackPanel(!showPackPanel)}
+              aria-label={showPackPanel ? '收起素材包面板' : '管理素材包'}
               className="text-xs text-cinnabar hover:underline flex items-center gap-1"
             >
               {showPackPanel ? '收起' : '管理素材包'}
@@ -588,6 +595,7 @@ export default function MaterialsPage() {
                 />
                 <button
                   onClick={handleCreatePack}
+                  aria-label="创建素材包"
                   className="flex items-center gap-1 px-4 py-2 bg-ink-900 text-white text-sm rounded-lg hover:bg-cinnabar transition-all"
                 >
                   <PackagePlus className="w-4 h-4" />
@@ -606,6 +614,7 @@ export default function MaterialsPage() {
                       <div className="flex items-center justify-between px-3 py-2 bg-rice-100 rounded-lg hover:bg-rice-200/60 transition-all">
                         <button
                           onClick={() => handleViewPack(pack.id)}
+                          aria-label={`查看素材包 ${pack.name}`}
                           className="flex items-center gap-2 flex-1 text-left"
                         >
                           <Package className={`w-4 h-4 ${activePackId === pack.id ? 'text-cinnabar' : 'text-ink-400'}`} />
@@ -616,6 +625,7 @@ export default function MaterialsPage() {
                         </button>
                         <button
                           onClick={() => handleDeletePack(pack.id)}
+                          aria-label={`删除素材包 ${pack.name}`}
                           className="p-1.5 text-ink-400 hover:text-cinnabar rounded transition-all"
                           title="删除素材包"
                         >
@@ -667,7 +677,7 @@ export default function MaterialsPage() {
               className="w-full pl-12 pr-4 py-3 border border-ink-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-cinnabar/30 focus:border-cinnabar"
             />
             {searchQuery && (
-              <button onClick={() => setSearchQuery('')} className="absolute right-4 top-1/2 -translate-y-1/2 p-1 hover:bg-ink-100 rounded-full">
+              <button onClick={() => setSearchQuery('')} aria-label="清除搜索" className="absolute right-4 top-1/2 -translate-y-1/2 p-1 hover:bg-ink-100 rounded-full">
                 <X className="w-4 h-4 text-ink-400" />
               </button>
             )}
@@ -780,6 +790,7 @@ export default function MaterialsPage() {
               <span className="text-xs text-ink-400">（可多选）</span>
               <button
                 onClick={() => setShowAllTags(!showAllTags)}
+                aria-label={showAllTags ? '收起标签' : '展开全部标签'}
                 className="ml-auto text-xs text-cinnabar hover:underline flex items-center gap-1"
               >
                 {showAllTags ? '收起' : `展开全部 (${sortedTags.length})`}
@@ -817,6 +828,7 @@ export default function MaterialsPage() {
             {activeFilterCount > 0 && (
               <button
                 onClick={resetFilters}
+                aria-label="清除筛选"
                 className="flex items-center gap-1 px-3 py-2 text-sm text-ink-600 hover:text-cinnabar transition-all"
               >
                 <RefreshCw className="w-4 h-4" />
@@ -846,12 +858,16 @@ export default function MaterialsPage() {
             </div>
             <button
               onClick={() => setViewMode('grid')}
+              aria-label="网格视图"
+              aria-pressed={viewMode === 'grid'}
               className={`p-2 rounded-lg transition-all ${viewMode === 'grid' ? 'bg-ink-900 text-white' : 'bg-white text-ink-600 hover:bg-rice-100'}`}
             >
               <Grid3X3 className="w-4 h-4" />
             </button>
             <button
               onClick={() => setViewMode('list')}
+              aria-label="列表视图"
+              aria-pressed={viewMode === 'list'}
               className={`p-2 rounded-lg transition-all ${viewMode === 'list' ? 'bg-ink-900 text-white' : 'bg-white text-ink-600 hover:bg-rice-100'}`}
             >
               <List className="w-4 h-4" />
@@ -877,6 +893,7 @@ export default function MaterialsPage() {
                   {groupBy !== 'none' && (
                     <button
                       onClick={() => toggleGroupCollapse(groupKey)}
+                      aria-label={isCollapsed ? `展开分组 ${groupKey}` : `收起分组 ${groupKey}`}
                       className="w-full flex items-center justify-between mb-4 px-4 py-3 bg-rice-50 rounded-xl shadow-card hover:shadow-card-hover transition-all group"
                     >
                       <div className="flex items-center gap-3">
@@ -950,6 +967,7 @@ export default function MaterialsPage() {
                     ref={detailImgRef}
                     src={detailLoadedSrc}
                     alt={selectedArtwork.title}
+                    loading="lazy"
                     className={`w-full h-full object-contain max-h-[60vh] md:max-h-[80vh] transition-opacity duration-500 ${
                       detailIsLoaded ? 'opacity-100' : 'opacity-0'
                     }`}
@@ -966,7 +984,7 @@ export default function MaterialsPage() {
                     <h2 className="font-serif text-2xl font-bold text-ink-900">{selectedArtwork.title}</h2>
                     {selectedArtwork.titleEn && <p className="text-sm text-ink-400 italic">{selectedArtwork.titleEn}</p>}
                   </div>
-                  <button onClick={() => setSelectedArtwork(null)} className="p-2 hover:bg-rice-100 rounded-full transition-all"><X className="w-5 h-5 text-ink-700" /></button>
+                  <button onClick={() => setSelectedArtwork(null)} aria-label="关闭" className="p-2 hover:bg-rice-100 rounded-full transition-all"><X className="w-5 h-5 text-ink-700" /></button>
                 </div>
                 <div className="mb-4">
                   <p className="text-ink-500">
@@ -1006,6 +1024,7 @@ export default function MaterialsPage() {
                 <div className="flex gap-3">
                   <button
                     onClick={() => toggleFavorite(selectedArtwork.id)}
+                    aria-label={favorites.has(selectedArtwork.id) ? '取消收藏' : '收藏'}
                     className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg transition-all ${favorites.has(selectedArtwork.id) ? 'bg-cinnabar text-white' : 'border-2 border-ink-200 text-ink-700 hover:border-cinnabar hover:text-cinnabar'}`}
                   >
                     <Heart className={`w-4 h-4 ${favorites.has(selectedArtwork.id) ? 'fill-white' : ''}`} />
@@ -1013,6 +1032,7 @@ export default function MaterialsPage() {
                   </button>
                   <button
                     onClick={() => { setPackPickerArtwork(selectedArtwork); }}
+                    aria-label="加入素材包"
                     className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 border-2 border-ink-200 text-ink-700 rounded-lg hover:border-cinnabar hover:text-cinnabar transition-all"
                   >
                     <PackagePlus className="w-4 h-4" /><span className="text-sm font-medium">入包</span>
@@ -1024,6 +1044,7 @@ export default function MaterialsPage() {
                   )}
                   <button
                     onClick={() => { const link = document.createElement('a'); link.href = selectedArtwork.imageUrl; link.download = `${selectedArtwork.title}.jpg`; link.target = '_blank'; document.body.appendChild(link); link.click(); document.body.removeChild(link); }}
+                    aria-label="下载参考"
                     className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-ink-900 text-white rounded-lg hover:bg-cinnabar transition-all"
                   >
                     <Download className="w-4 h-4" /><span className="text-sm font-medium">下载参考</span>
@@ -1051,6 +1072,7 @@ export default function MaterialsPage() {
                 </h3>
                 <button
                   onClick={() => setPackPickerArtwork(null)}
+                  aria-label="关闭"
                   className="p-1.5 hover:bg-rice-100 rounded-full transition-all"
                 >
                   <X className="w-4 h-4 text-ink-700" />
@@ -1087,6 +1109,7 @@ export default function MaterialsPage() {
                         key={pack.id}
                         onClick={() => !alreadyIn && handleAddToPack(pack.id)}
                         disabled={alreadyIn}
+                        aria-label={alreadyIn ? `${pack.name}（已加入）` : `加入素材包 ${pack.name}`}
                         className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border-2 text-left transition-all ${
                           alreadyIn
                             ? 'border-jade/40 bg-jade/5 cursor-default'

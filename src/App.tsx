@@ -11,7 +11,9 @@ import { ToastProvider } from './components/ToastProvider';
 import { AuthProvider } from './context/AuthContext';
 import RequireAuth from './components/auth/RequireAuth';
 import PermissionToast from './components/auth/PermissionToast';
+import { useTheme } from './hooks/useTheme';
 import LoginPage from './pages/LoginPage';
+import RegisterPage from './pages/RegisterPage';
 import OnboardingPage from './pages/OnboardingPage';
 /* 首页直接加载(首屏优先级最高) */
 import HomePage from './pages/HomePage';
@@ -35,6 +37,9 @@ export function AppLayout() {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
+
+  /* 应用主题与界面密度(从 localStorage 读取,设置 data-theme/data-density) */
+  useTheme();
 
   /* 全局快捷键:
    *   1-7 跳转模块、0 跳转设置、N 新建诊断、B 折叠侧栏、/ 打开命令面板
@@ -154,6 +159,7 @@ export function AppLayout() {
             <button
               className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center bg-rice-50 text-ink-700 rounded-md shadow-overlay"
               onClick={() => setMobileSidebarOpen(false)}
+              aria-label="关闭"
             >
               <X className="w-4 h-4" />
             </button>
@@ -167,6 +173,7 @@ export function AppLayout() {
             className="md:hidden fixed top-16 left-2 z-30 w-9 h-9 flex items-center justify-center bg-rice-50 border border-ink-900/10 rounded-md shadow-card"
             onClick={() => setMobileSidebarOpen(true)}
             title="打开导航"
+            aria-label="打开菜单"
           >
             <Menu className="w-4 h-4 text-ink-700" />
           </button>
@@ -221,8 +228,9 @@ function App() {
     <ToastProvider>
       <AuthProvider>
         <Routes>
-          {/* 公开路由:登录页(无需鉴权) */}
+          {/* 公开路由:登录页 + 注册页(无需鉴权) */}
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
 
           {/* 受保护路由:新手引导(全屏,不走 AppLayout) */}
           <Route
