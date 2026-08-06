@@ -11,12 +11,14 @@
 import type { RequestHandler, Request, Response } from 'express';
 import { z } from 'zod';
 import { authService } from '../services/auth.service.js';
+import { feishuService } from '../services/feishu.service.js';
 import { jwtService } from '../services/jwt.service.js';
 import { env } from '../config/env.js';
 import { success, error } from '../utils/response.js';
 import { ErrorCode } from '../types/api-contract.js';
 import { setCsrfTokenCookie, clearCsrfTokenCookie } from '../middlewares/csrf.js';
 import { getClientIp } from '../utils/ip.js';
+import { generateState } from '../utils/crypto.js';
 
 // ============================================================
 // Phase 5:Zod 校验 Schemas(手机 OTP / 邀请码 / 管理员认证)
@@ -54,6 +56,26 @@ const adminRegisterSchema = z.object({
 const adminLoginSchema = z.object({
   email: z.string().email().max(128),
   password: z.string().min(1).max(128),
+});
+
+// ============================================================
+// 通用账号注册/登录 + 飞书扫码登录 Schemas
+// ============================================================
+
+const accountRegisterSchema = z.object({
+  email: z.string().email().max(128),
+  password: z.string().min(8).max(128),
+  name: z.string().min(1).max(64),
+});
+
+const accountLoginSchema = z.object({
+  email: z.string().email().max(128),
+  password: z.string().min(1).max(128),
+});
+
+const feishuQrStatusSchema = z.object({
+  qrToken: z.string().min(1).max(128),
+  state: z.string().min(1).max(128),
 });
 
 const phoneBindSchema = z.object({
@@ -574,6 +596,168 @@ export const phoneBind: RequestHandler = async (req, res, next) => {
       client,
     });
     return success(res, result, '手机号已绑定');
+  } catch (err) {
+    return next(err);
+  }
+};
+
+// ============================================================
+// 通用账号注册/登录 + 飞书扫码登录
+// ============================================================
+
+/** 构建登录响应 payload(web/admin 走 Cookie,mobile 额外返回 token) */
+function buildLoginPayload(
+  result: { accessToken: string; accessTokenExpiresAt: string; isFirstLogin: boolean; user: unknown; tenant: unknown; refreshToken: string },
+  csrfToken: string,
+  client: 'web' | 'admin' | 'mobile',
+): {
+  accessToken: string;
+  accessTokenExpiresAt: string;
+  isFirstLogin: boolean;
+  user: unknown;
+  tenant: unknown;
+  refreshToken?: string;
+  csrfToken?: string;
+} {
+  const payload: {
+    accessToken: string;
+    accessTokenExpiresAt: string;
+    isFirstLogin: boolean;
+    user: unknown;
+    tenant: unknown;
+    refreshToken?: string;
+    csrfToken?: string;
+  } = {
+    accessToken: result.accessToken,
+    accessTokenExpiresAt: result.accessTokenExpiresAt,
+    isFirstLogin: result.isFirstLogin,
+    user: result.user,
+    tenant: result.tenant,
+  };
+  if (client === 'mobile') {
+    payload.refreshToken = result.refreshToken;
+    payload.csrfToken = csrfToken;
+  }
+  return payload;
+}
+
+/**
+ * POST /auth/register:通用账号注册(邮箱+密码,无需邀请码)
+ */
+export const accountRegister: RequestHandler = async (req, res, next) => {
+  try {
+    const parseResult = accountRegisterSchema.safeParse(req.body);
+    if (!parseResult.success) {
+      return error(res, ErrorCode.PARAM_INVALID, parseResult.error.issues[0]?.message ?? '参数错误', 400);
+    }
+    const { clientIp, userAgent, deviceId, client } = extractClientContext(req);
+    if (!deviceId) {
+      return error(res, ErrorCode.PARAM_MISSING, '缺少必填参数:device_id', 400);
+    }
+    const result = await authService.registerAccount({
+      email: parseResult.data.email,
+      password: parseResult.data.password,
+      name: parseResult.data.name,
+      clientIp,
+      userAgent,
+      deviceId,
+      client,
+    });
+    setRefreshTokenCookie(res, result.refreshToken);
+    const csrfToken = setCsrfTokenCookie(res);
+    return success(res, buildLoginPayload(result, csrfToken, client), '注册成功');
+  } catch (err) {
+    return next(err);
+  }
+};
+
+/**
+ * POST /auth/login:通用账号登录(邮箱+密码)
+ */
+export const accountLogin: RequestHandler = async (req, res, next) => {
+  try {
+    const parseResult = accountLoginSchema.safeParse(req.body);
+    if (!parseResult.success) {
+      return error(res, ErrorCode.PARAM_INVALID, parseResult.error.issues[0]?.message ?? '参数错误', 400);
+    }
+    const { clientIp, userAgent, deviceId, client } = extractClientContext(req);
+    if (!deviceId) {
+      return error(res, ErrorCode.PARAM_MISSING, '缺少必填参数:device_id', 400);
+    }
+    const result = await authService.loginAccount({
+      email: parseResult.data.email,
+      password: parseResult.data.password,
+      clientIp,
+      userAgent,
+      deviceId,
+      client,
+    });
+    setRefreshTokenCookie(res, result.refreshToken);
+    const csrfToken = setCsrfTokenCookie(res);
+    return success(res, buildLoginPayload(result, csrfToken, client), '登录成功');
+  } catch (err) {
+    return next(err);
+  }
+};
+
+/**
+ * POST /auth/feishu/qrcode:创建飞书扫码登录二维码
+ */
+export const feishuQrCreate: RequestHandler = async (req, res, next) => {
+  try {
+    const { deviceId } = extractClientContext(req);
+    if (!deviceId) {
+      return error(res, ErrorCode.PARAM_MISSING, '缺少必填参数:device_id', 400);
+    }
+    const state = generateState();
+    // state 存 Redis(TTL 300s),供扫码确认后关联设备上下文
+    const result = await feishuService.createQrCode(state);
+    return success(res, result, 'success');
+  } catch (err) {
+    return next(err);
+  }
+};
+
+/**
+ * POST /auth/feishu/qrcode/status:查询飞书扫码状态
+ * confirmed 时用返回的 code 完成登录,返回 access_token + 设置 Cookie
+ */
+export const feishuQrStatus: RequestHandler = async (req, res, next) => {
+  try {
+    const parseResult = feishuQrStatusSchema.safeParse(req.body);
+    if (!parseResult.success) {
+      return error(res, ErrorCode.PARAM_INVALID, parseResult.error.issues[0]?.message ?? '参数错误', 400);
+    }
+    const { clientIp, userAgent, deviceId, client } = extractClientContext(req);
+    if (!deviceId) {
+      return error(res, ErrorCode.PARAM_MISSING, '缺少必填参数:device_id', 400);
+    }
+
+    const statusResult = await feishuService.getQrCodeStatus(
+      parseResult.data.qrToken,
+      parseResult.data.state,
+    );
+
+    // 非 confirmed 仅返回状态,不签发 token
+    if (statusResult.status !== 'confirmed' || !statusResult.code) {
+      return success(res, { status: statusResult.status }, 'success');
+    }
+
+    // confirmed:用 code 完成登录
+    const result = await authService.feishuQrLogin({
+      code: statusResult.code,
+      clientIp,
+      userAgent,
+      deviceId,
+      client,
+    });
+    setRefreshTokenCookie(res, result.refreshToken);
+    const csrfToken = setCsrfTokenCookie(res);
+    return success(
+      res,
+      { ...buildLoginPayload(result, csrfToken, client), status: 'confirmed' },
+      '登录成功',
+    );
   } catch (err) {
     return next(err);
   }

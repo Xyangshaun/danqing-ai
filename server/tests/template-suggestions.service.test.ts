@@ -59,18 +59,6 @@ function buildMetrics(overrides: Partial<JimpMetricsForPrompt> = {}): JimpMetric
   };
 }
 
-/** 触发条件检查助手:给定 metrics 与 artType,返回触发的规则 id 列表(按输出顺序) */
-function triggeredIds(metrics: JimpMetricsForPrompt, artType: ArtType): string[] {
-  // 通过 evidence 字段反向匹配 — 但更可靠的方式是从 generateTemplateSuggestions 输出
-  // 间接推断。为避免本测试与规则内部实现耦合,此处直接复用源码导出的规则集
-  // (源码未导出 RULES_BY_ART_TYPE,故此处通过 generateTemplateSuggestions 输出验证)
-  return generateTemplateSuggestions(metrics, artType).map((s) => {
-    // 通过 evidence 反查规则 id — 不可行(evidence 不含 id)
-    // 因此本辅助函数仅返回 dimension+level 组合作为弱标识
-    return `${s.dimension}:${s.priority}`;
-  });
-}
-
 // ============================================================
 // 1. 四类作品维度映射
 // ============================================================
@@ -157,7 +145,8 @@ describe('Painting 规则触发', () => {
     it('painting-comp-whitespace-high: whitespaceRatio = 0.45 边界不触发 (严格大于)', () => {
       const m = buildMetrics({ whitespaceRatio: 0.45 });
       const out = generateTemplateSuggestions(m, 'painting');
-      expect(out.some((s) => s.evidence.includes('超过45%阈值'))).toBe(false);
+      // 使用与触发测试一致的匹配字符串,避免假绿
+      expect(out.some((s) => s.evidence.includes('留白比例') && s.evidence.includes('超过45%'))).toBe(false);
     });
 
     it('painting-comp-whitespace-low: whitespaceRatio < 0.20 触发 (medium)', () => {
@@ -235,7 +224,8 @@ describe('Painting 规则触发', () => {
     it('painting-color-warm-excessive: warmRatio = 0.70 边界不触发', () => {
       const m = buildMetrics({ warmRatio: 0.70, coolRatio: 0.30 });
       const out = generateTemplateSuggestions(m, 'painting');
-      expect(out.some((s) => s.evidence.includes('超过70%阈值') && s.evidence.includes('暖色'))).toBe(false);
+      // 使用与触发测试一致的匹配字符串,避免假绿
+      expect(out.some((s) => s.evidence.includes('暖色占比') && s.evidence.includes('超过70%'))).toBe(false);
     });
 
     it('painting-color-cool-excessive: coolRatio > 0.70 触发 (high)', () => {
@@ -520,6 +510,7 @@ describe('Product 规则触发', () => {
       const m = buildMetrics({ focusX: 0.2 });
       const out = generateTemplateSuggestions(m, 'product');
       const hit = out.find((s) => s.dimension === '形态' && s.evidence.includes('重心不稳'));
+      expect(hit).toBeDefined();
       expect(hit?.operation).toContain('右');
     });
 
@@ -629,6 +620,7 @@ describe('Sculpture 规则触发', () => {
       const m = buildMetrics({ focusX: 0.5, focusY: 0.85 });
       const out = generateTemplateSuggestions(m, 'sculpture');
       const hit = out.find((s) => s.dimension === '空间' && s.evidence.includes('偏离中心区域'));
+      expect(hit).toBeDefined();
       expect(hit?.operation).toContain('下');
     });
 
@@ -714,11 +706,12 @@ describe('优先级排序与数量限制', () => {
     const firstHigh = out.findIndex((s) => s.priority === 'high');
     const firstMedium = out.findIndex((s) => s.priority === 'medium');
     const firstLow = out.findIndex((s) => s.priority === 'low');
+    // 前置断言:三条规则均应触发(1 high + 1 medium + 1 low = 3 ≤ 5,不会被截断)
+    expect(firstHigh).not.toBe(-1);
+    expect(firstMedium).not.toBe(-1);
+    expect(firstLow).not.toBe(-1);
     expect(firstHigh).toBeLessThanOrEqual(firstMedium);
-    // low 可能不存在(被截断),存在时检查
-    if (firstLow !== -1 && firstMedium !== -1) {
-      expect(firstMedium).toBeLessThanOrEqual(firstLow);
-    }
+    expect(firstMedium).toBeLessThanOrEqual(firstLow);
   });
 
   it('high 优先级最多 2 条', () => {
@@ -946,9 +939,13 @@ describe('ProfessionalSuggestion 字段完整性', () => {
     const high = out.find((s) => s.priority === 'high');
     const medium = out.find((s) => s.priority === 'medium');
     const low = out.find((s) => s.priority === 'low');
-    if (high) expect(high.level).toBe('poor');
-    if (medium) expect(medium.level).toBe('average');
-    if (low) expect(low.level).toBe('good');
+    // 前置断言确保规则已触发,避免条件断言被静默跳过
+    expect(high).toBeDefined();
+    expect(medium).toBeDefined();
+    expect(low).toBeDefined();
+    expect(high?.level).toBe('poor');
+    expect(medium?.level).toBe('average');
+    expect(low?.level).toBe('good');
   });
 
   it('evidence 必须包含具体数值证据 (非空泛反馈)', () => {
@@ -1054,5 +1051,35 @@ describe('边界与容错', () => {
       expect(out1[i].evidence).toBe(out2[i].evidence);
       expect(out1[i].operation).toBe(out2[i].operation);
     }
+  });
+
+  it('condition 异常时跳过该规则,不影响其他规则 (容错验证)', () => {
+    // saturationDistribution=null 会使 painting-color-saturation-imbalance 的 condition 抛 TypeError
+    // 源码 try-catch 应跳过该规则,其他规则仍正常输出
+    const m = buildMetrics({
+      whitespaceRatio: 0.6, // 触发 painting-comp-whitespace-high
+      warmRatio: 0.85, coolRatio: 0.15, // 触发 painting-color-warm-excessive
+      saturationDistribution: null as any, // 故意设为 null 触发 condition 异常
+    });
+    expect(() => generateTemplateSuggestions(m, 'painting')).not.toThrow();
+    const out = generateTemplateSuggestions(m, 'painting');
+    // 其他规则仍应正常触发
+    expect(out.some((s) => s.evidence.includes('留白比例'))).toBe(true);
+    expect(out.some((s) => s.evidence.includes('暖色占比'))).toBe(true);
+    // 异常规则不应出现在输出中
+    expect(out.some((s) => s.evidence.includes('饱和度分布不均'))).toBe(false);
+  });
+
+  it('evidence 异常时跳过该规则,不影响其他规则 (容错验证)', () => {
+    // mostSimilarWork 设为异常值 (非对象),可能使 evidence 函数抛错
+    // 源码 try-catch 应跳过该规则的 evidence 生成
+    const m = buildMetrics({
+      pHashSimilarity: 0.8,
+      mostSimilarWork: 'invalid-string' as any, // 非对象,可能使 evidence 中 .title 抛错
+    });
+    expect(() => generateTemplateSuggestions(m, 'painting')).not.toThrow();
+    const out = generateTemplateSuggestions(m, 'painting');
+    // 其他通用建议仍应输出 (因 pHash 规则 evidence 可能失败被跳过)
+    expect(out.length).toBeGreaterThan(0);
   });
 });

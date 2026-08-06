@@ -16,12 +16,14 @@
 //   - AI_ENABLED='false'(Jimp-only 模式),analyzeImage 使用 mock Jimp 返回 100x100 伪图
 // ============================================================
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { writeFileSync, existsSync } from 'node:fs';
+import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { prismaMock } from './setup.js';
 import { analysisService } from '../src/services/analysis.service.js';
+import { analysisCacheService } from '../src/services/analysis-cache.service.js';
 import { BusinessError } from '../src/middlewares/error-handler.js';
 import { ErrorCode } from '../src/types/api-contract.js';
 
@@ -45,6 +47,7 @@ const USER_STUDENT_B = 'u-svc-student-b';
 
 /**
  * 断言异步函数抛出 BusinessError,并校验 code 与 httpStatus
+ * 改进:非 BusinessError 时输出原始错误信息,便于诊断 mock 配置问题
  */
 async function expectBusinessError(
   fn: () => Promise<unknown>,
@@ -55,24 +58,47 @@ async function expectBusinessError(
     await fn();
     expect.fail(`expected BusinessError(code=${code}, httpStatus=${httpStatus}) but no error was thrown`);
   } catch (err) {
-    expect(err).toBeInstanceOf(BusinessError);
-    expect((err as BusinessError).code).toBe(code);
-    expect((err as BusinessError).httpStatus).toBe(httpStatus);
+    if (!(err instanceof BusinessError)) {
+      // 保留原始错误 stack,便于诊断非业务异常(如 mock 配置错误)
+      expect.fail(
+        `expected BusinessError(code=${code}) but got: ${err instanceof Error ? `${err.constructor.name}: ${err.message}` : String(err)}`,
+      );
+    }
+    expect(err.code).toBe(code);
+    expect(err.httpStatus).toBe(httpStatus);
   }
 }
 
 /**
  * 创建临时图片文件(供 createAnalysisFromUpload 测试使用)
  * service 内部会在分析完成后调用 safeCleanup 删除该文件
+ * 注意:测试失败时 safeCleanup 可能未执行,兜底清理见 afterEach
  */
+const createdTempFiles: string[] = [];
+
 function createTempImageFile(): string {
   const path = join(
     tmpdir(),
     `danqing-test-${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`,
   );
   writeFileSync(path, Buffer.from('fake-image-content-for-testing'));
+  createdTempFiles.push(path);
   return path;
 }
+
+/**
+ * afterEach 兜底清理:删除未被 safeCleanup 清理的临时文件
+ */
+afterEach(() => {
+  for (const p of createdTempFiles.splice(0)) {
+    try {
+      const { unlinkSync } = require('node:fs');
+      unlinkSync(p);
+    } catch {
+      // 文件可能已被 safeCleanup 删除,忽略
+    }
+  }
+});
 
 /**
  * 预置共享租户与用户数据(用于 RBAC 测试)
@@ -863,13 +889,7 @@ describe('analysisService.createAnalysisFromUpload 上传模式', () => {
     expect(res.result!.userId).toBe('u-upload');
   });
 
-  it('上传模式:文件不可读时 → 400 ANALYSIS_IMAGE_INVALID', async () => {
-    // 传入不存在的文件路径(existsSync 返回 false → hasLocal=false → 走 URL 校验)
-    // 但 body.imageUrl 为 upload:// 占位,hasUrl=true,analysisSource=imageUrl
-    // 实际上 existsSync=false 时 hasLocal=false,不会触发文件不可读错误
-    // 这里测试 localImagePath 不存在的场景:createAnalysisFromUpload 仍会设置 body.imageUrl
-    // 所以会走 URL 模式(Jimp mock 不关心 URL 内容),不会报错
-    // 改为测试:不传 imageUrl 且 localImagePath 不存在 → PARAM_MISSING
+  it('缺少 imageUrl 且无 localImagePath → 400 PARAM_MISSING', async () => {
     await expectBusinessError(
       () =>
         analysisService.createAnalysis({
@@ -880,5 +900,116 @@ describe('analysisService.createAnalysisFromUpload 上传模式', () => {
       ErrorCode.PARAM_MISSING,
       400,
     );
+  });
+
+  it('localImagePath 存在但不可读 → 400 ANALYSIS_IMAGE_INVALID', async () => {
+    // 创建真实临时文件(existsSync 返回 true → hasLocal=true)
+    // mock fs.access 抛错模拟文件不可读(R_OK 校验失败)
+    const tempFile = createTempImageFile();
+    const accessSpy = vi.spyOn(fs.promises, 'access').mockRejectedValue(
+      Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' }),
+    );
+    try {
+      const params = {
+        tenantId: 't-upload',
+        userId: 'u-upload',
+        body: { artType: 'painting', imageUrl: '' },
+        localImagePath: tempFile,
+      };
+      await expectBusinessError(
+        () => analysisService.createAnalysis(params as any),
+        ErrorCode.ANALYSIS_IMAGE_INVALID,
+        400,
+      );
+    } finally {
+      accessSpy.mockRestore();
+    }
+  });
+});
+
+// ============================================================
+// 7. createAnalysis 终极兜底 (analyzeImage 抛错 → status=failed)
+// ============================================================
+
+describe('analysisService.createAnalysis 终极兜底 (analyzeImage 抛错)', () => {
+  beforeEach(() => {
+    prismaMock.__insertTenant({
+      id: 't-fallback',
+      name: '兜底测试租户',
+      plan: 'standard',
+      status: 'active',
+      maxSeats: 50,
+    });
+    prismaMock.__insertUser({
+      id: 'u-fallback',
+      tenantId: 't-fallback',
+      feishuUnionId: 'un_fallback',
+      name: '兜底用户',
+      role: 'student',
+    });
+  });
+
+  it('analyzeImage 抛错 → status=failed + 空回退结果 + failureReason 透传错误信息', async () => {
+    // mock analysisCacheService.getOrAnalyze 抛错,模拟 analyzeImage 内部异常
+    // (getOrAnalyze 内部调用 loader → analyzeImage,loader 抛错会透传到 runAnalysis 的 catch 块)
+    const getOrAnalyzeSpy = vi
+      .spyOn(analysisCacheService, 'getOrAnalyze')
+      .mockRejectedValue(new Error('mock analyzeImage failure'));
+
+    try {
+      const res = await analysisService.createAnalysis({
+        tenantId: 't-fallback',
+        userId: 'u-fallback',
+        body: { artType: 'painting', imageUrl: 'https://example.com/fallback-test.jpg' },
+      });
+
+      // 1. status 应为 failed (顶层与 detail 层均一致)
+      expect(res.status).toBe('failed');
+      expect(res.result).not.toBeNull();
+      expect(res.result!.status).toBe('failed');
+      // 2. result.result 应为空回退(generateEmptyFallback: overallScore=70, originality.score=70)
+      const fallbackResult = res.result!.result as { overallScore: number; originality: { score: number } };
+      expect(fallbackResult.overallScore).toBe(70);
+      expect(fallbackResult.originality).toMatchObject({
+        score: 70,
+        similarity: 0.2,
+        creativityLevel: 'good',
+      });
+      // 3. failureReason 应包含错误信息与"分析失败"前缀
+      expect(res.result!.failureReason).toContain('mock analyzeImage failure');
+      expect(res.result!.failureReason).toContain('分析失败');
+      // 4. DB 记录应更新为 failed 状态
+      const dbRecord = prismaMock.analysisStore.get(res.id);
+      expect(dbRecord).toBeDefined();
+      expect(dbRecord!.status).toBe('failed');
+      expect(dbRecord!.failureReason).toContain('mock analyzeImage failure');
+    } finally {
+      getOrAnalyzeSpy.mockRestore();
+    }
+  });
+
+  it('analyzeImage 抛非 Error 值 → status=failed + failureReason 使用 String 转换', async () => {
+    // 测试 catch 块的 err instanceof Error 分支(false 分支:使用 String(err))
+    const getOrAnalyzeSpy = vi
+      .spyOn(analysisCacheService, 'getOrAnalyze')
+      .mockRejectedValue('string-error-not-Error');
+
+    try {
+      const res = await analysisService.createAnalysis({
+        tenantId: 't-fallback',
+        userId: 'u-fallback',
+        body: { artType: 'design', imageUrl: 'https://example.com/fallback-string.jpg' },
+      });
+
+      expect(res.status).toBe('failed');
+      expect(res.result).not.toBeNull();
+      const fallbackResult = res.result!.result as { overallScore: number };
+      expect(fallbackResult.overallScore).toBe(70);
+      // 非 Error 值通过 String() 转换
+      expect(res.result!.failureReason).toContain('string-error-not-Error');
+      expect(res.result!.failureReason).toContain('分析失败');
+    } finally {
+      getOrAnalyzeSpy.mockRestore();
+    }
   });
 });

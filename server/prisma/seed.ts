@@ -11,6 +11,7 @@
 
 import { PrismaClient, type ArtType, type PresetStyle, type PresetStage } from '@prisma/client';
 import { SEED_PRESETS, validateSeedPresets } from '../src/seed/presets-data.js';
+import { hashPassword } from '../src/utils/password.js';
 
 const prisma = new PrismaClient();
 
@@ -147,9 +148,146 @@ async function seedDevFixtures(): Promise<void> {
   console.log('[seed] dev fixtures 注入完成(dev-tenant / dev-user / teacher / standard 订阅)');
 }
 
+/**
+ * 注入预置账号(幂等 upsert,生产可用)
+ *
+ * 设计:
+ *   - 1 个院校管理员:admin@dq.edu / Dq@Admin2026
+ *     · 创建 school 类型租户("丹青示范学院")
+ *     · role=admin,authType=password
+ *   - 5 个测试学生:test1-5@dq.edu / Dq@Test2026
+ *     · 加入管理员所在租户
+ *     · role=student,authType=password
+ *
+ * 注意:
+ *   - 密码用 bcrypt(salt rounds=12)哈希,与生产 auth.service.registerAccount 一致
+ *   - upsert by email(数据库 email 字段唯一索引)
+ *   - 重复执行不会重新哈希密码(仅在新建时哈希;update 路径不修改 passwordHash,
+ *     避免重复哈希导致哈希漂移)
+ */
+async function seedAccounts(): Promise<void> {
+  console.log('[seed] 开始注入预置账号...');
+
+  // ---------- 1. 管理员租户(school 类型,代表院校) ----------
+  const adminTenantId = 'seed-tenant-school';
+  await prisma.tenant.upsert({
+    where: { id: adminTenantId },
+    update: {
+      name: '丹青示范学院',
+      type: 'school',
+      plan: 'enterprise',
+      status: 'active',
+      maxSeats: 100,
+    },
+    create: {
+      id: adminTenantId,
+      name: '丹青示范学院',
+      type: 'school',
+      plan: 'enterprise',
+      status: 'active',
+      maxSeats: 100,
+    },
+  });
+
+  // ---------- 2. 管理员账号 ----------
+  const adminEmail = 'admin@dq.edu';
+  const adminPasswordHash = await hashPassword('Dq@Admin2026');
+  await prisma.user.upsert({
+    where: { email: adminEmail },
+    update: {
+      // 已存在则不修改密码(避免哈希漂移);仅修正关键字段
+      tenantId: adminTenantId,
+      authType: 'password',
+      role: 'admin',
+      name: '系统管理员',
+      status: 'active',
+    },
+    create: {
+      id: 'seed-user-admin',
+      tenantId: adminTenantId,
+      authType: 'password',
+      email: adminEmail,
+      passwordHash: adminPasswordHash,
+      name: '系统管理员',
+      avatar: '',
+      role: 'admin',
+      status: 'active',
+    },
+  });
+  // 租户成员关系
+  await prisma.tenantMember.upsert({
+    where: { userId_tenantId: { userId: 'seed-user-admin', tenantId: adminTenantId } },
+    update: { role: 'admin' },
+    create: { userId: 'seed-user-admin', tenantId: adminTenantId, role: 'admin' },
+  });
+
+  // ---------- 3. 5 个测试学生账号 ----------
+  const studentPasswordHash = await hashPassword('Dq@Test2026');
+  const studentNames = ['张同学', '李同学', '王同学', '赵同学', '钱同学'];
+
+  for (let i = 1; i <= 5; i += 1) {
+    const email = `test${i}@dq.edu`;
+    const userId = `seed-user-student-${i}`;
+    const name = studentNames[i - 1];
+
+    await prisma.user.upsert({
+      where: { email },
+      update: {
+        // 已存在则修正关键字段(不修改密码)
+        tenantId: adminTenantId,
+        authType: 'password',
+        role: 'student',
+        name,
+        status: 'active',
+      },
+      create: {
+        id: userId,
+        tenantId: adminTenantId,
+        authType: 'password',
+        email,
+        passwordHash: studentPasswordHash,
+        name,
+        avatar: '',
+        role: 'student',
+        status: 'active',
+      },
+    });
+
+    await prisma.tenantMember.upsert({
+      where: { userId_tenantId: { userId, tenantId: adminTenantId } },
+      update: { role: 'student' },
+      create: { userId, tenantId: adminTenantId, role: 'student' },
+    });
+  }
+
+  // ---------- 4. 院校订阅(premium,长期有效) ----------
+  const existingSchoolSub = await prisma.subscription.findFirst({
+    where: { tenantId: adminTenantId, status: 'active' },
+  });
+  if (!existingSchoolSub) {
+    const now = new Date();
+    const periodEnd = new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000); // 1 年
+    await prisma.subscription.create({
+      data: {
+        tenantId: adminTenantId,
+        plan: 'enterprise',
+        status: 'active',
+        periodStart: now,
+        periodEnd,
+        seats: 100,
+      },
+    });
+  }
+
+  console.log(
+    '[seed] 预置账号注入完成:1 管理员(admin@dq.edu)+ 5 学生(test1-5@dq.edu),租户=丹青示范学院'
+  );
+}
+
 main()
   .then(async () => {
     await seedDevFixtures();
+    await seedAccounts();
     console.log('[seed] done');
   })
   .catch((err) => {

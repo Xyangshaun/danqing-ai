@@ -155,11 +155,26 @@ class FeishuMockState {
 export const feishuMockState: FeishuMockState = new FeishuMockState();
 
 /**
- * 判断 URL 是否为 token 端点
+ * 判断 URL 是否为 app_access_token 端点(获取应用访问令牌)
+ * 对应源码:feishu.service.ts getAppAccessToken()
+ * URL:https://open.feishu.cn/open-apis/auth/v3/app_access_token/internal
+ * 必须在 isTokenEndpoint 之前判断,因为该 URL 也包含 "access_token" 子串
+ */
+function isAppAccessTokenEndpoint(url: string | undefined): boolean {
+  if (!url) return false;
+  return url.includes('app_access_token');
+}
+
+/**
+ * 判断 URL 是否为 OIDC token 端点(用 code 换 access_token)
+ * 对应源码:feishu.service.ts exchangeCodeForToken()
+ * URL:https://open.feishu.cn/open-apis/authen/v1/oidc/access_token
  */
 function isTokenEndpoint(url: string | undefined): boolean {
   if (!url) return false;
-  return url.includes('access_token') || url.includes('token');
+  // 排除 app_access_token 端点(已在 isAppAccessTokenEndpoint 中处理)
+  if (isAppAccessTokenEndpoint(url)) return false;
+  return url.includes('oidc/access_token') || url.includes('/authen/v1/oidc/');
 }
 
 /**
@@ -185,13 +200,62 @@ function createHttpClientInstance(): {
   get: (url: string, config?: unknown) => Promise<MockHttpResponse>;
 } {
   async function post(url: string, data?: unknown, _config?: unknown): Promise<MockHttpResponse> {
+    // 优先处理 app_access_token 端点(获取应用访问令牌)
+    // 该端点响应结构:{ code, msg, app_access_token, expire_in }
+    // 与 OIDC token 端点不同,app_access_token 直接在顶层而非 data 字段
+    if (isAppAccessTokenEndpoint(url)) {
+      // 记录请求参数(用于断言 app_id/app_secret)
+      const body = (data ?? {}) as Record<string, unknown>;
+      feishuMockState.lastTokenRequest = {
+        code: undefined,
+        appId: body['app_id'] as string | undefined,
+        appSecret: body['app_secret'] as string | undefined,
+      };
+
+      // app_access_token 端点复用 tokenMode 控制错误行为
+      if (feishuMockState.tokenMode === 'httpError') {
+        const err: MockError = {
+          config: { url, method: 'post' },
+          message: 'timeout of 5000ms exceeded',
+          code: 'ECONNABORTED',
+        };
+        throw err;
+      }
+
+      if (feishuMockState.tokenMode === 'feishuError') {
+        return {
+          data: { code: feishuMockState.tokenFeishuCode, msg: 'invalid app credentials', app_access_token: '' },
+          status: 200,
+          statusText: 'OK',
+          headers: {},
+          config: { url, method: 'post' },
+        };
+      }
+
+      // success:返回 app_access_token(顶层字段,非 data 包裹)
+      return {
+        data: {
+          code: 0,
+          msg: 'ok',
+          app_access_token: 'mock-app-access-token',
+          expire_in: 7200,
+        },
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config: { url, method: 'post' },
+      };
+    }
+
     if (isTokenEndpoint(url)) {
       // 记录请求参数用于断言
+      // OIDC 端点 body 仅含 grant_type/code,app_id/app_secret 已在 app_access_token 端点发送
+      // 保留前一次 app_access_token 请求记录的 appId/appSecret,使测试可断言完整凭证
       const body = (data ?? {}) as Record<string, unknown>;
       feishuMockState.lastTokenRequest = {
         code: body['code'] as string | undefined,
-        appId: body['app_id'] as string | undefined,
-        appSecret: body['app_secret'] as string | undefined,
+        appId: feishuMockState.lastTokenRequest?.appId,
+        appSecret: feishuMockState.lastTokenRequest?.appSecret,
       };
 
       if (feishuMockState.tokenMode === 'httpError') {

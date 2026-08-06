@@ -69,6 +69,46 @@ class FeishuServiceClass {
   }
 
   /**
+   * 获取飞书 app_access_token
+   * OIDC 端点要求 Authorization: Bearer <app_access_token>
+   * @returns app_access_token(有效期 2 小时)
+   */
+  private async getAppAccessToken(): Promise<string> {
+    const cfg = env();
+    try {
+      const resp = await httpClient().post(
+        'https://open.feishu.cn/open-apis/auth/v3/app_access_token/internal',
+        {
+          app_id: cfg.feishuAppId,
+          app_secret: cfg.feishuAppSecret,
+        },
+        {
+          headers: { 'Content-Type': 'application/json' },
+        },
+      );
+      const body = resp.data as { code?: number; app_access_token?: string; msg?: string };
+      if (body.code !== 0 || !body.app_access_token) {
+        logger.warn({ feishuCode: body.code, feishuMsg: body.msg }, '[feishu] app_access_token failed');
+        throw new BusinessError(
+          ErrorCode.FEISHU_TOKEN_EXCHANGE_FAILED,
+          '飞书 app_access_token 获取失败',
+          502,
+        );
+      }
+      return body.app_access_token;
+    } catch (err) {
+      if (err instanceof BusinessError) throw err;
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.error({ err: msg }, '[feishu] app_access_token http error');
+      throw new BusinessError(
+        ErrorCode.FEISHU_TOKEN_EXCHANGE_FAILED,
+        '飞书 app_access_token 获取失败',
+        502,
+      );
+    }
+  }
+
+  /**
    * 用 code 换 access_token
    * 对应 auth-design.md §1.2 步骤 6:POST /authen/v1/oidc/access_token
    * @param code 飞书返回的授权码(一次性,5 分钟有效)
@@ -83,18 +123,20 @@ class FeishuServiceClass {
     const cfg = env();
     const endpoint = cfg.feishuTokenEndpoint;
 
+    // OIDC 端点要求 Authorization: Bearer <app_access_token>
+    const appAccessToken = await this.getAppAccessToken();
+
     try {
       const resp = await httpClient().post(
         endpoint,
         {
           grant_type: 'authorization_code',
           code,
-          app_id: cfg.feishuAppId,
-          app_secret: cfg.feishuAppSecret,
         },
         {
           headers: {
             'Content-Type': 'application/json',
+            'Authorization': `Bearer ${appAccessToken}`,
           },
         },
       );
@@ -138,6 +180,124 @@ class FeishuServiceClass {
       throw new BusinessError(
         ErrorCode.FEISHU_TOKEN_EXCHANGE_FAILED,
         '飞书 access_token 获取失败',
+        502,
+      );
+    }
+  }
+
+  /**
+   * 创建飞书扫码登录二维码
+   * 对应飞书 passport API:POST /suite/passport/oauth/qrcode/create
+   * @param state 后端生成的 state(防 CSRF)
+   * @returns 二维码图片 URL + qr_token(用于轮询扫码状态)
+   */
+  async createQrCode(state: string): Promise<{
+    qrCodeUrl: string;
+    qrToken: string;
+    state: string;
+  }> {
+    const cfg = env();
+    // 扫码登录回调地址复用 web redirect_uri(扫码确认后飞书返回 code,无需整页跳转)
+    const redirectUri = cfg.feishuRedirectUriWeb;
+
+    try {
+      const resp = await httpClient().post(
+        'https://passport.feishu.cn/suite/passport/oauth/qrcode/create',
+        {
+          client_id: cfg.feishuAppId,
+          client_secret: cfg.feishuAppSecret,
+          scope: 'login',
+          redirect_uri: redirectUri,
+          state,
+        },
+        {
+          headers: { 'Content-Type': 'application/json' },
+        },
+      );
+      const body = resp.data as {
+        code?: number;
+        msg?: string;
+        data?: {
+          qr_code_url?: string;
+          qr_token?: string;
+          state?: string;
+        };
+      };
+      if (body.code !== 0 || !body.data?.qr_code_url || !body.data.qr_token) {
+        logger.warn({ feishuCode: body.code, feishuMsg: body.msg }, '[feishu] qrcode create failed');
+        throw new BusinessError(
+          ErrorCode.FEISHU_TOKEN_EXCHANGE_FAILED,
+          '飞书二维码创建失败',
+          502,
+        );
+      }
+      return {
+        qrCodeUrl: body.data.qr_code_url,
+        qrToken: body.data.qr_token,
+        state: body.data.state ?? state,
+      };
+    } catch (err) {
+      if (err instanceof BusinessError) throw err;
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.error({ err: msg }, '[feishu] qrcode create http error');
+      throw new BusinessError(
+        ErrorCode.FEISHU_TOKEN_EXCHANGE_FAILED,
+        '飞书二维码创建失败',
+        502,
+      );
+    }
+  }
+
+  /**
+   * 查询飞书扫码登录状态
+   * 对应飞书 passport API:GET /suite/passport/oauth/qrcode/status
+   * @param qrToken 创建二维码时返回的 qr_token
+   * @param state 创建二维码时返回的 state
+   * @returns status: new(等待扫码) | scanned(已扫码待确认) | confirmed(已确认,含 code) | expired | canceled
+   */
+  async getQrCodeStatus(qrToken: string, state: string): Promise<{
+    status: 'new' | 'scanned' | 'confirmed' | 'expired' | 'canceled';
+    code?: string; // confirmed 时返回授权码,用于换 token
+  }> {
+    const cfg = env();
+    const params = new URLSearchParams({
+      client_id: cfg.feishuAppId,
+      client_secret: cfg.feishuAppSecret,
+      qr_token: qrToken,
+      state,
+    });
+    const url = `https://passport.feishu.cn/suite/passport/oauth/qrcode/status?${params.toString()}`;
+
+    try {
+      const resp = await httpClient().get(url);
+      const body = resp.data as {
+        code?: number;
+        msg?: string;
+        data?: {
+          status?: string;
+          code?: string; // confirmed 时返回授权码
+        };
+      };
+      if (body.code !== 0 || !body.data?.status) {
+        logger.warn({ feishuCode: body.code, feishuMsg: body.msg }, '[feishu] qrcode status failed');
+        throw new BusinessError(
+          ErrorCode.FEISHU_TOKEN_EXCHANGE_FAILED,
+          '飞书扫码状态查询失败',
+          502,
+        );
+      }
+      const status = body.data.status as 'new' | 'scanned' | 'confirmed' | 'expired' | 'canceled';
+      return {
+        status,
+        code: body.data.code,
+      };
+    } catch (err) {
+      if (err instanceof BusinessError) throw err;
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.error({ err: msg }, '[feishu] qrcode status http error');
+      throw new BusinessError(
+        ErrorCode.FEISHU_TOKEN_EXCHANGE_FAILED,
+        '飞书扫码状态查询失败',
         502,
       );
     }

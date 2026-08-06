@@ -154,6 +154,44 @@ class AuthServiceClass {
   }
 
   /**
+   * 飞书扫码登录:用扫码确认返回的 code 换 token + 创建/更新用户 + 签发 JWT
+   * 复用 handleCallback 的步骤 7-9(去掉 state 校验,扫码登录 state 仅用于 CSRF)
+   */
+  async feishuQrLogin(params: {
+    code: string;
+    clientIp: string;
+    userAgent: string;
+    deviceId: string;
+    client: 'web' | 'admin' | 'mobile';
+  }): Promise<AuthLoginResult> {
+    // 1. 用 code 换 token
+    const tokenResult = await feishuService.exchangeCodeForToken(params.code);
+
+    // 2. 获取用户信息
+    const feishuUser = await feishuService.getUserInfo(tokenResult.accessToken);
+    if (!feishuUser.unionId) {
+      throw new BusinessError(ErrorCode.FEISHU_USER_INFO_FAILED, '飞书用户信息获取失败:union_id 缺失', 502);
+    }
+
+    // 3. 查询/创建 User + TenantMember
+    const { user, tenant, isFirstLogin } = await this.upsertUserAndTenant({ feishuUser });
+
+    // 4. 签发 JWT + 落 Session
+    const result = await this.issueTokensAndSession({
+      user,
+      tenant,
+      client: params.client,
+      clientIp: params.clientIp,
+      userAgent: params.userAgent,
+      isFirstLogin,
+    });
+
+    logger.info({ userId: user.id, tenantId: tenant.id }, '[auth] qr login success');
+
+    return result;
+  }
+
+  /**
    * 步骤 12:刷新 access_token(滚动刷新)
    * 对应 auth-design.md §1.2 步骤 12
    * @param client 客户端类型,由 controller 从 X-Client 头解析(默认 web)
@@ -646,6 +684,145 @@ class AuthServiceClass {
     const passwordValid = await verifyPassword(params.password, user.passwordHash);
     if (!passwordValid) {
       logger.warn({ userId: user.id, email: params.email.replace(/(.).*(.@.+)/, '$1***$2') }, '[auth] admin login failed');
+      throw new BusinessError(ErrorCode.PHASE5_ADMIN_AUTH_FAILED, '邮箱或密码错误', 401);
+    }
+
+    // 5. 查询租户
+    const tenant = await tenantRepository.findById(user.tenantId);
+    if (!tenant) {
+      throw new BusinessError(ErrorCode.TENANT_NOT_FOUND, '租户不存在', 404);
+    }
+    if (tenant.status === 'disabled') {
+      throw new BusinessError(ErrorCode.TENANT_DISABLED, '租户已被禁用', 403);
+    }
+
+    // 6. 更新最后登录时间
+    await userRepository.updateLastLoginAt(user.id, new Date());
+
+    // 7. 签发 JWT + 落 Session
+    const result = await this.issueTokensAndSession({
+      user,
+      tenant,
+      client: params.client,
+      clientIp: params.clientIp,
+      userAgent: params.userAgent,
+      isFirstLogin: false,
+    });
+
+    return result;
+  }
+
+  // ============================================================
+  // 通用账号注册/登录(邮箱+密码,无需邀请码,UI 主要登录方式)
+  // ============================================================
+
+  /**
+   * POST /auth/register:通用账号注册
+   * 流程:校验邮箱未注册 → 校验密码复杂度 → 哈希密码 → 创建个人租户 + 用户 → 签发 JWT
+   */
+  async registerAccount(params: {
+    email: string;
+    password: string;
+    name: string;
+    clientIp: string;
+    userAgent: string;
+    deviceId: string;
+    client: 'web' | 'admin' | 'mobile';
+  }): Promise<AuthLoginResult> {
+    // 1. 校验邮箱未注册
+    const existingByEmail = await userRepository.findByEmail(params.email);
+    if (existingByEmail) {
+      throw new BusinessError(ErrorCode.DUPLICATE_RESOURCE, '该邮箱已注册', 409);
+    }
+
+    // 2. 校验密码复杂度(≥8 位,含大小写+数字)
+    try {
+      validatePasswordComplexity(params.password);
+    } catch (err) {
+      throw new BusinessError(ErrorCode.PARAM_INVALID, (err as Error).message, 400);
+    }
+
+    // 3. 哈希密码(bcrypt, salt rounds = 12)
+    const passwordHash = await hashPassword(params.password);
+
+    // 4. 创建个人租户
+    const cfg = env();
+    const tenant = await tenantRepository.create({
+      name: `${params.name}的个人空间`,
+      type: cfg.tenantDefaultType,
+      plan: cfg.tenantDefaultPlan,
+      status: 'active',
+      maxSeats: 1,
+    } as Parameters<typeof tenantRepository.create>[0]);
+
+    // 5. 创建用户(authType=password)
+    const user = await userRepository.create({
+      tenant: { connect: { id: tenant.id } },
+      authType: 'password',
+      feishuOpenId: null,
+      feishuUnionId: null,
+      passwordHash,
+      email: params.email,
+      name: params.name,
+      avatar: '',
+      role: 'owner',
+      lastLoginAt: new Date(),
+    });
+
+    // 6. 创建租户成员关系
+    await tenantRepository.createMembership({
+      userId: user.id,
+      tenantId: tenant.id,
+      role: 'owner',
+    });
+
+    // 7. 签发 JWT + 落 Session
+    const result = await this.issueTokensAndSession({
+      user,
+      tenant,
+      client: params.client,
+      clientIp: params.clientIp,
+      userAgent: params.userAgent,
+      isFirstLogin: true,
+    });
+
+    return result;
+  }
+
+  /**
+   * POST /auth/login:通用账号登录(邮箱+密码)
+   */
+  async loginAccount(params: {
+    email: string;
+    password: string;
+    clientIp: string;
+    userAgent: string;
+    deviceId: string;
+    client: 'web' | 'admin' | 'mobile';
+  }): Promise<AuthLoginResult> {
+    // 1. 查询用户(按邮箱)
+    const user = await userRepository.findByEmail(params.email);
+    if (!user) {
+      throw new BusinessError(ErrorCode.PHASE5_ADMIN_AUTH_FAILED, '邮箱或密码错误', 401);
+    }
+
+    // 2. 校验认证方式必须为 password
+    if (user.authType !== 'password' || !user.passwordHash) {
+      throw new BusinessError(ErrorCode.PHASE5_ADMIN_AUTH_FAILED, '邮箱或密码错误', 401);
+    }
+
+    // 3. 校验用户状态
+    if (user.status === 'locked') {
+      throw new BusinessError(ErrorCode.ADMIN_USER_ALREADY_LOCKED, '账号已锁定,请联系管理员', 403);
+    }
+    if (user.status === 'deleted') {
+      throw new BusinessError(ErrorCode.ADMIN_USER_ALREADY_DELETED, '账号已删除', 403);
+    }
+
+    // 4. 校验密码(bcrypt 比对)
+    const passwordValid = await verifyPassword(params.password, user.passwordHash);
+    if (!passwordValid) {
+      logger.warn({ userId: user.id, email: params.email.replace(/(.).*(.@.+)/, '$1***$2') }, '[auth] account login failed');
       throw new BusinessError(ErrorCode.PHASE5_ADMIN_AUTH_FAILED, '邮箱或密码错误', 401);
     }
 

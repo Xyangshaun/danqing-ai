@@ -29,6 +29,10 @@ import {
   adminRegister,
   adminLogin,
   phoneBind,
+  accountRegister,
+  accountLogin,
+  feishuQrCreate,
+  feishuQrStatus,
 } from '../controllers/auth.controller.js';
 import { authMiddleware } from '../middlewares/auth.js';
 import {
@@ -127,4 +131,34 @@ authRouter.post(
   '/login/admin',
   createRateLimiter(5, 'admin-login'),
   adminLogin,
+);
+
+// ---------- 通用账号注册/登录 + 飞书扫码登录(UI 主要登录方式) ----------
+
+// POST /auth/register - 通用账号注册(邮箱+密码,无需邀请码,限流 3/min/IP)
+authRouter.post(
+  '/register',
+  createRateLimiter(3, 'account-register'),
+  accountRegister,
+);
+
+// POST /auth/login - 通用账号登录(邮箱+密码,限流 5/min)
+authRouter.post(
+  '/login',
+  createRateLimiter(5, 'account-login'),
+  accountLogin,
+);
+
+// POST /auth/feishu/qrcode - 创建飞书扫码登录二维码(限流 5/min)
+authRouter.post(
+  '/feishu/qrcode',
+  createRateLimiter(5, 'feishu-qrcode'),
+  feishuQrCreate,
+);
+
+// POST /auth/feishu/qrcode/status - 查询飞书扫码状态(限流 30/min,前端轮询)
+authRouter.post(
+  '/feishu/qrcode/status',
+  createRateLimiter(30, 'feishu-qrcode-status'),
+  feishuQrStatus,
 );

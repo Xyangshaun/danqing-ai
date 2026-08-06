@@ -2,7 +2,7 @@
 // 丹青有AI - 仲裁配置默认值(Phase 5)
 // 对应文档:.trae/documents/art-evaluation-research.md §3.1, §3.3, §3.5
 //          .trae/documents/new-features-design.md §4.3
-// 系统级全局配置;v2 可通过 Tenant.config 实现租户级覆盖
+// 系统级全局默认配置;v2 支持租户级覆盖(setTenantArbitrationOverride + 深度合并)
 // ============================================================
 
 import type { ArbitrationConfig } from '../types/arbitration.js';
@@ -61,16 +61,90 @@ export const DEFAULT_ARBITRATION_CONFIG: ArbitrationConfig = {
 };
 
 /**
- * 获取仲裁配置
- * v1:统一返回系统默认配置
- * v2 TODO:支持从 Tenant.config.arbitration 读取租户级覆盖,深度合并
+ * 深度合并两个仲裁配置(override 优先于 default,逐字段递归覆盖)
  *
- * @param _tenantId 租户 ID(v2 用于读取租户级覆盖)
+ * 设计:
+ *  - 仅对普通对象递归合并,基本类型/数组直接覆盖
+ *  - 不修改入参(返回新对象),避免污染 DEFAULT_ARBITRATION_CONFIG
+ *  - override 中 undefined 的字段不覆盖 default(保留默认值)
  */
-export function getArbitrationConfig(_tenantId?: string): ArbitrationConfig {
-  // v1:直接返回系统默认
-  // v2 实现:
-  //   const tenantOverride = await tenantRepository.getArbitrationConfig(tenantId);
-  //   return deepMerge(DEFAULT_ARBITRATION_CONFIG, tenantOverride);
-  return DEFAULT_ARBITRATION_CONFIG;
+function deepMergeArbitrationConfig(
+  base: ArbitrationConfig,
+  override: Partial<ArbitrationConfig>,
+): ArbitrationConfig {
+  const isPlainObject = (v: unknown): v is Record<string, unknown> =>
+    typeof v === 'object' && v !== null && !Array.isArray(v);
+
+  const merge = <T>(b: T, o: unknown): T => {
+    if (!isPlainObject(b) || !isPlainObject(o)) {
+      // 基本类型或数组:override 优先(undefined 不覆盖)
+      return (o === undefined ? b : (o as T));
+    }
+    const result: Record<string, unknown> = { ...b };
+    for (const key of Object.keys(o)) {
+      const ov = o[key];
+      if (ov === undefined) continue;
+      result[key] = merge((b as Record<string, unknown>)[key], ov);
+    }
+    return result as T;
+  };
+
+  return merge(base, override);
+}
+
+/**
+ * 租户级仲裁配置覆盖注册表(内存态)
+ *
+ * 说明:
+ *  - v2 实现:支持租户级仲裁阈值/权重覆盖,无需 DB 迁移即可生效
+ *  - 键=tenantId,值=部分覆盖配置(深度合并到系统默认)
+ *  - 持久化(写入 Tenant.config)为后续增强项;当前内存态满足
+ *    运营即时调整 + 单元测试需求
+ *  - 调用 setTenantArbitrationOverride 注册覆盖,
+ *    clearTenantArbitrationOverride 清除,
+ *    clearAllTenantArbitrationOverrides 清空全部(测试用)
+ */
+const tenantArbitrationOverrides = new Map<string, Partial<ArbitrationConfig>>();
+
+/**
+ * 设置租户级仲裁配置覆盖(深度合并到系统默认)
+ * @param tenantId 租户 ID
+ * @param override 部分覆盖配置(仅传需覆盖的字段)
+ */
+export function setTenantArbitrationOverride(
+  tenantId: string,
+  override: Partial<ArbitrationConfig>,
+): void {
+  if (!tenantId) return;
+  tenantArbitrationOverrides.set(tenantId, override);
+}
+
+/**
+ * 清除指定租户的仲裁配置覆盖(回退到系统默认)
+ */
+export function clearTenantArbitrationOverride(tenantId: string): void {
+  tenantArbitrationOverrides.delete(tenantId);
+}
+
+/**
+ * 清空全部租户级覆盖(单元测试用)
+ */
+export function clearAllTenantArbitrationOverrides(): void {
+  tenantArbitrationOverrides.clear();
+}
+
+/**
+ * 获取仲裁配置
+ *
+ * v2 实现:支持租户级覆盖
+ *  - 无 tenantId 或无覆盖 → 返回系统默认
+ *  - 有覆盖 → 深度合并(override 优先于 default)
+ *
+ * @param tenantId 租户 ID(用于读取租户级覆盖)
+ */
+export function getArbitrationConfig(tenantId?: string): ArbitrationConfig {
+  if (!tenantId) return DEFAULT_ARBITRATION_CONFIG;
+  const override = tenantArbitrationOverrides.get(tenantId);
+  if (!override) return DEFAULT_ARBITRATION_CONFIG;
+  return deepMergeArbitrationConfig(DEFAULT_ARBITRATION_CONFIG, override);
 }

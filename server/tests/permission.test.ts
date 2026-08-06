@@ -133,8 +133,13 @@ function authHeaders(accessToken: string): Record<string, string> {
  * - 学生 1 创建 ANALYSIS_OWN_STUDENT
  * - 学生 2 创建 ANALYSIS_OWN_STUDENT_2
  * - 教师 创建 ANALYSIS_OWN_TEACHER
+ *
+ * 防御性隔离:先 __clear() 再 seed,使每个 describe 的 beforeEach 自包含,
+ * 不依赖 setup.ts 全局 beforeEach 的执行顺序,避免并发场景下的跨测试串扰。
  */
 function seedTestData(): void {
+  // 显式清空 prisma store,保证起始状态干净(防御性,与全局 beforeEach 互不依赖)
+  prismaMock.__clear();
   createTestTenant({
     id: TENANT_ID,
     name: 'RBAC测试学院',
