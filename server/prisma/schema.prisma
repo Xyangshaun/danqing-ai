@@ -793,3 +793,50 @@ model Notification {
   @@index([tenantId, userId, createdAt], map: "notifications_tenant_id_user_id_created_at_idx")
   @@map("notifications")
 }
+
+// ============================================================
+// 19. 部署日志表(DeploymentLog,任务包 C:部署日志同步机制)
+// 记录项目本体(前端 dist)每次部署完成/失败的系统级日志
+// 供下游任务/运维通过 GET /api/v1/deployments/latest 可靠查询部署状态
+//
+// 设计要点:
+//   - 系统级日志,不含 tenant_id(类比 AuditLog,跨租户)
+//   - 由部署脚本(deploy-ssh.sh)通过共享密钥 X-Deploy-Secret 上报
+//   - 字段覆盖需求:timestamp(部署时间)/ version(版本)/ serverId(服务器标识)
+//     / status(成功标志 true=success false=failed)
+//   - 对外通过统一响应 ApiResponse<DeploymentLogEntry> 暴露,保证格式一致
+// ============================================================
+
+model DeploymentLog {
+  id           String   @id @default(uuid()) @map("id")
+  // 部署完成时间(ISO 8601,由部署脚本上报;缺省由数据库取当前时间)
+  timestamp    DateTime @default(now()) @map("timestamp")
+  // 部署版本(build 版本号/commit 短 SHA,如 v3.0.0-20260806)
+  version      String   @map("version") @db.VarChar(64)
+  // 服务器标识(如 danqing-prod-01 / hostname)
+  serverId     String   @map("server_id") @db.VarChar(64)
+  // 部署成功标志:success / failed
+  status       String   @map("status") @db.VarChar(16)
+  // 部署执行人(可选,脚本上报)
+  deployer     String?  @map("deployer") @db.VarChar(64)
+  // 分支(可选)
+  branch       String?  @map("branch") @db.VarChar(64)
+  // commit SHA(可选)
+  commitSha    String?  @map("commit_sha") @db.VarChar(64)
+  // 附加详情(JSON,如备份目录 / 校验结果 / 资源数等)
+  details      Json?    @map("details")
+  // 失败原因(status=failed 时非空)
+  errorMessage String?  @map("error_message") @db.Text
+  // 上报来源 IP(供审计)
+  sourceIp     String?  @map("source_ip") @db.VarChar(45)
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  // 关键查询索引:
+  //   1) 按状态筛选(运维只看失败记录)
+  //   2) 按时间倒序(最新部署)
+  //   3) 按服务器+时间(单机部署历史)
+  @@index([status], map: "deployment_logs_status_idx")
+  @@index([timestamp], map: "deployment_logs_timestamp_idx")
+  @@index([serverId, timestamp], map: "deployment_logs_server_id_timestamp_idx")
+  @@map("deployment_logs")
+}

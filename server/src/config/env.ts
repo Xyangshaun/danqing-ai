@@ -97,6 +97,10 @@ export interface EnvConfig {
   smsProvider: 'mock' | 'aliyun' | 'tencent';
   /** 手机号正则校验(默认中国大陆 /^1[3-9]\d{9}$/) */
   phoneRegex: string;
+
+  // 任务包 C:部署日志同步
+  /** 部署同步共享密钥(部署脚本通过 X-Deploy-Secret 上报;空则禁用部署日志接收端点) */
+  deploySyncSecret: string;
 }
 
 function parseBoolean(value: string | undefined, defaultValue: boolean): boolean {
@@ -353,6 +357,9 @@ export function loadEnv(): EnvConfig {
     // Phase 5 短信网关
     smsProvider: parseSmsProvider(env.SMS_PROVIDER),
     phoneRegex: env.PHONE_REGEX ?? '^1[3-9]\\d{9}$',
+
+    // 任务包 C:部署日志同步(空则禁用部署日志接收端点)
+    deploySyncSecret: env.DEPLOY_SYNC_SECRET ?? '',
   };
 }
 

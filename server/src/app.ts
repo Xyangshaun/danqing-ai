@@ -45,6 +45,8 @@ import { presetRouter } from './routes/preset.routes.js';
 import { disputeRouter } from './routes/dispute.routes.js';
 // 任务包 B:通知系统路由(通知列表 / 未读计数 / 标记已读)
 import { notificationRouter } from './routes/notification.routes.js';
+// 任务包 C:部署日志同步路由(共享密钥鉴权,接收部署结果 + 查询最新状态)
+import { deploymentRouter } from './routes/deployment.routes.js';
 import { ErrorCode } from './types/api-contract.js';
 
 /**
@@ -174,6 +176,8 @@ export function createApp(): Express {
   apiV1.use('/disputes', disputeRouter);
   // 任务包 B:通知系统(通知列表 / 未读计数 / 标记已读)
   apiV1.use('/notifications', notificationRouter);
+  // 任务包 C:部署日志同步(接收部署结果 / 查询最新状态,共享密钥鉴权)
+  apiV1.use('/deployments', deploymentRouter);
   // Phase 5 预留接口路由(返回 501 Not Implemented,鉴权与权限校验已就位)
   apiV1.use('/knowledge', knowledgeRouter);
   apiV1.use('/modules', modulesRouter);

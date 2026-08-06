@@ -3178,3 +3178,83 @@ export interface CreateNotificationInput {
   metadata?: Record<string, unknown>;
 }
 
+// ============================================================
+// 3.14 部署日志同步类型(任务包 C:部署日志同步机制)
+//
+// 设计原则:
+//   - 系统级日志,不含 tenant_id(类比 AuditLog,跨租户)
+//   - 由部署脚本(deploy-ssh.sh)通过共享密钥 X-Deploy-Secret 上报
+//   - 下游任务通过 GET /api/v1/deployments/latest 获取最新部署状态
+//   - 仅追加新类型,不修改现有类型(向后兼容)
+//
+// 对应 API:
+//   POST /deployments/log       接收部署完成/失败详情(写)
+//   GET  /deployments/latest    查询最新部署状态(下游任务只读)
+// ============================================================
+
+/** 部署状态(成功/失败) */
+export type DeploymentStatus = 'success' | 'failed';
+
+/** POST /deployments/log 请求体 */
+export interface CreateDeploymentLogRequest {
+  /** 部署完成时间(ISO 8601,可选;缺省取服务器当前时间) */
+  timestamp?: ISODateString;
+  /** 部署版本(如 v3.0.0-20260806 / commit 短 SHA) */
+  version: string;
+  /** 服务器标识(如 danqing-prod-01 / hostname) */
+  serverId: string;
+  /** 部署结果:success / failed */
+  status: DeploymentStatus;
+  /** 部署执行人(可选) */
+  deployer?: string;
+  /** 分支(可选) */
+  branch?: string;
+  /** commit SHA(可选) */
+  commitSha?: string;
+  /** 附加详情(JSON,如备份目录/校验结果/资源数等,可选) */
+  details?: Record<string, unknown>;
+  /** 失败原因(status=failed 时填写) */
+  errorMessage?: string;
+}
+
+/** POST /deployments/log 响应 */
+export interface CreateDeploymentLogResponse {
+  /** 落库后的日志记录 ID */
+  id: string;
+  /** 是否成功接收并落库 */
+  received: boolean;
+  /** 是否已同步到共享存储(始终为 true,详见响应) */
+  synced: boolean;
+}
+
+/** GET /deployments/latest 响应项(完整部署日志) */
+export interface DeploymentLogEntry {
+  id: string;
+  /** 部署完成时间(ISO 8601) */
+  timestamp: ISODateString;
+  version: string;
+  serverId: string;
+  status: DeploymentStatus;
+  deployer: string | null;
+  branch: string | null;
+  commitSha: string | null;
+  details: Record<string, unknown> | null;
+  errorMessage: string | null;
+  sourceIp: string | null;
+  createdAt: ISODateString;
+}
+
+/** GET /deployments/latest 响应 */
+export interface LatestDeploymentStatusResponse {
+  /** 最新一次部署是否成功(success/failed) */
+  status: DeploymentStatus;
+  version: string;
+  serverId: string;
+  /** 部署完成时间(ISO 8601) */
+  timestamp: ISODateString;
+  /** 失败原因(status=failed 时非空) */
+  errorMessage: string | null;
+  /** 完整日志记录(供下游任务细读) */
+  log: DeploymentLogEntry;
+}
+
