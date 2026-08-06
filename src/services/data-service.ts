@@ -30,7 +30,7 @@ import type {
   GetAnalysisResponse,
 } from '../types/api-contract';
 import { hasAccessToken } from './token-store';
-import { get, post } from './api';
+import { get, post, del } from './api';
 import {
   saveToHistory as lsSaveToHistory,
   getHistory as lsGetHistory,
@@ -49,6 +49,12 @@ export const LS_KEYS = {
   savedMaterials: 'danqing-ai-saved-materials',
   emotionPalette: 'danqing-ai-emotion-palette',
   settings: 'danqing-ai-settings',
+  /** 主题独立键:便于 App.tsx 启动时同步读取,避免 settings 整对象解析延迟 */
+  theme: 'danqing-ai-theme',
+  /** 界面密度独立键:同上 */
+  density: 'danqing-ai-density',
+  /** 运行模式(本地/云端/自动)独立键:用于跨组件同步 */
+  onlineMode: 'danqing-ai-online-mode',
 } as const;
 
 /** 收藏操作结果 */
@@ -411,9 +417,25 @@ class ApiDataService implements IDataService {
   }
 
   async clearAnalysisHistory(): Promise<void> {
-    // 后端暂未提供批量删除接口,仅清空本地缓存
-    // TODO: 后端补充 DELETE /analyses(批量) 后改为 API 调用
-    await this.fallback.clearAnalysisHistory();
+    // 已登录:先调用后端 DELETE /analyses/:id 逐条删除服务端记录,
+    // 再清空本地缓存(保证 API 模式下服务端数据同步清除)
+    try {
+      const resp = await get<ListAnalysesResponse>('/analyses', {
+        page: 1,
+        pageSize: 200,
+      });
+      // 并发删除,单条失败不阻塞整体(allSettled 静默处理)
+      await Promise.allSettled(
+        resp.items.map((item) =>
+          del<unknown>(`/analyses/${item.id}`, { silent: true })
+        )
+      );
+    } catch {
+      // 列表拉取失败(网络/超时),仅清本地缓存兜底
+    } finally {
+      // 同步清空本地缓存(API 模式下本地可能仍有旧数据)
+      await this.fallback.clearAnalysisHistory();
+    }
   }
 
   /* ---------- 成长数据 ---------- */

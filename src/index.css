@@ -171,3 +171,55 @@ body {
   background-color: rgba(196, 30, 58, 0.2);
   color: #0f0f0f;
 }
+
+/* ============================================================
+ * 主题与界面密度(由 useTheme hook 设置 data-theme/data-density)
+ * ============================================================ */
+
+/* 界面密度:通过 html font-size 缩放全局尺寸(rem 单位自动跟随) */
+[data-density="compact"] html,
+html[data-density="compact"] {
+  font-size: 14px;
+}
+[data-density="spacious"] html,
+html[data-density="spacious"] {
+  font-size: 18px;
+}
+
+/* 暗色主题(ink):覆盖关键视觉元素 — 水墨色系反向映射 */
+[data-theme="dark"] body {
+  background-color: #1a1a1a;
+  color: #f5f2eb;
+}
+
+[data-theme="dark"] .surface-1 {
+  background-color: #2a2a2a;
+  border-color: rgba(245, 242, 235, 0.08);
+}
+[data-theme="dark"] .surface-2 {
+  background-color: #232323;
+  border-color: rgba(245, 242, 235, 0.1);
+}
+[data-theme="dark"] .surface-3 {
+  background-color: #1f1f1f;
+  border-color: rgba(245, 242, 235, 0.12);
+}
+
+/* 滚动条暗色 */
+[data-theme="dark"] ::-webkit-scrollbar-thumb {
+  background: rgba(245, 242, 235, 0.15);
+}
+[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
+  background: rgba(245, 242, 235, 0.25);
+}
+
+/* 焦点环暗色背景下的可见性 */
+[data-theme="dark"] .focus-ring {
+  box-shadow: 0 0 0 2px rgba(196, 30, 58, 0.6);
+}
+
+/* 选中文本暗色 */
+[data-theme="dark"] ::selection {
+  background-color: rgba(196, 30, 58, 0.35);
+  color: #f5f2eb;
+}

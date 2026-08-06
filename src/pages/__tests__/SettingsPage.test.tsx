@@ -22,8 +22,16 @@ import { MemoryRouter } from 'react-router-dom';
 import SettingsPage from '../SettingsPage';
 import { ToastProvider } from '../../components/ToastProvider';
 import type { UserSettings } from '../../services/data-service';
+import type { AuthContextValue } from '../../context/AuthContext';
 
 /* ---------- mock 依赖 ---------- */
+
+/* mock useAuth:SettingsPage 依赖 user/refreshUser/isAuthenticated
+ * 默认返回未登录态(user=null),不阻塞渲染 */
+const mockUseAuth = vi.fn<(...args: never[]) => AuthContextValue>();
+vi.mock('../../hooks/useAuth', () => ({
+  useAuth: () => mockUseAuth(),
+}));
 
 const getSettingsMock = vi.fn<(...args: unknown[]) => Promise<UserSettings>>();
 const saveSettingsMock = vi.fn<(...args: unknown[]) => Promise<UserSettings>>();
@@ -34,7 +42,39 @@ vi.mock('../../services/data-service', () => ({
   saveSettings: (...args: unknown[]) => saveSettingsMock(...args),
   clearAnalysisHistory: (...args: unknown[]) => clearAnalysisHistoryMock(...args),
   getAnalysisHistory: (...args: unknown[]) => getAnalysisHistoryMock(...args),
+  LS_KEYS: {
+    history: 'danqing-ai-history',
+    favorites: 'artwork-favorites',
+    savedMaterials: 'danqing-ai-saved-materials',
+    emotionPalette: 'danqing-ai-emotion-palette',
+    settings: 'danqing-ai-settings',
+    theme: 'danqing-ai-theme',
+    density: 'danqing-ai-density',
+    onlineMode: 'danqing-ai-online-mode',
+  },
 }));
+
+/* mock updateUserProfile(账户编辑用) */
+vi.mock('../../services/api', () => ({
+  updateUserProfile: vi.fn().mockResolvedValue({}),
+}));
+
+/* 默认未登录态 AuthContextValue */
+function createUnauthAuthValue(): AuthContextValue {
+  return {
+    user: null,
+    tenant: null,
+    memberships: [],
+    isLoading: false,
+    isAuthenticated: false,
+    login: vi.fn(),
+    logout: vi.fn().mockResolvedValue(undefined),
+    refreshUser: vi.fn().mockResolvedValue(undefined),
+    switchTenant: vi.fn().mockResolvedValue(undefined),
+    loadTenants: vi.fn().mockResolvedValue(undefined),
+    skipLogin: vi.fn(),
+  };
+}
 
 const DEFAULT_SETTINGS: UserSettings = {
   theme: 'rice',
@@ -66,6 +106,8 @@ beforeEach(() => {
   saveSettingsMock.mockResolvedValue(DEFAULT_SETTINGS);
   getAnalysisHistoryMock.mockResolvedValue([{}, {}, {}]);
   clearAnalysisHistoryMock.mockResolvedValue(undefined);
+  mockUseAuth.mockReset();
+  mockUseAuth.mockReturnValue(createUnauthAuthValue());
 });
 
 afterEach(() => {

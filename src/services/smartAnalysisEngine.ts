@@ -494,7 +494,7 @@ export async function smartAnalyze(
 
     let response: Response;
     try {
-      response = await fetch(`${getBackendUrl()}/api/v1/analyses/upload`, {
+      response = await fetch(`${getBackendUrl()}/analyses/upload`, {
         method: 'POST',
         body: formData, // 不设置 Content-Type，让浏览器自动设置 boundary
       });

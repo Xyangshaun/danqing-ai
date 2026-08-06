@@ -175,6 +175,120 @@ export async function setUserRole(
 }
 
 /* ============================================================
+ * 9. 通用账号注册(邮箱+密码,无需邀请码)
+ * 对应:POST /auth/register
+ * 后端创建个人租户(individual),role=owner,authType=password
+ * @returns 登录响应(含 access_token,已存入内存)
+ * ============================================================ */
+export async function registerAccount(
+  email: string,
+  password: string,
+  name: string
+): Promise<FeishuCallbackResponse> {
+  const result = await post<FeishuCallbackResponse>(
+    '/auth/register',
+    { email, password, name },
+    {
+      skipAuth: true, // 公开接口
+      silent: true, // 失败由调用方(RegisterPage)处理 Toast
+    }
+  );
+  setAccessToken(result.accessToken, result.accessTokenExpiresAt);
+  return result;
+}
+
+/* ============================================================
+ * 10. 通用账号登录(邮箱+密码)
+ * 对应:POST /auth/login
+ * @returns 登录响应(含 access_token,已存入内存)
+ * ============================================================ */
+export async function loginAccount(
+  email: string,
+  password: string
+): Promise<FeishuCallbackResponse> {
+  const result = await post<FeishuCallbackResponse>(
+    '/auth/login',
+    { email, password },
+    {
+      skipAuth: true, // 公开接口
+      silent: true, // 失败由调用方(LoginPage)处理 Toast
+    }
+  );
+  setAccessToken(result.accessToken, result.accessTokenExpiresAt);
+  return result;
+}
+
+/* ============================================================
+ * 11. 创建飞书扫码登录二维码
+ * 对应:POST /auth/feishu/qrcode
+ * @returns { qrCodeUrl, qrToken, state } - 前端用 qrCodeUrl 渲染图片,
+ *          用 qrToken+state 轮询状态
+ * ============================================================ */
+export interface FeishuQrCodeResponse {
+  /** 二维码图片 URL(可直接 <img src>) */
+  qrCodeUrl: string;
+  /** 二维码 token,用于查询状态 */
+  qrToken: string;
+  /** 状态 token,用于查询状态 */
+  state: string;
+}
+
+export async function createFeishuQR(): Promise<FeishuQrCodeResponse> {
+  return post<FeishuQrCodeResponse>(
+    '/auth/feishu/qrcode',
+    undefined,
+    {
+      skipAuth: true,
+      silent: true, // 失败由调用方(FeishuQrLogin)处理
+    }
+  );
+}
+
+/* ============================================================
+ * 12. 查询飞书扫码状态(轮询)
+ * 对应:POST /auth/feishu/qrcode/status
+ *
+ * - status: 'new' | 'scanned' — 等待中,继续轮询
+ * - status: 'expired' | 'canceled' — 终态,需刷新二维码
+ * - status: 'confirmed' — 登录成功,响应包含完整登录 payload(已 setAccessToken)
+ * ============================================================ */
+export type FeishuQrStatus =
+  | 'new'
+  | 'scanned'
+  | 'expired'
+  | 'canceled'
+  | 'confirmed';
+
+export interface FeishuQrStatusResponse {
+  status: FeishuQrStatus;
+  /** 仅 status='confirmed' 时存在 */
+  accessToken?: string;
+  accessTokenExpiresAt?: string;
+  isFirstLogin?: boolean;
+  user?: UserProfile;
+  tenant?: TenantInfo;
+}
+
+export async function pollFeishuQRStatus(
+  qrToken: string,
+  state: string
+): Promise<FeishuQrStatusResponse> {
+  const result = await post<FeishuQrStatusResponse>(
+    '/auth/feishu/qrcode/status',
+    { qrToken, state },
+    {
+      skipAuth: true,
+      silent: true, // 失败由调用方(FeishuQrLogin)处理
+    }
+  );
+  // confirmed 时后端返回完整登录 payload,存 token
+  if (result.status === 'confirmed' && result.accessToken) {
+    setAccessToken(result.accessToken, result.accessTokenExpiresAt);
+  }
+  return result;
+}
+
+/* ============================================================
  * 便捷类型导出(供组件直接使用)
  * ============================================================ */
 export type {

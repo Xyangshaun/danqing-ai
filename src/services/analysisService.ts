@@ -1425,7 +1425,7 @@ function generateFallbackAnalysis(imageUrl: string, artType: ArtType): AnalysisR
    ============================================================ */
 
 export function getBackendUrl(): string {
-  return localStorage.getItem('danqing_backend_url') || 'http://localhost:3000';
+  return localStorage.getItem('danqing_backend_url') || '/api/v1';
 }
 
 export function isBackendEnabled(): boolean {

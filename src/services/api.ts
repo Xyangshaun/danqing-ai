@@ -473,6 +473,8 @@ import type {
   UnreadCountResponse,
   MarkNotificationReadResponse,
   MarkAllNotificationsReadResponse,
+  UpdateProfileRequest,
+  UserProfile,
 } from '../types/api-contract';
 
 /** GET /presets - 列出当前用户可见的评分预设 */
@@ -524,3 +526,12 @@ export function markAllNotificationsRead(): Promise<MarkAllNotificationsReadResp
 
 /** 导出 Notification 类型供组件使用 */
 export type { Notification } from '../types/api-contract';
+
+/* ============================================================
+ * User Profile API(账户设置)
+ * ============================================================ */
+
+/** PATCH /users/profile - 更新当前用户资料(name/avatar/email/phone) */
+export function updateUserProfile(body: UpdateProfileRequest): Promise<UserProfile> {
+  return patch<UserProfile>('/users/profile', body);
+}

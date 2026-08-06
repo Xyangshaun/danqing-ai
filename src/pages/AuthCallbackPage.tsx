@@ -42,21 +42,24 @@ function parseCallbackParams(): { query: FeishuCallbackQuery | null; error: stri
   return { query: { code, state }, error: null };
 }
 
+/** 应用 base 路径(Vite 注入,/ 或 /app/) */
+const APP_BASE = import.meta.env.BASE_URL;
+
 /** 跳转到首页(HashRouter 兼容) */
 function redirectToHome(): void {
   // 用 replace 避免后退回回调页
-  // /#/ 是 HashRouter 的根路径
-  window.location.replace('/#/');
+  // 路径随 vite base 自适应:/#/ (base=/) 或 /app/#/ (base=/app/)
+  window.location.replace(`${APP_BASE}#/`);
 }
 
 /** 跳转到新手引导页(首次登录选职业身份) */
 function redirectToOnboarding(): void {
-  window.location.replace('/#/onboarding');
+  window.location.replace(`${APP_BASE}#/onboarding`);
 }
 
 /** 跳转到登录页 */
 function redirectToLogin(): void {
-  window.location.replace('/#/login');
+  window.location.replace(`${APP_BASE}#/login`);
 }
 
 export default function AuthCallbackPage() {
