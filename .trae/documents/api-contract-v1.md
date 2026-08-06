@@ -1,12 +1,14 @@
-# 丹青有AI - API 契约 v1
+# 丹青有AI - API 契约
 
 > **文档定位**:本文档是丹青有AI 多端(Web / 移动端 / 管理后台 / 产品官网)共享的 API 契约"单一真相源"(Single Source of Truth)。所有端的请求/响应类型必须以本文档为准,禁止各端独立定义跨端类型。
 >
-> **版本**:v1.0
-> **创建时间**:2026-07-27
+> **版本**:v2.0(M-0 增补)
+> **创建时间**:2026-07-27(初版 v1.0)
+> **M-0 更新时间**:2026-08-07
 > **维护人**:product-architect
-> **适用阶段**:Phase 1(飞书登录 + 多租户 + AI 分析基础链路)
+> **适用阶段**:Phase 1(飞书登录 + 多租户 + AI 分析基础链路)+ M-0 增补(AI 图像生成 / 批删 / 仲裁配置 / 指标 / 高危确认)
 > **对应代码**:`server/src/types/api-contract.ts`(后端主副本,各端通过 sync 脚本同步)
+> **M-0 依据**:`m0-doc-contract-plan-2026-08-06.md`(契约真源,本文档为人类可读副本)
 
 ---
 
@@ -155,11 +157,51 @@ X-Client: web | admin | mobile | marketing
 | 6003 | ANALYSIS_RESULT_FAILED | 500 | AI 分析结果生成失败 | 模型推理异常 |
 | 6004 | ANALYSIS_NOT_FOUND | 404 | 分析记录不存在 | analysis_id 无效或跨租户访问 |
 | 6005 | ANALYSIS_IMAGE_INVALID | 400 | 图片无法解析 | 图片损坏或无法解码 |
+| 6006 | ANALYSIS_BATCH_LIMIT_EXCEEDED | 400 | 批删条数超限(最多 100 条) | 批量删除 ids 超过 100 条 |
+| 6101 | GENERATION_QUOTA_EXCEEDED | 402 | 本月生成配额已用完 | 生成任务计入订阅配额后超限 |
+| 6102 | GENERATION_TASK_NOT_FOUND | 404 | 生成任务不存在 | 生成任务 id 无效或跨租户 |
+| 6103 | GENERATION_PROVIDER_UNAVAILABLE | 502 | 生成服务暂不可用 | 双提供商(GLM/TRAE)均不可用 |
+| 6104 | GENERATION_FAILED | 500 | 生成失败 | 生成过程异常 |
+| 6105 | GENERATION_IMAGE_INVALID | 400 | 输入的草稿图无法解析 | sketch 图片损坏或无法解码 |
+| 6106 | GENERATION_RATE_LIMITED | 429 | 生成过于频繁,请稍后再试 | 单用户 5 次/分钟限流触发 |
+| 7001 | SUBSCRIPTION_NOT_FOUND | 404 | 订阅不存在 | 订阅记录不存在 |
+| 7002 | SUBSCRIPTION_PLAN_INVALID | 400 | 订阅计划无效 | 订阅计划取值非法 |
+| 7003 | SUBSCRIPTION_PAYMENT_FAILED | 402 | 支付失败 | 订阅支付处理失败 |
+| 7004 | SUBSCRIPTION_ALREADY_CANCELED | 409 | 订阅已取消 | 重复取消订阅 |
+| 7005 | SUBSCRIPTION_DOWNGRADE_NOT_ALLOWED | 400 | 不允许降级 | 订阅降级被拒绝 |
+| 7006 | INVOICE_NOT_FOUND | 404 | 发票不存在 | 发票记录不存在 |
+| 8001 | ADMIN_USER_NOT_FOUND | 404 | 用户不存在 | 管理后台查询用户不存在 |
+| 8002 | ADMIN_USER_ALREADY_LOCKED | 409 | 用户已被锁定 | 重复锁定用户 |
+| 8003 | ADMIN_USER_ALREADY_DELETED | 409 | 用户已删除 | 重复删除用户 |
+| 8004 | ADMIN_BATCH_LIMIT_EXCEEDED | 400 | 批量操作条数超限 | 管理后台批量操作超过限制 |
+| 8005 | ADMIN_ARTWORK_NOT_FOUND | 404 | 作品不存在 | 管理后台查询作品不存在 |
+| 8006 | ADMIN_TEMPLATE_NOT_FOUND | 404 | 模板不存在 | 管理后台查询模板不存在 |
+| 8007 | ADMIN_API_KEY_NOT_FOUND | 404 | API 密钥不存在 | 管理后台查询密钥不存在 |
+| 8008 | ADMIN_API_KEY_ALREADY_REVOKED | 409 | API 密钥已撤销 | 重复撤销密钥 |
+| 8009 | ADMIN_AUDIT_LOG_NOT_FOUND | 404 | 审计日志不存在 | 审计日志记录不存在 |
+| 8010 | ADMIN_ROLE_INVALID | 400 | 角色无效 | 分配角色取值非法 |
+| 8011 | ADMIN_REVIEW_ACTION_INVALID | 400 | 审核动作无效 | 审核动作取值非法 |
+| 8012 | ADMIN_REFUND_FAILED | 402 | 退款失败 | 订阅退款处理失败 |
+| 8013 | ADMIN_PERMISSION_INSUFFICIENT | 403 | 管理员权限不足 | 管理后台权限不足 |
+| 8014 | ADMIN_RESOURCE_CONFLICT | 409 | 资源冲突 | 管理操作资源状态冲突 |
+| 8015 | ADMIN_CONFIRM_PASSWORD_MISMATCH | 403 | 高危操作密码校验失败 | 高危操作 confirmPassword 校验不通过 |
 | 9001 | INTERNAL_ERROR | 500 | 服务器内部错误 | 未捕获异常 |
 | 9002 | DATABASE_ERROR | 500 | 数据库错误 | Prisma 异常 |
 | 9003 | CACHE_ERROR | 503 | 缓存服务不可用 | Redis 不可达 |
 | 9004 | UPSTREAM_UNAVAILABLE | 502 | 第三方服务不可用 | 飞书/模型服务不可达 |
 | 9005 | RATE_LIMITED | 429 | 请求过于频繁,请稍后再试 | 限流触发 |
+| 9101 | PHASE5_PRESET_NOT_FOUND | 404 | 评分预设不存在 | 预设查询不存在 |
+| 9102 | PHASE5_PRESET_BUILTIN_IMMUTABLE | 403 | 内置预设不可修改 | 修改内置预设被拒 |
+| 9103 | PHASE5_PRESET_DIMENSION_MISMATCH | 400 | 预设维度不匹配 | 预设维度与作品类型不符 |
+| 9104 | PHASE5_REVIEW_NOT_FOUND | 404 | 评审记录不存在 | 评审记录查询不存在 |
+| 9105 | PHASE5_DISPUTE_NOT_FOUND | 404 | 争议记录不存在 | 争议记录查询不存在 |
+| 9106 | PHASE5_DISPUTE_ALREADY_RESOLVED | 409 | 争议已解决 | 重复解决争议 |
+| 9107 | PHASE5_PHONE_VERIFICATION_FAILED | 400 | 手机验证失败 | 验证码校验失败 |
+| 9108 | PHASE5_INVITATION_INVALID | 400 | 邀请码无效 | 邀请码无效或已过期 |
+| 9109 | PHASE5_ADMIN_AUTH_FAILED | 401 | 管理鉴权失败 | 管理后台认证失败 |
+| 9110 | ARBITRATION_CONFIG_INVALID | 400 | 仲裁配置校验失败(权重未归一化/取值越界) | 租户仲裁配置写入校验失败 |
+| 9201 | METRICS_DATA_UNAVAILABLE | 503 | 指标数据暂不可用 | 指标聚合数据尚未就绪 |
+| 9901 | NOT_IMPLEMENTED | 501 | 接口未实现 | 预留接口尚未激活 |
 
 ### 2.3 前端错误处理约定
 
@@ -262,11 +304,69 @@ export enum ErrorCode {
   ANALYSIS_RESULT_FAILED = 6003,
   ANALYSIS_NOT_FOUND = 6004,
   ANALYSIS_IMAGE_INVALID = 6005,
+  // 跨端批删(M-0 追加,DOC-2026-08-002)
+  ANALYSIS_BATCH_LIMIT_EXCEEDED = 6006,
+  // AI 图像生成(M-0 追加,DOC-2026-08-008)
+  GENERATION_QUOTA_EXCEEDED = 6101,
+  GENERATION_TASK_NOT_FOUND = 6102,
+  GENERATION_PROVIDER_UNAVAILABLE = 6103,
+  GENERATION_FAILED = 6104,
+  GENERATION_IMAGE_INVALID = 6105,
+  GENERATION_RATE_LIMITED = 6106,
+  SUBSCRIPTION_NOT_FOUND = 7001,
+  SUBSCRIPTION_PLAN_INVALID = 7002,
+  SUBSCRIPTION_PAYMENT_FAILED = 7003,
+  SUBSCRIPTION_ALREADY_CANCELED = 7004,
+  SUBSCRIPTION_DOWNGRADE_NOT_ALLOWED = 7005,
+  INVOICE_NOT_FOUND = 7006,
+  ADMIN_USER_NOT_FOUND = 8001,
+  ADMIN_USER_ALREADY_LOCKED = 8002,
+  ADMIN_USER_ALREADY_DELETED = 8003,
+  ADMIN_BATCH_LIMIT_EXCEEDED = 8004,
+  ADMIN_ARTWORK_NOT_FOUND = 8005,
+  ADMIN_TEMPLATE_NOT_FOUND = 8006,
+  ADMIN_API_KEY_NOT_FOUND = 8007,
+  ADMIN_API_KEY_ALREADY_REVOKED = 8008,
+  ADMIN_AUDIT_LOG_NOT_FOUND = 8009,
+  ADMIN_ROLE_INVALID = 8010,
+  ADMIN_REVIEW_ACTION_INVALID = 8011,
+  ADMIN_REFUND_FAILED = 8012,
+  ADMIN_PERMISSION_INSUFFICIENT = 8013,
+  ADMIN_RESOURCE_CONFLICT = 8014,
+  // 管理后台高危操作幂等确认(M-0 追加,DOC-2026-08-014)
+  ADMIN_CONFIRM_PASSWORD_MISMATCH = 8015,
+  KNOWLEDGE_NOT_FOUND = 8101,
+  KNOWLEDGE_INDEX_ERROR = 8102,
+  KNOWLEDGE_PERMISSION_DENIED = 8103,
+  MODULE_NOT_FOUND = 8201,
+  MODULE_ALREADY_INSTALLED = 8202,
+  MODULE_CONFIG_INVALID = 8203,
+  UI_CONFIG_NOT_FOUND = 8301,
+  UI_THEME_INVALID = 8302,
+  UI_COMPONENT_NOT_FOUND = 8303,
+  FEATURE_NOT_FOUND = 8401,
+  PARAM_KEY_INVALID = 8402,
+  WORKFLOW_NOT_FOUND = 8403,
+  WORKFLOW_EXECUTION_FAILED = 8404,
   INTERNAL_ERROR = 9001,
   DATABASE_ERROR = 9002,
   CACHE_ERROR = 9003,
   UPSTREAM_UNAVAILABLE = 9004,
   RATE_LIMITED = 9005,
+  PHASE5_PRESET_NOT_FOUND = 9101,
+  PHASE5_PRESET_BUILTIN_IMMUTABLE = 9102,
+  PHASE5_PRESET_DIMENSION_MISMATCH = 9103,
+  PHASE5_REVIEW_NOT_FOUND = 9104,
+  PHASE5_DISPUTE_NOT_FOUND = 9105,
+  PHASE5_DISPUTE_ALREADY_RESOLVED = 9106,
+  PHASE5_PHONE_VERIFICATION_FAILED = 9107,
+  PHASE5_INVITATION_INVALID = 9108,
+  PHASE5_ADMIN_AUTH_FAILED = 9109,
+  // 租户级仲裁配置覆盖(M-0 追加,DOC-2026-08-004)
+  ARBITRATION_CONFIG_INVALID = 9110,
+  // 可观测性指标(M-0 追加,DOC-2026-08-012)
+  METRICS_DATA_UNAVAILABLE = 9201,
+  NOT_IMPLEMENTED = 9901,
 }
 ```
 
@@ -394,6 +494,8 @@ export interface TenantInfo {
   usedQuota?: number;
   /** 当月分析配额上限(仅 current 接口返回) */
   maxQuota?: number;
+  /** 租户级仲裁配置覆盖(未配置为 null;P-04,M-0 追加,DOC-2026-08-005) */
+  arbitrationConfig?: ArbitrationConfig | null;
 }
 
 /** GET /tenants/current 响应 */
@@ -650,6 +752,227 @@ export interface AnalysisResult {
 }
 ```
 
+### 3.7 跨端批删一致性(P-06,M-0 追加)
+
+> DOC-2026-08-001。服务端为准,前端乐观更新 + 回滚;多租户强制所有 ids 归属 `req.tenantId`。
+
+```typescript
+// ============ 3.7 跨端批删一致性(P-06) ============
+
+/** POST /api/v1/analyses/batch-delete 请求体 */
+export interface BatchDeleteAnalysesRequest {
+  /** 待删除的分析记录 ID 列表(最多 100 条) */
+  ids: string[];
+}
+
+/** 批删单条结果 */
+export interface BatchDeleteAnalysisItem {
+  /** 分析记录 ID */
+  id: string;
+  /** 是否删除成功 */
+  deleted: boolean;
+  /** 删除失败原因(deleted=false 时非空,如跨租户越权/不存在) */
+  error?: string;
+}
+
+/** POST /api/v1/analyses/batch-delete 响应 */
+export interface BatchDeleteAnalysesResponse {
+  /** 请求总数 */
+  total: number;
+  /** 成功删除数 */
+  deleted: number;
+  /** 失败数 */
+  failedCount: number;
+  /** 每条删除结果(供前端精确提示) */
+  items: BatchDeleteAnalysisItem[];
+}
+```
+
+### 3.8 租户级仲裁配置覆盖(P-04,M-0 追加)
+
+> DOC-2026-08-003/005。复用 `arbitration.ts` 的 `ArbitrationConfig`(系统默认);租户覆盖为"深合并",未覆盖字段继承系统默认;写入最小化校验 + 权重归一化。
+
+```typescript
+// ============ 3.8 租户级仲裁配置覆盖(P-04) ============
+
+/** GET /api/admin/tenants/:id/arbitration-config 响应 */
+export interface GetTenantArbitrationConfigResponse {
+  tenantId: string;
+  /** 已生效的仲裁配置(合并结果;未覆盖字段取系统默认) */
+  effectiveConfig: ArbitrationConfig;
+  /** 是否为纯系统默认(租户未配置任何覆盖) */
+  isDefault: boolean;
+  /** 上次更新时间(从未配置为 null) */
+  updatedAt: ISODateString | null;
+  /** 上次更新人(从未配置为 null) */
+  updatedBy: string | null;
+}
+
+/** PUT /api/admin/tenants/:id/arbitration-config 请求体(部分覆盖,深合并) */
+export interface UpdateTenantArbitrationConfigRequest {
+  /** 争议触发阈值覆盖(不传则继承默认) */
+  triggers?: Partial<ArbitrationConfig['triggers']>;
+  /** 评委权重覆盖(不传则继承默认) */
+  judgeWeights?: Partial<ArbitrationConfig['judgeWeights']>;
+  /** 最终裁定规则覆盖(不传则继承默认) */
+  rules?: Partial<ArbitrationConfig['rules']>;
+  /** 边界情况处理覆盖(不传则继承默认) */
+  edgeCases?: Partial<ArbitrationConfig['edgeCases']>;
+}
+
+/** PUT /api/admin/tenants/:id/arbitration-config 响应 */
+export type UpdateTenantArbitrationConfigResponse = GetTenantArbitrationConfigResponse;
+```
+
+### 3.9 AI 图像生成(P-02/P-07,M-0 追加)
+
+> DOC-2026-08-006/007/009。生成任务走异步 + 轮询,避免阻塞诊断链路(3 秒 SLA 硬约束);双提供商(GLM/TRAE)自动降级;生成任务强制归属 `req.tenantId`,计入 `AiUsageLog`(`usageType=generate`)。
+
+```typescript
+// ============ 3.9 AI 图像生成(P-02/P-07) ============
+
+/** 生成任务状态 */
+export type GenerationStatus = 'pending' | 'processing' | 'success' | 'failed';
+
+/** AI 生成输入来源 */
+export type GenerationInputType = 'text' | 'sketch';
+
+/** AI 用量类型(对应 Prisma AiUsageLog.usageType 枚举,DOC-2026-08-009) */
+export type AiUsageType = 'diagnose' | 'generate';
+
+/** POST /api/v1/generation 请求体 */
+export interface CreateGenerationRequest {
+  /** 生成输入类型 */
+  inputType: GenerationInputType;
+  /** 文字提示词(text 时必填) */
+  prompt?: string;
+  /** 草稿图 URL(sketch 时必填,基于现有上传图) */
+  sketchImageUrl?: string;
+  /** 目标作品类型(用于生成后一键进入诊断,默认 painting) */
+  artType?: ArtType;
+  /** 生成尺寸提示(可选,如 portrait/landscape) */
+  aspect?: 'portrait' | 'landscape' | 'square';
+  /** 生成数量(默认 1,上限 4) */
+  count?: number;
+}
+
+/** 单张生成结果 */
+export interface GeneratedImage {
+  /** 生成图 URL */
+  imageUrl: string;
+  /** 审核状态(生成内容合规,违规标记 flagged) */
+  reviewStatus: ReviewStatus;
+}
+
+/** POST /api/v1/generation 响应 */
+export interface CreateGenerationResponse {
+  /** 生成任务 ID */
+  taskId: string;
+  status: GenerationStatus;
+  /** 生成结果(异步模式为 null,需轮询 GET /generation/:id) */
+  images: GeneratedImage[] | null;
+}
+
+/** GET /api/v1/generation/:id 响应 */
+export interface GetGenerationResponse {
+  taskId: string;
+  tenantId: string;
+  status: GenerationStatus;
+  /** 生成结果(status=success 时非空) */
+  images: GeneratedImage[] | null;
+  /** 失败原因(status=failed 时非空) */
+  failureReason: string | null;
+  /** 是否经过降级(主提供商失败自动降级) */
+  usedFallback: boolean;
+  createdAt: ISODateString;
+  completedAt: ISODateString | null;
+}
+```
+
+### 3.10 可观测性指标(P-08,M-0 追加)
+
+> DOC-2026-08-010/011。仅供管理后台,IP 白名单 + admin 鉴权;聚合采用 Redis 计数器 + 定时落库;数据不可用返回 `METRICS_DATA_UNAVAILABLE`。
+
+```typescript
+// ============ 3.10 可观测性指标(P-08) ============
+
+/** GET /api/admin/metrics/ai 响应 */
+export interface AiMetricsResponse {
+  /** 统计起始时间 */
+  startDate: ISODateString;
+  /** 统计结束时间 */
+  endDate: ISODateString;
+  /** AI 分析 SLA 达标率(0-1,durationMs≤3000 占比) */
+  slaComplianceRate: number;
+  /** AI 降级率(0-1,aiFallback 次数/总请求) */
+  aiFallbackRate: number;
+  /** 双提供商可用性(glm/trae) */
+  providerAvailability: {
+    glm: { successRate: number; switchCount: number };
+    trae: { successRate: number; switchCount: number };
+  };
+  /** 分析请求量 / 成功率 / 平均耗时 */
+  analysis: {
+    total: number;
+    successRate: number;
+    avgDurationMs: number;
+  };
+  /** AI 成本聚合(按天) */
+  costByDay: { date: ISODateString; costYuan: number }[];
+  /** 统计时间戳 */
+  timestamp: ISODateString;
+}
+
+/** GET /api/admin/metrics/sla 查询参数 */
+export interface SlaMetricsQuery {
+  /** 时间范围天数(默认 7,1-90) */
+  days?: number;
+  /** 按租户筛选(可选) */
+  tenantId?: string;
+}
+
+/** GET /api/admin/metrics/sla 响应 */
+export interface SlaMetricsResponse {
+  days: number;
+  /** 逐日 SLA 达标率 */
+  dailySla: { date: ISODateString; complianceRate: number; total: number }[];
+  /** 平均 SLA 达标率 */
+  avgComplianceRate: number;
+}
+```
+
+### 3.11 管理后台高危操作幂等确认(P-05,M-0 追加)
+
+> DOC-2026-08-014。三级确认:normal / sensitive(需关键字) / high(需密码);`confirmPassword` 为可选字段,追加到现有高危请求体(非破坏性);高危接口支持 `Idempotency-Key` 头做幂等去重。
+
+```typescript
+// ============ 3.11 管理后台高危操作幂等确认(P-05) ============
+
+/** 高危操作确认载荷(追加到高危请求体,可选) */
+export interface HighRiskConfirmPayload {
+  /** 高危操作主确认载荷:锁定/删除/退款/撤销/key 等 */
+  confirmPassword?: string;
+  /** 敏感操作确认关键字(如"删除"/"锁定",前端输入,后端校验) */
+  confirmKeyword?: string;
+}
+
+/** 三级确认强度 */
+export type ConfirmDangerLevel = 'normal' | 'sensitive' | 'high';
+
+/** 高危操作前端确认配置(供 ConfirmAction 组件消费,非后端接口) */
+export interface ConfirmActionConfig {
+  dangerLevel: ConfirmDangerLevel;
+  /** dangerLevel=sensitive 时必填,需输入关键字 */
+  requireKeyword?: string;
+  /** dangerLevel=high 时必填,需输入当前管理员密码 */
+  requirePassword?: boolean;
+  /** 幂等键(可选,防重复提交) */
+  idempotencyKey?: string;
+}
+```
+
+> **涉及追加字段的现有高危接口**(M-1 由 backend-service 落地校验):`POST /api/admin/users/:id/lock`、`POST /api/admin/users/batch`、`POST /api/admin/subscriptions/:id/refund`、`DELETE /api/admin/system/api-keys/:id`、`POST /api/admin/artworks/:id/review`。
+
 ---
 
 ## 4. OpenAPI 3.0 接口规范
@@ -660,9 +983,9 @@ export interface AnalysisResult {
 openapi: 3.0.3
 info:
   title: 丹青有AI API
-  version: 1.0.0
+  version: 2.0.0
   description: |
-    高校艺术教育AI作业诊断系统 API 契约 v1。
+    高校艺术教育AI作业诊断系统 API 契约 v2.0(M-0 增补)。
     统一响应格式: {code, message, data, traceId}
     鉴权: Bearer JWT (RS256)
 servers:
@@ -1579,6 +1902,259 @@ paths:
                 traceId: "550e8400-e29b-41d4-a716-446655440000"
 ```
 
+### 4.10 跨端批删(M-0 新增,DOC-2026-08-001)
+
+```yaml
+  /analyses/batch-delete:
+    post:
+      tags: [Analysis]
+      summary: 批量删除分析记录
+      description: |
+        服务端为准,前端乐观更新 + 回滚。
+        多租户强制:所有 ids 归属当前 req.tenantId,任一越权则该条记入 failed(不整体回滚误删)。
+        最多 100 条,超出返回 ANALYSIS_BATCH_LIMIT_EXCEEDED。
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ids]
+              properties:
+                ids:
+                  type: array
+                  maxItems: 100
+                  items: { type: string, format: uuid }
+      responses:
+        '200':
+          description: 批删完成(逐条结果)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          total: { type: integer }
+                          deleted: { type: integer }
+                          failedCount: { type: integer }
+                          items:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                id: { type: string }
+                                deleted: { type: boolean }
+                                error: { type: string, nullable: true }
+              example:
+                code: 0
+                message: "success"
+                data:
+                  total: 3
+                  deleted: 2
+                  failedCount: 1
+                  items:
+                    - id: "a-3c4d5e6f"
+                      deleted: true
+                    - id: "a-2b3c4d5e"
+                      deleted: true
+                    - id: "a-1a2b3c4d"
+                      deleted: false
+                      error: "资源不属于当前租户"
+                traceId: "550e8400-e29b-41d4-a716-446655440000"
+        '400':
+          description: 批删条数超限
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              example:
+                code: 6006
+                message: "批删条数超限(最多 100 条)"
+                data: null
+                traceId: "550e8400-e29b-41d4-a716-446655440000"
+```
+
+### 4.11 租户仲裁配置覆盖(M-0 新增,DOC-2026-08-003)
+
+```yaml
+  /api/admin/tenants/{id}/arbitration-config:
+    get:
+      tags: [Admin.Tenant]
+      summary: 获取租户仲裁配置(合并结果)
+      description: 返回已生效的仲裁配置(未覆盖字段取系统默认)。admin/owner 可读。
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          tenantId: { type: string }
+                          isDefault: { type: boolean }
+                          updatedAt: { type: string, format: date-time, nullable: true }
+                          updatedBy: { type: string, nullable: true }
+                          effectiveConfig: { type: object }
+    put:
+      tags: [Admin.Tenant]
+      summary: 更新租户仲裁配置(部分覆盖,深合并)
+      description: |
+        未传字段继承系统默认。写入时 Zod 全量校验 + 权重归一化(judgeWeights 内每模式权重之和=1)。
+        配置变更写入 AuditLog。admin/owner 可写。
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                triggers: { type: object }
+                judgeWeights: { type: object }
+                rules: { type: object }
+                edgeCases: { type: object }
+      responses:
+        '200':
+          description: 更新成功,返回合并结果
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data: { type: object }
+        '400':
+          description: 仲裁配置校验失败
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              example:
+                code: 9110
+                message: "仲裁配置校验失败(权重未归一化/取值越界)"
+                data: null
+                traceId: "550e8400-e29b-41d4-a716-446655440000"
+```
+
+### 4.12 AI 图像生成(M-0 新增,DOC-2026-08-006/007)
+
+```yaml
+  /generation:
+    post:
+      tags: [Generation]
+      summary: 提交 AI 参考图生成任务
+      description: |
+        输入文字提示词(text)或草稿图(sketch),生成 1-4 张参考图。
+        任务走异步 + 轮询;单用户限流 5 次/分钟;计入 AiUsageLog(usageType=generate)。
+        生成后前端可一键"提交诊断",复用 analysis.service.runAnalysis 形成"生成→诊断→批改"闭环。
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [inputType]
+              properties:
+                inputType: { type: string, enum: [text, sketch] }
+                prompt: { type: string }
+                sketchImageUrl: { type: string, format: uri }
+                artType: { type: string, enum: [painting, design, product, sculpture] }
+                aspect: { type: string, enum: [portrait, landscape, square] }
+                count: { type: integer, minimum: 1, maximum: 4, default: 1 }
+      responses:
+        '200':
+          description: 任务已创建
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          taskId: { type: string }
+                          status: { type: string, enum: [pending, processing, success, failed] }
+                          images: { type: array, nullable: true, items: { type: object } }
+        '402':
+          description: 生成配额已用完
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              example:
+                code: 6101
+                message: "本月生成配额已用完"
+                data: null
+                traceId: "550e8400-e29b-41d4-a716-446655440000"
+  /generation/{id}:
+    get:
+      tags: [Generation]
+      summary: 轮询生成任务结果
+      description: 异步模式前端轮询此接口,status=success 时 images 非空。
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: 成功(含任务状态与结果)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          taskId: { type: string }
+                          tenantId: { type: string }
+                          status: { type: string, enum: [pending, processing, success, failed] }
+                          images: { type: array, nullable: true, items: { type: object } }
+                          failureReason: { type: string, nullable: true }
+                          usedFallback: { type: boolean }
+        '404':
+          description: 任务不存在/跨租户
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              example:
+                code: 6102
+                message: "生成任务不存在"
+                data: null
+                traceId: "550e8400-e29b-41d4-a716-446655440000"
+```
+
 ---
 
 ## 5. 接口清单速查表
@@ -1596,6 +2172,13 @@ paths:
 | 9 | POST | /analyses | 是 | 提交分析任务(同步/异步) | 1004, 5003, 6001, 6002, 6005 |
 | 10 | GET | /analyses | 是 | 查询分析历史(分页) | 2001, 2004 |
 | 11 | GET | /analyses/:id | 是 | 查询单条分析详情 | 3004, 6004 |
+| 12 | POST | /analyses/batch-delete | 是 | 批量删除分析记录(M-0) | 6006, 3004 |
+| 13 | GET | /api/admin/tenants/:id/arbitration-config | 是 | 获取租户仲裁配置(M-0) | 2004, 3001 |
+| 14 | PUT | /api/admin/tenants/:id/arbitration-config | 是 | 更新租户仲裁配置(M-0) | 9110, 2004 |
+| 15 | POST | /generation | 是 | 提交 AI 参考图生成任务(M-0) | 6101, 6103, 6105, 6106 |
+| 16 | GET | /generation/:id | 是 | 轮询生成任务结果(M-0) | 6102 |
+| 17 | GET | /api/admin/metrics/ai | 是(IP白名单+admin) | AI 指标聚合(M-0) | 9201, 2004 |
+| 18 | GET | /api/admin/metrics/sla | 是(IP白名单+admin) | SLA 逐日达标率(M-0) | 9201, 2004 |
 
 ---
 
@@ -1631,6 +2214,18 @@ flowchart LR
 | 订阅管理接口 | /subscriptions/* | Phase 2 |
 | 班级聚合统计 | GET /tenants/{id}/stats | Phase 2 |
 
+> **M-0 已落地 / 登记项**(2026-08-07 更新):以下先前"待定/预留"项已在 M-0 冻结或登记,不再作为过期待定项:
+>
+> | 项 | 状态 | 说明 |
+> |---|---|---|
+> | 跨端批删 | 已落地 | `POST /analyses/batch-delete`,DOC-2026-08-001,P-06 |
+> | 租户仲裁配置覆盖 | 已落地 | `GET/PUT /api/admin/tenants/:id/arbitration-config`,DOC-2026-08-003,P-04 |
+> | AI 图像生成 | 已落地 | `POST /generation` + `GET /generation/:id`,DOC-2026-08-006/007,P-02/P-07 |
+> | 可观测性指标 | 已落地 | `GET /api/admin/metrics/ai` + `/metrics/sla`,DOC-2026-08-010/011,P-08 |
+> | 管理高危确认 | 已落地 | 高危写接口追加 `confirmPassword`,DOC-2026-08-014,P-05 |
+> | Phase5 config/ui 激活 | 已登记 | §3.11 config/ui 类型批量标注激活,复用租户配置深合并模式,DOC-2026-08-013,P-03 |
+> | Phase5 knowledge/modules | 保持预留 | 保持 P2 延后,不激活 |
+
 ---
 
 ## 7. 变更记录
@@ -1638,6 +2233,7 @@ flowchart LR
 | 版本 | 时间 | 变更人 | 变更内容 |
 |---|---|---|---|
 | v1.0 | 2026-07-27 | product-architect | 初始版本,覆盖 Phase 1 全部 11 个接口 |
+| v2.0 | 2026-08-07 | product-architect + backend-service | **M-0 增补**(依据 `m0-doc-contract-plan-2026-08-06.md`):①错误码表追加 6006/6101-6106/8015/9110/9201 及 7001-7006/8001-8014/8101-8103/8201-8203/8301-8303/8401-8404/9101-9109(M-0 之前已存在但本文档缺失的部分一并补齐);②新增 §3.7-3.11 批删/仲裁配置/生成/指标/高危确认类型;③TenantInfo 追加 `arbitrationConfig`;④新增 §4.10-4.12 OpenAPI 片段;⑤接口清单速查表扩至 18 项;⑥§6.3 更新待定项(移除已落地项);⑦类型与 `api-contract.ts` 主副本完全一致 |
 
 ---
 
@@ -1646,13 +2242,13 @@ flowchart LR
 | 验收项 | 状态 | 说明 |
 |---|---|---|
 | OpenAPI 片段覆盖所有 Phase 1 接口 | 通过 | 覆盖 11 个接口(authorize/callback/refresh/logout/me + profile GET/PATCH + tenants/current + analyses POST/GET + analyses/:id) |
-| TypeScript interface 全部定义且无 any | 通过 | 第 3 节共定义 40+ interface/type,全部显式类型,无 any;联合类型与字面量类型穷举所有取值 |
-| 错误码表完整 | 通过 | 第 2.2 节定义 33 个错误码,覆盖 0/1xxx/2xxx/3xxx/4xxx/5xxx/6xxx/9xxx 全部分段 |
+| M-0 新接口 OpenAPI 片段 | 通过 | 第 4.10-4.12 节覆盖批删 / 仲裁配置 / 生成任务 |
+| TypeScript interface 全部定义且无 any | 通过 | 第 3 节全部显式类型,无 any;联合类型与字面量类型穷举所有取值 |
+| 错误码表完整 | 通过 | 第 2.2 节定义 60+ 错误码,覆盖 0/1xxx/2xxx/3xxx/4xxx/5xxx/6xxx/7xxx/8xxx/9xxx 全部分段(M-0 已补齐 7001+ / 8001+ / Phase5 段) |
+| M-0 新增类型与 api-contract.ts 一致 | 通过 | §3.7-3.11 与 `server/src/types/api-contract.ts` 主副本逐字段核对一致 |
 | 数据模型包含 tenant_id 多租户字段 | 通过 | UserProfile.tenantId / AnalysisDetail.tenantId 已定义;完整数据模型见 data-model-v1.md |
-| Prisma schema 雏形已给出 | 通过 | 见 data-model-v1.md 第 4 节 |
-| Mermaid ER 图已绘制 | 通过 | 见 data-model-v1.md 第 5 节 |
 | 统一响应格式 {code,message,data,traceId} | 通过 | 第 1.2 节定义 ApiResponse<T>,所有接口示例遵守 |
 | 飞书登录全链路覆盖 | 通过 | authorize→callback→refresh→logout→me 闭环 |
 | 多租户隔离约定 | 通过 | 第 1.3 节鉴权约定 + PRD 5.2.3 租户隔离规则 + 错误码 3004 跨租户访问 |
-| 3 秒 SLA 体现 | 通过 | /analyses 同步/异步混合模式 + 错误码 6002 SLA 违约 + PRD 5.3.3 保障策略 |
+| 3 秒 SLA 体现 | 通过 | /analyses 同步/异步混合模式 + 错误码 6002 SLA 违约 + M-0 生成接口走异步防止阻塞诊断链路 |
 | 分析结果类型对齐现有前端 | 通过 | 第 3.6 节 PaintingAnalysis/DesignAnalysis/ProductAnalysis/SculptureAnalysis 与 src/types/index.ts 完全一致 |

@@ -394,6 +394,8 @@ stateDiagram-v2
 - AI 分析记录 `duration_ms`,按租户/艺术类型聚合统计
 - 错误日志包含 traceId + user_id + tenant_id,便于排查
 - Phase 1 暂用 console + 结构化 JSON 日志,Phase 2 接入 OpenTelemetry
+- **业务级/AI 级指标**(P-08 追加,M-0):除 traceId 外,补充 AI SLA 达标率、降级率、双提供商可用性、成本聚合等指标,经由管理后台 `GET /api/admin/metrics/*` 暴露(详见 §8.6)
+- 指标聚合采用 Redis 计数器 + 定时落库,避免实时查询压库(3 秒 SLA 不受监控开销影响)
 
 ### 7.4 兼容性
 
@@ -401,3 +403,115 @@ stateDiagram-v2
 - 后端:Node.js 18 LTS+
 - 数据库:PostgreSQL 14+
 - 缓存:Redis 6+
+
+---
+
+## 8. M-0 增补需求（2026-08-07）
+
+> 本章依据已批准的升级计划(`system-upgrade-plan-2026-08-06.md`)与 M-0 文档契约计划(`m0-doc-contract-plan-2026-08-06.md`)登记新功能产品需求，覆盖升级痛点 P-02/03/04/05/06/07/08。各需求均为增量扩展，不改变现有「上传 → 3s 诊断」主链路；对应 API 契约见 `api-contract-v1.md` 与 `server/src/types/api-contract.ts` §3.15~3.19。
+
+### 8.1 AI 图像生成与教学闭环（P-02 / P-07）
+
+#### 8.1.1 用户故事
+
+| 编号 | 角色 | 故事 | 验收标准 |
+|---|---|---|---|
+| US-GEN-01 | 学生 | 我用一句话描述灵感,系统生成参考图,再去诊断 | 输入提示词生成 1-4 张参考图,可一键"提交诊断"进入分析 |
+| US-GEN-02 | 学生 | 我上传一张素描草稿,用它生成参考图方便继续创作 | 上传草稿图基于它生成;生成后不走样、可轮询任务状态 |
+| US-GEN-03 | 学生/教师 | 我不想让生成功能无限消耗配额 | 生成任务计入订阅配额(`usageType=generate`),超出返回配额不足 |
+| US-GEN-04 | 平台 | 生成的内容必须合规,不能出现违规作品 | 生成图经内容审核,违规标记 flagged 并拦截展示 |
+
+#### 8.1.2 功能说明
+
+- **生成输入**：文字提示词(`text`)或草稿图(`sketch`)，目标作品类型覆盖四类(painting/design/product/sculpture)。
+- **教学闭环**：生成参考图 → 前端一键"提交诊断"(复用 `analysis.service.runAnalysis`) → 获得批改建议，形成"生成→诊断→批改"闭环。
+- **异步任务**：生成走异步任务状态机(`pending → processing → success/failed`)，前端轮询 `GET /generation/:id`，避免阻塞诊断链路(3 秒 SLA 硬约束)。
+- **配额与计费**：生成任务计入 `AiUsageLog`(`usageType=generate`)，与订阅配额对齐防滥用；计入成本聚合。
+- **限流**：单用户 5 次/分钟(`GENERATION_RATE_LIMITED = 6106`)。
+- **降级**：主提供商失败自动切到备提供商(GLM/TRAE)，降级经 `usedFallback` 透出；双提供商均不可用返回 `GENERATION_PROVIDER_UNAVAILABLE = 6103`。
+
+> 对应 API：`POST /api/v1/generation`、`GET /api/v1/generation/:id`（契约见 api-contract.ts §3.17，DOC-2026-08-006/007/009）。
+
+### 8.2 租户级仲裁配置覆盖（P-04）
+
+#### 8.2.1 需求说明
+
+院校可按自定义触发阈值 / 评委权重 / 边界规则对争议仲裁进行租户级覆盖；未配置覆盖的字段回退系统默认(`DEFAULT_ARBITRATION_CONFIG`)。
+
+| 需求 | 说明 | 验收标准 |
+|---|---|---|
+| 覆盖能力 | 支持整体覆盖或部分覆盖(深合并) | 未传字段继承系统默认,不整体替换 |
+| 校验 | 写入时 Zod 全量校验 + 权重归一化 | `judgeWeights` 内每模式权重之和=1,违反返回 `ARBITRATION_CONFIG_INVALID = 9110` |
+| 审计 | 配置变更写入 `AuditLog` | 每次变更可追溯操作者与时间 |
+| 回退 | 租户未配置时走系统默认 | `isDefault=true` |
+
+#### 8.2.2 用户故事
+
+| 编号 | 角色 | 故事 | 验收标准 |
+|---|---|---|---|
+| US-ARB-01 | 院校管理员 | 我希望本院校的争议分数差阈值更严格,适配本校评审标准 | 在管理后台配置阈值覆盖,立即生效且显示合并结果 |
+| US-ARB-02 | 平台 | 我希望租户配置错误时不影响系统默认逻辑 | 配置非法时拒绝写入并提示,现有仲裁逻辑不受影响 |
+
+> 对应 API：`GET/PUT /api/admin/tenants/:id/arbitration-config`（契约见 api-contract.ts §3.16，DOC-2026-08-003/005）。
+
+### 8.3 管理后台三级确认（P-05）
+
+管理后台对敏感/高危操作实施三级确认，防止误操作导致不可逆后果。
+
+| 级别 | 触发操作 | 确认方式 |
+|---|---|---|
+| normal(常规) | 常规增删改 | 基础确认弹窗 |
+| sensitive(敏感) | 锁定用户 / 审核标记等 | 输入关键字(如"删除"/"锁定") |
+| high(高危) | 删除用户 / 批量删除 / 退款 / 撤销 API Key | 输入当前管理员密码(`confirmPassword`) + 幂等键 |
+
+- 涉及高危接口：`POST /api/admin/users/:id/lock`、`POST /api/admin/users/batch`、`POST /api/admin/subscriptions/:id/refund`、`DELETE /api/admin/system/api-keys/:id`、`POST /api/admin/artworks/:id/review`。
+- 密码错误返回 `ADMIN_CONFIRM_PASSWORD_MISMATCH = 8015`。
+- 高危接口支持 `Idempotency-Key` 头幂等去重，防网络重试导致重复扣款/重复删除。
+- 上线策略：先软生效(仅前端 ConfirmAction)→ 后端强制校验分两步(B 级风险)。
+
+> 对应契约见 api-contract.ts §3.19（DOC-2026-08-014）。
+
+### 8.4 跨端批删一致性（P-06）
+
+批删分析记录以服务端为准，前端采用"乐观更新 + 回滚"策略，避免跨端删除结果不一致。
+
+| 需求 | 说明 | 验收标准 |
+|---|---|---|
+| 服务端为准 | 批删走统一接口 `POST /analyses/batch-delete` | 返回逐条结果,前端据此刷新 |
+| 乐观更新 | 前端先本地移除,后回滚 | 后端返回后调用 `invalidateQueries(['analyses'])` |
+| 失败提示 | 任一 `deleted=false` | toast 展示对应 `error`(如跨租户越权/不存在) |
+| 上限 | 单次最多 100 条 | 超出返回 `ANALYSIS_BATCH_LIMIT_EXCEEDED = 6006` |
+| 多租户 | 强制校验 ids 归属当前租户 | 任一越权仅该条记入 failed,不整体回滚误删 |
+
+> 对应契约见 api-contract.ts §3.15（DOC-2026-08-001）。
+
+### 8.5 Phase5 预留接口激活（P-03）
+
+将 Phase5 预留接口中 `config` / `ui` 两类能力激活（从 501 变为可用），`knowledge` / `modules` 保持预留(P2 延后)。
+
+| 路由 | 契约状态 | 激活内容 | 实现优先级 |
+|---|---|---|---|
+| `/api/v1/config` | 类型已存在 | 功能开关/系统参数/工作流编排 | P1(M-4) |
+| `/api/v1/ui` | 类型已存在 | 主题切换/组件数据/看板布局 | P1(M-4) |
+| `/api/v1/knowledge` | 类型已存在 | 保持预留 | P2 |
+| `/api/v1/modules` | 类型已存在 | 保持预留框架 | P2 |
+
+- `config`/`ui` 的租户级覆盖复用 §8.2 的"租户配置深合并"模式。
+- 类型标注从 `@reserved planned` 更新为 `@implemented`（DOC-2026-08-013）。
+
+### 8.6 可观测性指标（P-08）
+
+新增业务级/AI 级指标接口，供管理后台监控与成本核算。
+
+| 接口 | 指标 | 说明 |
+|---|---|---|
+| `GET /api/admin/metrics/ai` | AI SLA 达标率 / 降级率 / 双提供商可用性 / 分析量 / 成本聚合 | 覆盖 AI 诊断质量与成本 |
+| `GET /api/admin/metrics/sla` | 逐日 SLA 达标率 | 按时间维度监控 3s 达标 |
+
+- 鉴权：IP 白名单 + admin 鉴权。
+- 聚合方式：Redis 计数器 + 定时落库，避免实时查询压库。
+- 数据暂不可用返回 `METRICS_DATA_UNAVAILABLE = 9201`。
+
+> 对应契约见 api-contract.ts §3.18（DOC-2026-08-010/011）。
+
+---
