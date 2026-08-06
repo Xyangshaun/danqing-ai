@@ -63,10 +63,9 @@ const createBodySchema = z.object({
 /** PATCH /:id 更新请求体 */
 const updateBodySchema = createBodySchema.partial();
 
-/** POST /search/validate 请求体 */
+/** POST /search/validate 请求体(角色一律取 token,不接受客户端指定,防止越权预校验) */
 const validateBodySchema = z.object({
   query: searchQuerySchema,
-  role: z.enum(['student', 'teacher', 'admin', 'owner'] as [UserRole, ...UserRole[]]).optional(),
 });
 
 /** :id 路径参数 */
@@ -102,8 +101,9 @@ export const searchKnowledge: RequestHandler = (req, res, next) => {
     if (!parsed.success) {
       return error(res, ErrorCode.PARAM_INVALID, firstIssue(parsed), 400);
     }
-    const { tenantId } = requireAuth(req);
-    const result = knowledgeService.search(tenantId, parsed.data);
+    const { tenantId, role } = requireAuth(req);
+    // 服务端强制角色策略:非 elevated 角色在 service 层被强制 status=published
+    const result = knowledgeService.search(tenantId, role, parsed.data);
     return success(res, result, 'ok');
   } catch (err) {
     return next(err);
@@ -234,8 +234,8 @@ export const validateKnowledgeSearch: RequestHandler = (req, res, next) => {
     if (!parsed.success) {
       return error(res, ErrorCode.PARAM_INVALID, firstIssue(parsed), 400);
     }
-    const { role: tokenRole } = requireAuth(req);
-    const role = parsed.data.role ?? tokenRole;
+    const { role } = requireAuth(req);
+    // 角色强制取 token,忽略请求体中的任何 role 字段(安全:防止伪造角色通过预校验)
     const result = knowledgeService.validateSearch(role, parsed.data.query);
     return success(res, result, 'ok');
   } catch (err) {

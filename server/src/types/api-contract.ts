@@ -1249,6 +1249,8 @@ export interface BatchAdminUsersRequest {
   action: 'updateRole' | 'delete';
   /** updateRole 时必填 */
   role?: UserRole;
+  /** 高危操作确认密码(可选;action=delete 时 dangerLevel=high 必填,M-0 DOC-2026-08-014) */
+  confirmPassword?: string;
 }
 
 /** 批量操作单条结果 */
@@ -1355,6 +1357,8 @@ export interface ReviewArtworkRequest {
   action: ReviewAction;
   /** 审核备注(可选) */
   note?: string;
+  /** 高危操作确认密码(可选;action=reject/flag 时 dangerLevel=high 必填,M-0 DOC-2026-08-014) */
+  confirmPassword?: string;
 }
 
 /** POST /api/admin/artworks/:id/review 响应 */
@@ -1485,6 +1489,8 @@ export interface AdminRefundRequest {
   reason: string;
   /** 外部退款单号(可选) */
   externalRefundId?: string;
+  /** 高危操作确认密码(可选;dangerLevel=high 必填,M-0 DOC-2026-08-014) */
+  confirmPassword?: string;
 }
 
 /** POST /api/admin/subscriptions/:id/refund 响应 */
@@ -2034,7 +2040,10 @@ export interface KnowledgeIndexStatus {
 export interface KnowledgeSearchValidateRequest {
   /** 待校验的查询条件 */
   query: KnowledgeSearchQuery;
-  /** 当前用户角色(由 token 推断,可不传) */
+  /**
+   * @deprecated 安全加固后角色一律取 token,服务端忽略此字段,请勿传入
+   * (历史设计允许客户端指定角色做"假设性"校验,存在伪造角色绕过预校验的风险)
+   */
   role?: UserRole;
 }
 
@@ -3286,5 +3295,260 @@ export interface LatestDeploymentStatusResponse {
   errorMessage: string | null;
   /** 完整日志记录(供下游任务细读) */
   log: DeploymentLogEntry;
+}
+
+// ============================================================
+// 3.15 跨端批删一致性(P-06,M-0 追加,DOC-2026-08-001)
+//
+// 设计原则:
+//   - 批删以服务端为准,前端采用"乐观更新 + 回滚"策略
+//   - 多租户强制:所有 ids 归属当前 req.tenantId,任一越权则该条记入 failed
+//   - 后端返回后前端调用 invalidateQueries(['analyses']) 以服务端为准
+//   - 仅追加新类型,不修改现有类型(向后兼容)
+//
+// 对应 API:
+//   POST /analyses/batch-delete
+// ============================================================
+
+/** POST /analyses/batch-delete 请求体 */
+export interface BatchDeleteAnalysesRequest {
+  /** 待删除的分析记录 ID 列表(最多 100 条) */
+  ids: string[];
+}
+
+/** 批删单条结果 */
+export interface BatchDeleteAnalysisItem {
+  /** 分析记录 ID */
+  id: string;
+  /** 是否删除成功 */
+  deleted: boolean;
+  /** 删除失败原因(deleted=false 时非空,如跨租户越权/不存在) */
+  error?: string;
+}
+
+/** POST /analyses/batch-delete 响应 */
+export interface BatchDeleteAnalysesResponse {
+  /** 请求总数 */
+  total: number;
+  /** 成功删除数 */
+  deleted: number;
+  /** 失败数 */
+  failedCount: number;
+  /** 每条删除结果(供前端精确提示) */
+  items: BatchDeleteAnalysisItem[];
+}
+
+// ============================================================
+// 3.16 租户级仲裁配置覆盖(P-04,M-0 追加,DOC-2026-08-003/005)
+//
+// 设计原则:
+//   - 复用 arbitration.ts 的 ArbitrationConfig 类型(系统默认)
+//   - 租户级覆盖为"深合并":未覆盖字段继承系统默认
+//   - 写入时 Zod 全量校验 + 权重归一化校验(judgeWeights 内每模式权重之和=1)
+//   - 配置变更写入 AuditLog(auditAction=update)
+//   - 仅追加新类型,不修改现有类型(向后兼容)
+//
+// 对应 API:
+//   GET /api/admin/tenants/:id/arbitration-config
+//   PUT /api/admin/tenants/:id/arbitration-config
+// ============================================================
+
+/** GET /api/admin/tenants/:id/arbitration-config 响应 */
+export interface GetTenantArbitrationConfigResponse {
+  tenantId: string;
+  /** 已生效的仲裁配置(合并结果;未覆盖字段取系统默认) */
+  effectiveConfig: ArbitrationConfig;
+  /** 是否为纯系统默认(租户未配置任何覆盖) */
+  isDefault: boolean;
+  /** 上次更新时间(从未配置为 null) */
+  updatedAt: ISODateString | null;
+  /** 上次更新人(从未配置为 null) */
+  updatedBy: string | null;
+}
+
+/** PUT /api/admin/tenants/:id/arbitration-config 请求体(部分覆盖,深合并) */
+export interface UpdateTenantArbitrationConfigRequest {
+  /** 争议触发阈值覆盖(不传则继承默认) */
+  triggers?: Partial<ArbitrationConfig['triggers']>;
+  /** 评委权重覆盖(不传则继承默认) */
+  judgeWeights?: Partial<ArbitrationConfig['judgeWeights']>;
+  /** 最终裁定规则覆盖(不传则继承默认) */
+  rules?: Partial<ArbitrationConfig['rules']>;
+  /** 边界情况处理覆盖(不传则继承默认) */
+  edgeCases?: Partial<ArbitrationConfig['edgeCases']>;
+}
+
+/** PUT /api/admin/tenants/:id/arbitration-config 响应 */
+export type UpdateTenantArbitrationConfigResponse = GetTenantArbitrationConfigResponse;
+
+// ============================================================
+// 3.17 AI 图像生成(P-02/P-07,M-0 追加,DOC-2026-08-006/007/009)
+//
+// 设计原则:
+//   - 生成任务走异步 + 轮询,避免阻塞诊断链路(3 秒 SLA 硬约束)
+//   - 双提供商(GLM/TRAE)自动降级,降级信息经 usedFallback 透出
+//   - 单用户限流 5 次/分钟(GENERATION_RATE_LIMITED)
+//   - 生成任务强制归属 req.tenantId,计入 AiUsageLog(usageType=generate)
+//   - 生成内容经审核(ReviewStatus),违规标记 flagged
+//   - 教学闭环:生成参考图 → 一键提交诊断(复用 analysis.service.runAnalysis)
+//   - 仅追加新类型,不修改现有类型(向后兼容)
+//
+// 对应 API:
+//   POST /api/v1/generation
+//   GET  /api/v1/generation/:id
+// ============================================================
+
+/** 生成任务状态 */
+export type GenerationStatus = 'pending' | 'processing' | 'success' | 'failed';
+
+/** AI 生成输入来源 */
+export type GenerationInputType = 'text' | 'sketch';
+
+/** AI 用量类型(对应 Prisma AiUsageLog.usageType 枚举,DOC-2026-08-009) */
+export type AiUsageType = 'diagnose' | 'generate';
+
+/** POST /api/v1/generation 请求体 */
+export interface CreateGenerationRequest {
+  /** 生成输入类型 */
+  inputType: GenerationInputType;
+  /** 文字提示词(text 时必填) */
+  prompt?: string;
+  /** 草稿图 URL(sketch 时必填,基于现有上传图) */
+  sketchImageUrl?: string;
+  /** 目标作品类型(用于生成后一键进入诊断,默认 painting) */
+  artType?: ArtType;
+  /** 生成尺寸提示(可选,如 portrait/landscape) */
+  aspect?: 'portrait' | 'landscape' | 'square';
+  /** 生成数量(默认 1,上限 4) */
+  count?: number;
+}
+
+/** 单张生成结果 */
+export interface GeneratedImage {
+  /** 生成图 URL */
+  imageUrl: string;
+  /** 审核状态(生成内容合规,违规标记 flagged) */
+  reviewStatus: ReviewStatus;
+}
+
+/** POST /api/v1/generation 响应 */
+export interface CreateGenerationResponse {
+  /** 生成任务 ID */
+  taskId: string;
+  status: GenerationStatus;
+  /** 生成结果(异步模式为 null,需轮询 GET /generation/:id) */
+  images: GeneratedImage[] | null;
+}
+
+/** GET /api/v1/generation/:id 响应 */
+export interface GetGenerationResponse {
+  taskId: string;
+  tenantId: string;
+  status: GenerationStatus;
+  /** 生成结果(status=success 时非空) */
+  images: GeneratedImage[] | null;
+  /** 失败原因(status=failed 时非空) */
+  failureReason: string | null;
+  /** 是否经过降级(主提供商失败自动降级) */
+  usedFallback: boolean;
+  createdAt: ISODateString;
+  completedAt: ISODateString | null;
+}
+
+// ============================================================
+// 3.18 可观测性指标(P-08,M-0 追加,DOC-2026-08-010/011)
+//
+// 设计原则:
+//   - 仅供管理后台,IP 白名单 + admin 鉴权
+//   - 业务级/AI 级指标(非仅 traceId),聚合采用 Redis 计数器 + 定时落库
+//   - 指标数据暂不可用返回 METRICS_DATA_UNAVAILABLE(9201)
+//   - 仅追加新类型,不修改现有类型(向后兼容)
+//
+// 对应 API:
+//   GET /api/admin/metrics/ai
+//   GET /api/admin/metrics/sla
+// ============================================================
+
+/** GET /api/admin/metrics/ai 响应 */
+export interface AiMetricsResponse {
+  /** 统计起始时间 */
+  startDate: ISODateString;
+  /** 统计结束时间 */
+  endDate: ISODateString;
+  /** AI 分析 SLA 达标率(0-1,durationMs≤3000 占比) */
+  slaComplianceRate: number;
+  /** AI 降级率(0-1,aiFallback 次数/总请求) */
+  aiFallbackRate: number;
+  /** 双提供商可用性(glm/trae) */
+  providerAvailability: {
+    glm: { successRate: number; switchCount: number };
+    trae: { successRate: number; switchCount: number };
+  };
+  /** 分析请求量 / 成功率 / 平均耗时 */
+  analysis: {
+    total: number;
+    successRate: number;
+    avgDurationMs: number;
+  };
+  /** AI 成本聚合(按天) */
+  costByDay: { date: ISODateString; costYuan: number }[];
+  /** 统计时间戳 */
+  timestamp: ISODateString;
+}
+
+/** GET /api/admin/metrics/sla 查询参数 */
+export interface SlaMetricsQuery {
+  /** 时间范围天数(默认 7,1-90) */
+  days?: number;
+  /** 按租户筛选(可选) */
+  tenantId?: string;
+}
+
+/** GET /api/admin/metrics/sla 响应 */
+export interface SlaMetricsResponse {
+  days: number;
+  /** 逐日 SLA 达标率 */
+  dailySla: { date: ISODateString; complianceRate: number; total: number }[];
+  /** 平均 SLA 达标率 */
+  avgComplianceRate: number;
+}
+
+// ============================================================
+// 3.19 管理后台高危操作幂等确认(P-05,M-0 追加,DOC-2026-08-014)
+//
+// 设计原则:
+//   - 三级确认:normal(普通) / sensitive(敏感,需关键字) / high(高危,需密码)
+//   - confirmPassword 为可选字段,追加到现有高危请求体(非破坏性)
+//   - 高危接口支持 Idempotency-Key 头做幂等去重(防重复扣款/重复删除)
+//   - 仅追加新类型,不修改现有类型(向后兼容)
+//
+// 涉及现有高危接口(均已追加 confirmPassword,M-1 由 backend-service 落地校验):
+//   POST /api/admin/users/:id/lock
+//   POST /api/admin/users/batch
+//   POST /api/admin/subscriptions/:id/refund
+//   DELETE /api/admin/system/api-keys/:id
+//   POST /api/admin/artworks/:id/review
+// ============================================================
+
+/** 高危操作确认载荷(追加到高危请求体,可选) */
+export interface HighRiskConfirmPayload {
+  /** 高危操作主确认载荷:锁定/删除/退款/撤销/key 等 */
+  confirmPassword?: string;
+  /** 敏感操作确认关键字(如"删除"/"锁定",前端输入,后端校验) */
+  confirmKeyword?: string;
+}
+
+/** 三级确认强度 */
+export type ConfirmDangerLevel = 'normal' | 'sensitive' | 'high';
+
+/** 高危操作前端确认配置(供 ConfirmAction 组件消费,非后端接口) */
+export interface ConfirmActionConfig {
+  dangerLevel: ConfirmDangerLevel;
+  /** dangerLevel=sensitive 时必填,需输入关键字 */
+  requireKeyword?: string;
+  /** dangerLevel=high 时必填,需输入当前管理员密码 */
+  requirePassword?: boolean;
+  /** 幂等键(可选,防重复提交) */
+  idempotencyKey?: string;
 }
 

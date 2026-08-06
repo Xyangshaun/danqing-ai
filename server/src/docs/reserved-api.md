@@ -116,10 +116,13 @@ authMiddleware → tenantMiddleware → apiRateLimiter → requirePermission →
 | tags       | string              |  否  | -          | 标签筛选(逗号分隔,AND 语义) |
 | category   | string              |  否  | -          | 分类筛选                      |
 | artType    | ArtType             |  否  | -          | 作品类型筛选                  |
-| status     | KnowledgeStatus     |  否  | published  | 状态筛选                      |
+| status     | KnowledgeStatus     |  否  | published  | 状态筛选(见下方角色策略)    |
 | semantic   | boolean             |  否  | false      | 是否启用语义检索              |
 | page       | number              |  否  | 1          | 页码                          |
 | pageSize   | number              |  否  | 20         | 每页数量(≤100)              |
+
+> **角色策略(服务端强制执行)**:非 teacher/admin/owner 角色传入 `status=draft/archived` 时,
+> 服务端强制回退为 `published`,不会返回草稿/归档内容。前端无需依赖 `search/validate` 预校验结果自行过滤。
 
 **响应**:`KnowledgeSearchResponse`(分页 `KnowledgeEntry`)
 

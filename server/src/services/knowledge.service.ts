@@ -395,20 +395,28 @@ function scoreEntry(entry: KnowledgeEntry, queryTokens: string[], rawQuery: stri
 /** 允许的排序默认值 */
 const DEFAULT_STATUS: KnowledgeStatus = 'published';
 
+/** 可检索非 published(草稿/归档)内容的角色 */
+const ELEVATED_ROLES: readonly UserRole[] = ['teacher', 'admin', 'owner'];
+
 /**
  * 知识库搜索
  * - 关键词:倒排索引召回 + 字段加权评分 + 归一化
  * - 筛选:tags(AND)/ category / artType / status
  * - 分页:page / pageSize
+ * - 安全:服务端强制角色策略,非 elevated 角色仅可检索 published
+ *   (与 validateSearch 策略一致,防止客户端直接传 status=draft 越权)
  */
 function search(
   tenantId: string,
+  role: UserRole,
   query: KnowledgeSearchQuery,
 ): KnowledgeSearchResponse {
   const store = getTenantStore(tenantId);
   const page = Math.max(1, query.page ?? 1);
   const pageSize = Math.min(100, Math.max(1, query.pageSize ?? 20));
-  const status = query.status ?? DEFAULT_STATUS;
+  // 角色策略强制:student 等非 elevated 角色忽略其 status 入参,强制 published
+  const requestedStatus = query.status ?? DEFAULT_STATUS;
+  const status = ELEVATED_ROLES.includes(role) ? requestedStatus : DEFAULT_STATUS;
   const tagsFilter = (query.tags ?? '')
     .split(',')
     .map((t) => t.trim())
@@ -577,8 +585,7 @@ function getIndexStatus(tenantId: string): KnowledgeIndexStatus {
   };
 }
 
-/** 搜索权限矩阵:草稿/归档内容仅教师及以上可见 */
-const ELEVATED_ROLES: readonly UserRole[] = ['teacher', 'admin', 'owner'];
+/** 搜索权限矩阵说明:草稿/归档内容仅教师及以上可见(ELEVATED_ROLES 定义见 search 上方) */
 
 /**
  * 搜索权限预校验
