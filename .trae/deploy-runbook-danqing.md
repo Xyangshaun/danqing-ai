@@ -87,7 +87,29 @@ cat /home/ubuntu/scripts/alerts.log
 cat /home/ubuntu/backups/backup.log
 ```
 
-### 3.3 代码更新
+### 3.3 部署日志同步(2026-08-06 新增)
+
+> 每次部署(成功/失败)都会写入共享数据库 `deployment_logs` 表,供下游任务查询「项目是否已部署」。
+
+| 项 | 值 |
+|----|----|
+| 上报端点 | `POST /api/v1/deployments/log`(部署脚本 `deploy-ssh.sh` 调用) |
+| 查询端点 | `GET /api/v1/deployments/latest`(下游任务/运维查询) |
+| 鉴权 | 请求头 `X-Deploy-Secret`(共享密钥,与服务端 `DEPLOY_SYNC_SECRET` 一致) |
+| 落库表 | `deployment_logs`(PostgreSQL `danqing_ai` 库) |
+| 脚本配置 | `deploy-ssh.sh` 顶部环境变量:`DEPLOY_SYNC_API_URL` / `DEPLOY_SYNC_SECRET` / `DEPLOY_SERVER_ID` / `DEPLOY_VERSION` / `DEPLOY_BRANCH` / `DEPLOY_DEPLOYER` |
+
+```bash
+# 查询最新部署状态(成功/失败/版本/时间戳)
+curl -s https://www.danqing.site/api/v1/deployments/latest -H "X-Deploy-Secret: <DEPLOY_SYNC_SECRET>"
+# 返回:status / version / serverId / timestamp / errorMessage
+```
+
+**注意**:
+- `DEPLOY_SYNC_SECRET` 必须在服务器 `.env` 中配置,重启 PM2 生效;脚本与服务端必须一致,否则 401
+- 部署脚本用 EXIT trap 上报,失败状态也会可靠落库;同步失败不阻断部署主流程
+
+### 3.4 代码更新
 
 ```bash
 cd /var/www/danqing-ai
