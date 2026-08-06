@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, memo } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { History, Calendar, Eye, ArrowRight, X, Brush, PenTool, Box, Layers, Palette, Sparkles, Type, Gem, Settings, Move, RefreshCw, Loader2, ImageOff } from 'lucide-react';
+import { History, Calendar, Eye, ArrowRight, X, Brush, PenTool, Box, Layers, Palette, Sparkles, Type, Gem, Settings, Move, RefreshCw, ImageOff } from 'lucide-react';
 import { getAnalysisHistory, getAnalysisDetail } from '../services/data-service';
 import type { HistoryRecord, AnalysisResult, PaintingAnalysis, DesignAnalysis, ProductAnalysis, SculptureAnalysis, ArtType } from '../types';
 import HeatmapCanvas from '../components/HeatmapCanvas';
@@ -8,6 +8,7 @@ import { ListSkeleton, SkeletonBox } from '../components/PageSkeleton';
 import EmptyState from '../components/EmptyState';
 import { useVirtualList } from '../hooks/useVirtualList';
 import { useLazyImage } from '../hooks/useLazyImage';
+import SmartImage from '../components/SmartImage';
 
 type ArtTypeFilter = 'all' | ArtType;
 type ScoreFilter = 'all' | 'excellent' | 'good' | 'pending';
@@ -100,8 +101,6 @@ function ScoreCard({ icon: Icon, label, score, color }: { icon: React.ComponentT
 
 function DetailModal({ result, onClose, onRediagnose }: { result: AnalysisResult; onClose: () => void; onRediagnose?: (artType: string) => void }) {
   const dims = result.dimensions;
-  /* 详情大图加载状态：避免大图加载时空白闪动 */
-  const [detailImgState, setDetailImgState] = useState<'loading' | 'loaded' | 'error'>('loading');
 
   const renderPaintingDetail = (d: PaintingAnalysis) => (
     <>
@@ -245,31 +244,13 @@ function DetailModal({ result, onClose, onRediagnose }: { result: AnalysisResult
 
         <div className="p-6 space-y-6">
           <div className="bg-white rounded-xl overflow-hidden relative min-h-[200px] flex items-center justify-center">
-            {/* 加载中骨架 */}
-            {detailImgState === 'loading' && (
-              <div className="absolute inset-0 flex items-center justify-center">
-                <SkeletonBox className="absolute inset-0" />
-                <Loader2 className="w-8 h-8 text-cinnabar animate-spin relative z-10" />
-              </div>
-            )}
-            {/* 加载失败占位 */}
-            {detailImgState === 'error' ? (
-              <div className="flex flex-col items-center justify-center py-12">
-                <ImageOff className="w-10 h-10 text-ink-300 mb-2" />
-                <p className="text-sm text-ink-400">作品图加载失败</p>
-              </div>
-            ) : (
-              <img
-                src={result.imageUrl}
-                alt="分析的作品"
-                loading="lazy"
-                className={`w-full max-h-64 object-contain transition-opacity duration-300 ${
-                  detailImgState === 'loaded' ? 'opacity-100' : 'opacity-0'
-                }`}
-                onLoad={() => setDetailImgState('loaded')}
-                onError={() => setDetailImgState('error')}
-              />
-            )}
+            <SmartImage
+              src={result.imageUrl}
+              alt="分析的作品"
+              className="w-full max-h-64 min-h-[200px]"
+              imgClassName="object-contain transition-opacity duration-300"
+              fallbackText="作品图加载失败"
+            />
           </div>
 
           <div className="flex items-center justify-center gap-4">

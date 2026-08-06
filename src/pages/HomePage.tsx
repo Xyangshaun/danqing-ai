@@ -9,6 +9,7 @@ import { getAnalysisHistory, getGrowthData } from '../services/data-service';
 import { listDrafts, subscribeDrafts, type Draft } from '../services/draft-service';
 import { useAuth } from '../hooks/useAuth';
 import type { HistoryRecord, GrowthData } from '../types';
+import SmartImage from '../components/SmartImage';
 
 /* 艺术名言（每日一条） */
 const artQuotes = [
@@ -407,11 +408,12 @@ export default function HomePage() {
                         {/* 缩略图 */}
                         <div className="relative aspect-[4/3] bg-rice-200 overflow-hidden">
                           {work.imageUrl ? (
-                            <img
+                            <SmartImage
                               src={work.imageUrl}
                               alt="作品缩略图"
-                              loading="lazy"
-                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                              className="w-full h-full"
+                              imgClassName="object-cover transition-all duration-500 group-hover:scale-105"
+                              fallbackText="作品图加载失败"
                             />
                           ) : (
                             <div className={`w-full h-full ${cfg.bg} flex items-center justify-center`}>

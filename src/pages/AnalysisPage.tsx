@@ -5,6 +5,7 @@ import { saveAnalysis } from '../services/data-service';
 import { createDraft, deleteDraft, updateDraft, getDraft } from '../services/draft-service';
 import { useAuth } from '../hooks/useAuth';
 import HeatmapCanvas from '../components/HeatmapCanvas';
+import SmartImage from '../components/SmartImage';
 import { useToast } from '../components/ToastProvider';
 import { smartAnalyze, type AnalysisDecision } from '../services/smartAnalysisEngine';
 import PresetSelector from '../components/PresetSelector';
@@ -1084,23 +1085,12 @@ export default function AnalysisPage() {
             </div>
             <div className="bg-rice-50 rounded-2xl overflow-hidden shadow-card">
               <div className="relative">
-                <img
+                <SmartImage
                   src={result.imageUrl}
                   alt="分析的作品"
-                  loading="lazy"
-                  className="w-full max-h-96 object-contain"
-                  onError={(e) => {
-                    /* 图片加载失败时显示占位图,避免空白 */
-                    const target = e.currentTarget;
-                    target.style.display = 'none';
-                    const parent = target.parentElement;
-                    if (parent && !parent.querySelector('.img-fallback')) {
-                      const fallback = document.createElement('div');
-                      fallback.className = 'img-fallback w-full h-48 bg-ink-100 flex items-center justify-center text-ink-400 text-sm';
-                      fallback.textContent = '图片加载失败';
-                      parent.insertBefore(fallback, target);
-                    }
-                  }}
+                  className="w-full max-h-96 min-h-[200px]"
+                  imgClassName="object-contain transition-opacity duration-300"
+                  fallbackText="图片加载失败"
                 />
                 <div className="absolute top-4 right-4 bg-white/90 backdrop-blur-sm px-4 py-2 rounded-xl flex items-center gap-2">
                   <CheckCircle2 className="w-5 h-5 text-jade" />
