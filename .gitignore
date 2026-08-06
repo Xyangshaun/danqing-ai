@@ -25,6 +25,9 @@ dist-*.zip
 # Remotion 视频模板(已 eslint ignore,不纳入版本控制)
 dq-video/
 
+# QA 开发期产物(脚本/截图/临时文件)
+qa/
+
 # 敏感信息
 账号信息.md
 *.secret.md
