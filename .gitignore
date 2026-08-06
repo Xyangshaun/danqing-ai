@@ -5,8 +5,27 @@ uploads/
 *.tsbuildinfo
 .env
 .env.local
+.env.production
+.env.*.local
 .DS_Store
 *.log
 logs/
 
 .vercel
+
+# 备份与临时文件
+.backups/
+*.bak
+*.bak.*
+dist.bak*/
+dist-new.zip
+dist-*.zip
+.tmp-*.sh
+
+# Remotion 视频模板(已 eslint ignore,不纳入版本控制)
+dq-video/
+
+# 敏感信息
+账号信息.md
+*.secret.md
+*.credentials.md
