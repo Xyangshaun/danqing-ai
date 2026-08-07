@@ -22,7 +22,6 @@ WEBSITE_KEEP="${WEBSITE_KEEP:-3}"  # website 备份保留数
 MIN_COMPLETE_SIZE="${MIN_COMPLETE_SIZE:-104857600}"  # 100M 以下视为中间残留
 DRY_RUN=0
 [ "${1:-}" = "--dry-run" ] && DRY_RUN=1
-[ "${1:-}" = "--install-cron" ] && install_cron
 
 LOGFILE="${LOGFILE:-/var/log/danqing-backup-cleanup.log}"
 TS=$(date '+%Y-%m-%d %H:%M:%S')
@@ -42,6 +41,9 @@ install_cron() {
 
 # 日志辅助
 log() { echo "[$TS] $*" | tee -a "$LOGFILE"; }
+
+# 若传入 --install-cron,在此(函数已定义)调用安装 cron 后退出
+[ "${1:-}" = "--install-cron" ] && install_cron
 
 # 执行或预览删除
 rm_safe() {
