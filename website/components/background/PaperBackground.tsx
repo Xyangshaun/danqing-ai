@@ -37,10 +37,10 @@ export function PaperBackground() {
       <div className="absolute inset-0 paper-wash-tl" />
       {/* 4. 右下暖金晕染 */}
       <div className="absolute inset-0 paper-wash-br" />
-      {/* 5. 顶部 vignette */}
-      <div className="absolute inset-x-0 top-0 paper-vignette-top" />
-      {/* 6. 底部 vignette */}
-      <div className="absolute inset-x-0 bottom-0 paper-vignette-bot" />
+      {/* 5. 顶部 vignette — 全视口径向,自然无硬边 */}
+      <div className="absolute inset-0 paper-vignette-top" />
+      {/* 6. 底部 vignette — 全视口径向,自然无硬边 */}
+      <div className="absolute inset-0 paper-vignette-bot" />
       {/* 7. 极淡中线水波(装饰) */}
       <div className="absolute inset-0 paper-wash-mid opacity-50" />
     </div>

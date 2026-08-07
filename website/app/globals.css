@@ -319,32 +319,36 @@
        <div class="paper-vignette-bot" />  // 底部 vignette
      由 <PaperBackground /> 一次性组合渲染。 */
 
-  /* 1. 基础米黄 + 横向纤维 pattern(模拟宣纸帘纹) */
+  /* 1. 基础米黄 + 横向纤维 pattern(模拟宣纸帘纹)
+     接缝修复:间距由 3-4px 拉大到 9-12px,透明度由 0.025 降至 0.012,
+     横向纤维为主(0deg),纵向辅助(90deg)且更稀疏,避免人眼识别出网格节律。 */
   .paper-base {
     background-color: #f7f2e3;
     background-image:
       repeating-linear-gradient(
         0deg,
         transparent 0,
-        transparent 3px,
-        rgba(160, 130, 70, 0.025) 3px,
-        rgba(160, 130, 70, 0.025) 4px
+        transparent 11px,
+        rgba(160, 130, 70, 0.012) 11px,
+        rgba(160, 130, 70, 0.012) 12px
       ),
       repeating-linear-gradient(
         90deg,
         transparent 0,
-        transparent 5px,
-        rgba(120, 100, 60, 0.018) 5px,
-        rgba(120, 100, 60, 0.018) 6px
+        transparent 17px,
+        rgba(120, 100, 60, 0.008) 17px,
+        rgba(120, 100, 60, 0.008) 18px
       );
   }
 
-  /* 2. SVG 噪点:feTurbulence 微观颗粒感,提升纸张真实度 */
+  /* 2. SVG 噪点:feTurbulence 微观颗粒感,提升纸张真实度
+     接缝修复:tile 由 220px 提到 400px,octaves 由 2 增到 3,baseFrequency 由 0.85 降到 0.72,
+     视觉上颗粒更细腻、更不规则,人眼难以识别 tile 边界。 */
   .paper-noise {
-    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 220 220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.12  0 0 0 0 0.1  0 0 0 0 0.08  0 0 0 0.22 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-    background-size: 220px 220px;
+    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 400'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.72' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.12  0 0 0 0 0.1  0 0 0 0 0.08  0 0 0 0.2 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-size: 400px 400px;
     background-repeat: repeat;
-    opacity: 0.55;
+    opacity: 0.45;
     mix-blend-mode: multiply;
   }
 
@@ -368,24 +372,27 @@
     );
   }
 
-  /* 5. 顶部 vignette:引导视线 + 配合固定导航 */
+  /* 5. 顶部 vignette:全视口径向渐变,中心 0%/50% 100% 锚定
+     接缝修复:由 120px 固定高度 linear-gradient 改为全屏 radial-gradient,
+     ellipse 半径远超视口,渐变自然衰减到 transparent,无任何硬边/横向接缝。 */
   .paper-vignette-top {
-    background: linear-gradient(
-      to bottom,
-      rgba(26, 26, 26, 0.04) 0%,
-      rgba(26, 26, 26, 0.015) 40%,
-      transparent 100%
+    background: radial-gradient(
+      ellipse 140% 70% at 50% 0%,
+      rgba(26, 26, 26, 0.055) 0%,
+      rgba(26, 26, 26, 0.025) 18%,
+      rgba(26, 26, 26, 0.008) 38%,
+      transparent 62%
     );
-    height: 120px;
   }
+  /* 6. 底部 vignette:同上,锚定 50% 100% */
   .paper-vignette-bot {
-    background: linear-gradient(
-      to top,
-      rgba(26, 26, 26, 0.05) 0%,
-      rgba(26, 26, 26, 0.018) 40%,
-      transparent 100%
+    background: radial-gradient(
+      ellipse 140% 70% at 50% 100%,
+      rgba(26, 26, 26, 0.065) 0%,
+      rgba(26, 26, 26, 0.028) 18%,
+      rgba(26, 26, 26, 0.008) 38%,
+      transparent 62%
     );
-    height: 140px;
   }
 
   /* 6. 装饰:中部水波晕染(可选用,给 Section 留白用) */
