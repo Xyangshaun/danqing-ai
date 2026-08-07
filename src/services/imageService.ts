@@ -8,6 +8,13 @@
 import { placeholderImage } from './placeholderImage';
 import { request } from './api';
 import type { CreateGenerationResponse } from '../types/api-contract';
+import {
+  getEmotionByName,
+  buildEmotionPrompt,
+  aspectToSize,
+  DEFAULT_GENERATION_PARAMS,
+  type GenerationParams,
+} from './emotionLibrary';
 
 let useExternalApi = true;
 let apiKey = '';
@@ -178,8 +185,15 @@ function mapSizeToAspect(size: string): 'portrait' | 'landscape' | 'square' {
  * 失败时回退到本地 SVG 占位图,保证页面不白屏
  */
 export async function generateImage(prompt: string, size: string = 'square'): Promise<string> {
-  // 用户显式关闭外部 API 时回退占位图
-  if (!useExternalApi) {
+  // Mock 模式(测试脚本/演示验证):直接返回占位图,不消耗 GLM 额度
+  // 开关:localStorage 'danqing-ai-use-api' = false(通过 getUseExternalApi 实时读取,
+  //   支持 Playwright addInitScript 注入);可选人工延迟 'danqing-ai-mock-delay' (毫秒),
+  //   用于模拟真实生成时长以验证 loading 进度/阶段文案循环
+  if (!getUseExternalApi()) {
+    const mockDelay = Number(localStorage.getItem('danqing-ai-mock-delay') ?? 0);
+    if (mockDelay > 0) {
+      await new Promise((r) => setTimeout(r, mockDelay));
+    }
     return placeholderImage(prompt, {
       size: size as Parameters<typeof placeholderImage>[1] extends { size?: infer S } ? S : never,
       title: prompt.slice(0, 12),
@@ -226,13 +240,39 @@ export async function fuseImages(): Promise<string> {
   return generateImage(prompt, 'landscape_4_3');
 }
 
+/**
+ * 生成情绪画布(P1 升级)
+ * 支持双情绪配比 / 生成参数(画幅·密度·笔触·留白) / 自定义色板,
+ * prompt 由 emotionLibrary.buildEmotionPrompt 统一构建。
+ */
 export async function generateEmotionCanvas(emotion: string): Promise<string[]> {
-  const emotionData = emotionPresets.find(e => e.name === emotion) || emotionPresets[0];
-  const prompt = `${emotionData.name} emotion in chinese ink painting, ${emotionData.name} mood, ${emotionData.color} color palette`;
+  /* 解析情绪表达式:'宁静' 或 '宁静-忧伤'(兼容旧调用方) */
+  const [primaryName, secondaryName] = emotion.split(/[-+]/).map((s) => s.trim());
+  const primary = getEmotionByName(primaryName);
+  const secondary = secondaryName ? getEmotionByName(secondaryName) : null;
+
+  /* 读取调用方暂存的画板配置(由 EmotionPage 在调用前写入 sessionStorage) */
+  let ratio = 0.7;
+  let intensity = 0.6;
+  let params: GenerationParams = { ...DEFAULT_GENERATION_PARAMS };
+  try {
+    const raw = sessionStorage.getItem('danqing-emotion-gen-config');
+    if (raw) {
+      const cfg = JSON.parse(raw);
+      if (typeof cfg.ratio === 'number') ratio = cfg.ratio;
+      if (typeof cfg.intensity === 'number') intensity = cfg.intensity;
+      if (cfg.params && typeof cfg.params === 'object') params = { ...params, ...cfg.params };
+    }
+  } catch {
+    /* 配置解析失败时使用默认值 */
+  }
+
+  const basePrompt = buildEmotionPrompt(primary, secondary, ratio, params, intensity);
+  const size = aspectToSize(params.aspect);
 
   // 并行生成 3 张情绪画布,避免顺序等待(每张真实 AI 约 50-70s)
   const tasks = Array.from({ length: 3 }, (_, i) =>
-    generateImage(`${prompt} version ${i + 1}`, 'square')
+    generateImage(`${basePrompt} variant ${i + 1}`, size)
   );
   return Promise.all(tasks);
 }

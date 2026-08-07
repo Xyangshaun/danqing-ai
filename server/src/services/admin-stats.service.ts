@@ -20,6 +20,7 @@ import { adminUserRepository } from '../repositories/admin-user.repository.js';
 import { adminContentRepository } from '../repositories/admin-content.repository.js';
 import { adminSubscriptionRepository } from '../repositories/admin-subscription.repository.js';
 import { adminSystemRepository } from '../repositories/admin-system.repository.js';
+import { disputeRepository } from '../repositories/dispute.repository.js';
 import { redis } from '../config/redis.js';
 import { logger } from '../utils/logger.js';
 import type {
@@ -199,9 +200,11 @@ class AdminStatsServiceClass {
    * 获取实时监控数据(不缓存,每次实时查询)
    */
   async getRealtime(): Promise<AdminStatsRealtime> {
-    const [pendingTasks, todayAiCalls] = await Promise.all([
+    const [pendingTasks, todayAiCalls, openDisputes] = await Promise.all([
       adminContentRepository.countPendingTasks(),
       adminContentRepository.countTodayAiCalls(),
+      // 待裁定争议(open + reviewing),Phase 5 追加:管理员需实时感知仲裁积压
+      disputeRepository.countGlobalByStatus(['open', 'reviewing']),
     ]);
 
     // 在线用户数:从 Redis 统计 5 分钟内活跃 session
@@ -218,6 +221,7 @@ class AdminStatsServiceClass {
       pendingTasks,
       systemLoad,
       recentRequests: todayAiCalls, // Phase 4 简化:用 AI 调用数近似
+      openDisputes,
       timestamp: new Date().toISOString(),
     };
   }

@@ -3,9 +3,13 @@ import {
   Eye, BookOpen, Wand2, Heart, History, TrendingUp,
   Settings, ChevronLeft, ChevronRight, Sparkles, Plus,
   Brush, PenTool, Box, Layers, Clock, Search, type LucideIcon,
+  Gauge, Users, Building2, GraduationCap, Scale,
 } from 'lucide-react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { usePrefetch } from '../hooks/usePrefetch';
+import { useAuth } from '../hooks/useAuth';
+import { isAdminRole } from './auth/RequireAdminRole';
+import { isTeacherRole } from './auth/RequireTeacherRole';
 
 type NavItem = {
   path: string;
@@ -51,6 +55,27 @@ const navGroups: NavGroup[] = [
     ],
   },
 ];
+
+/* 管理后台分组(仅 admin/owner 角色可见,在 Sidebar 组件内按角色注入) */
+const adminNavGroup: NavGroup = {
+  id: 'admin',
+  title: '管理后台',
+  items: [
+    { path: '/admin', label: '监控大屏', icon: Gauge },
+    { path: '/admin/users', label: '用户管理', icon: Users },
+    { path: '/admin/tenants', label: '租户管理', icon: Building2 },
+  ],
+};
+
+/* 教师工作台分组(teacher/admin/owner 可见,在 Sidebar 组件内按角色注入) */
+const teacherNavGroup: NavGroup = {
+  id: 'teacher',
+  title: '教师工作台',
+  items: [
+    { path: '/teacher', label: '班级学生', icon: GraduationCap },
+    { path: '/teacher/disputes', label: '争议仲裁', icon: Scale },
+  ],
+};
 
 const creationTypes = [
   { id: 'painting', label: '绘画', icon: Brush, color: 'text-cinnabar' },
@@ -180,6 +205,15 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
   const [recentPages, setRecentPages] = useState<RecentPage[]>([]);
   const isFirstRender = useRef(true);
+  const { user } = useAuth();
+
+  /* 按角色注入分组:教师组(teacher 及以上)、管理组(admin/owner);
+     路由层另有 RequireTeacherRole / RequireAdminRole 兜底 */
+  const visibleGroups = [
+    ...navGroups,
+    ...(isTeacherRole(user?.role) ? [teacherNavGroup] : []),
+    ...(isAdminRole(user?.role) ? [adminNavGroup] : []),
+  ];
 
   /* 路由变化时记录最近访问（首次进入不记录，避免初始页占据首项） */
   useEffect(() => {
@@ -286,7 +320,7 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
 
       {/* 导航分组 */}
       <nav className="flex-1 overflow-y-auto py-2 scrollbar-thin">
-        {navGroups.map((group) => (
+        {visibleGroups.map((group) => (
           <div key={group.id} className="mb-1">
             {!collapsed && (
               <p className="text-2xs font-semibold text-ink-400 uppercase tracking-wider px-4 py-2">

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { ArrowRight, X, ExternalLink, Heart, Globe, BookMarked, Brush, PenTool, Box, Layers, Loader2, ImageOff } from 'lucide-react';
-import { loadBuiltinArtworks, styleCategories, resolveArtworkImageUrl, type ArtworkItem } from '../services/artworksDatabase';
+import { loadBuiltinArtworks, styleCategories, resolveArtworkThumbUrl, type ArtworkItem } from '../services/artworksDatabase';
 import { artworkImage } from '../services/artworkImage';
 import { SkeletonBox, SkeletonStyle } from '../components/PageSkeleton';
 import { useToast } from '../components/ToastProvider';
@@ -350,7 +350,7 @@ export default function StylesPage() {
                       </div>
                     ) : (
                       <img
-                        src={resolveArtworkImageUrl(artwork).imageUrl}
+                        src={resolveArtworkThumbUrl(artwork)}
                         alt={artwork.title}
                         className={`w-full h-full object-cover group-hover:scale-105 transition-all duration-500 ${
                           imageLoadStates[artwork.id] === 'loaded' ? 'opacity-100' : 'opacity-0'

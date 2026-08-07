@@ -134,6 +134,15 @@ export class DisputeRepository {
   }
 
   /**
+   * 全平台统计指定状态的争议数(管理员大屏用,跨租户,无 tenantId 过滤)
+   */
+  async countGlobalByStatus(statuses: DisputeStatus[]): Promise<number> {
+    return prisma().disputeCase.count({
+      where: { status: { in: statuses } },
+    });
+  }
+
+  /**
    * 关联评审记录到争议案件(多对多)
    */
   async attachReviews(disputeId: string, reviewIds: string[]): Promise<void> {

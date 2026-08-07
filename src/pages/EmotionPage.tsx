@@ -1,84 +1,62 @@
-import { useState } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Heart, Sparkles, Loader2, Download, Share2, Sun, Moon, Wind, Droplets, Flame, Waves, Palette, Sliders, Layers, Copy, RefreshCw, Brush } from 'lucide-react';
-import { generateEmotionCanvas, emotionPresets } from '../services/imageService';
+import {
+  Heart, Sparkles, Loader2, Download, Share2, Palette, Sliders, Layers,
+  RefreshCw, Brush, Moon, Wind, Droplets, Flame, Waves,
+  Mountain, Cloud, CloudFog, TreePine, Flower, Flower2, Sunrise, Leaf,
+  Feather, CloudRain, Circle, Zap, MountainSnow, Save, Bookmark, Trash2, X,
+} from 'lucide-react';
+import { generateEmotionCanvas } from '../services/imageService';
+import {
+  EMOTION_LIBRARY,
+  getEmotionsByGroup,
+  getEmotionByName,
+  getEmotionById,
+  mixPalettes,
+  DEFAULT_GENERATION_PARAMS,
+  type EmotionEntry,
+  type GenerationParams,
+} from '../services/emotionLibrary';
+import {
+  listEmotionPresets,
+  saveEmotionPreset,
+  removeEmotionPreset,
+  type EmotionPreset,
+} from '../services/emotionPresetStore';
 import { saveEmotionPalette } from '../services/data-service';
 import { useToast } from '../components/ToastProvider';
 import EmptyState from '../components/EmptyState';
 import EmotionBrushCanvas from '../components/EmotionBrushCanvas';
 import GenerationLoading from '../components/GenerationLoading';
+import EmotionMixer from '../components/emotion/EmotionMixer';
+import EditablePalette from '../components/emotion/EditablePalette';
+import GenerationParamsPanel from '../components/emotion/GenerationParamsPanel';
 
-const emotionData: Record<string, {
-  desc: string;
-  scene: string;
-  color: string;
-  colorPalette: string[];
-  icon: typeof Heart;
-  keywords: string[];
-  artForms: string[];
-  musicMood: string;
-}> = {
-  '孤独': {
-    desc: '空旷、留白、孤影',
-    scene: '雪夜独行、月下孤舟、寒林独立',
-    color: '#4a5568',
-    colorPalette: ['#1a202c', '#4a5568', '#718096', '#a0aec0', '#cbd5e0', '#e2e8f0'],
-    icon: Moon,
-    keywords: ['孤寂', '清冷', '悠远', '静谧', '沉思'],
-    artForms: ['水墨山水', '极简主义', '寒林图', '月夜'],
-    musicMood: '舒缓、悠远、略带忧伤的钢琴与大提琴',
-  },
-  '希望': {
-    desc: '破晓、绽放、温暖',
-    scene: '黎明曙光、春天花朵、朝阳初升',
-    color: '#d4af37',
-    colorPalette: ['#744210', '#c05621', '#d69e2e', '#ecc94b', '#f6e05e', '#faf089'],
-    icon: Sun,
-    keywords: ['新生', '温暖', '光明', '憧憬', '生机'],
-    artForms: ['朝霞图', '花卉静物', '春日田野', '金光山水'],
-    musicMood: '温暖的弦乐、渐强的铜管，充满希望',
-  },
-  '宁静': {
-    desc: '平和、清远、悠长',
-    scene: '远山烟雨、湖面平镜、古寺禅意',
-    color: '#2e5fa1',
-    colorPalette: ['#0d4f4f', '#2b6cb0', '#4299e1', '#63b3ed', '#90cdf4', '#bee3f8'],
-    icon: Wind,
-    keywords: ['禅意', '悠远', '平和', '空灵', '自然'],
-    artForms: ['青绿山水', '禅意画', '烟雨图', '平湖'],
-    musicMood: '轻柔的竹笛、古筝与自然环境音',
-  },
-  '喜悦': {
-    desc: '热烈、奔放、欢腾',
-    scene: '花开时节、节庆场面、孩童嬉戏',
-    color: '#c41e3a',
-    colorPalette: ['#742a2a', '#c53030', '#e53e3e', '#fc8181', '#feb2b2', '#fed7d7'],
-    icon: Flame,
-    keywords: ['欢快', '热烈', '饱满', '生机', '欢腾'],
-    artForms: ['工笔花鸟', '年画', '喜庆图', '繁花'],
-    musicMood: '欢快的民乐合奏、节奏明快的鼓点',
-  },
-  '忧伤': {
-    desc: '沉郁、含蓄、深远',
-    scene: '秋日落叶、远山暮霭、雨中孤亭',
-    color: '#5a6b8a',
-    colorPalette: ['#2d3748', '#4a5568', '#5a6b8a', '#718096', '#a0aec0', '#cbd5e0'],
-    icon: Droplets,
-    keywords: ['愁绪', '深沉', '含蓄', '秋意', '思念'],
-    artForms: ['秋景山水', '墨梅', '雨景图', '暮霭'],
-    musicMood: '低沉的二胡、缓慢的古琴旋律',
-  },
-  '激情': {
-    desc: '澎湃、炽烈、动感',
-    scene: '烈火燎原、骏马奔腾、惊涛拍岸',
-    color: '#e74c3c',
-    colorPalette: ['#7f1d1d', '#c53030', '#e53e3e', '#f56565', '#fc8181', '#fed7d7'],
-    icon: Waves,
-    keywords: ['奔放', '力量', '动感', '炽烈', '磅礴'],
-    artForms: ['泼墨山水', '奔马图', '海浪图', '火焰'],
-    musicMood: '激昂的交响乐、强烈的节奏与铜管',
-  },
+/* 情绪名 → 图标映射(图标依赖保留在页面层,情绪库保持纯净) */
+const EMOTION_ICONS: Record<string, typeof Heart> = {
+  宁静: Wind,
+  空灵: Cloud,
+  悠远: Mountain,
+  苍茫: CloudFog,
+  隐逸: TreePine,
+  喜悦: Flower,
+  希望: Sunrise,
+  烂漫: Flower2,
+  清新: Leaf,
+  温婉: Feather,
+  孤独: Moon,
+  忧伤: Droplets,
+  思念: CloudRain,
+  禅意: Circle,
+  激情: Waves,
+  豪迈: Zap,
+  磅礴: MountainSnow,
+  壮烈: Flame,
 };
+
+function emotionIcon(entry: EmotionEntry) {
+  return EMOTION_ICONS[entry.name] ?? Heart;
+}
 
 const intensityLevels = [
   { value: 0.3, label: '淡', desc: '轻柔含蓄' },
@@ -89,36 +67,107 @@ const intensityLevels = [
 export default function EmotionPage() {
   const toast = useToast();
   const navigate = useNavigate();
+
+  /* ---------- 情绪选择状态 ---------- */
   const [selectedEmotion, setSelectedEmotion] = useState('宁静');
-  const [intensity, setIntensity] = useState(0.6);
   const [secondaryEmotion, setSecondaryEmotion] = useState<string | null>(null);
+  const [ratio, setRatio] = useState(0.7); // 主情绪占比
+  const [intensity, setIntensity] = useState(0.6);
+
+  /* ---------- 生成参数 ---------- */
+  const [genParams, setGenParams] = useState<GenerationParams>({ ...DEFAULT_GENERATION_PARAMS });
+
+  /* ---------- 色板编辑 ---------- */
+  const [customPalette, setCustomPalette] = useState<string[] | null>(null);
+
+  /* ---------- 生成结果 ---------- */
   const [generating, setGenerating] = useState(false);
   const [results, setResults] = useState<string[]>([]);
 
-  const currentEmotion = emotionData[selectedEmotion];
-  const secondaryEmotionData = secondaryEmotion ? emotionData[secondaryEmotion] : null;
+  /* ---------- 预设 ---------- */
+  const [presets, setPresets] = useState<EmotionPreset[]>([]);
+  const [showPresetInput, setShowPresetInput] = useState(false);
+  const [presetName, setPresetName] = useState('');
 
-  // 将当前情绪色板通过 data-service 保存并跳转到风格库
-  const handleApplyToStyles = async () => {
-    try {
-      await saveEmotionPalette({
-        emotion: selectedEmotion,
-        colorPalette: currentEmotion.colorPalette,
-        intensity,
-      });
-      toast.success('色板已保存，可在风格库查看');
-      navigate('/styles?from=emotion');
-    } catch (err) {
-      console.error('保存色板失败:', err);
-      toast.error('保存失败', '请稍后重试');
+  useEffect(() => {
+    setPresets(listEmotionPresets());
+  }, []);
+
+  const currentEmotion = getEmotionByName(selectedEmotion);
+  const secondaryEmotionData = secondaryEmotion ? getEmotionByName(secondaryEmotion) : null;
+  const groups = useMemo(() => getEmotionsByGroup(), []);
+
+  /* 自动色板:无双情绪 = 主色板;有双情绪 = 按比例混合 */
+  const autoPalette = useMemo(
+    () =>
+      secondaryEmotionData
+        ? mixPalettes(currentEmotion.colorPalette, secondaryEmotionData.colorPalette, ratio)
+        : currentEmotion.colorPalette,
+    [currentEmotion, secondaryEmotionData, ratio],
+  );
+
+  /* 展示色板:用户编辑过则用自定义,否则用自动混合 */
+  const displayPalette = customPalette ?? autoPalette;
+
+  /* 情绪/配比变化时清除自定义色板,回到自动混合 */
+  useEffect(() => {
+    setCustomPalette(null);
+  }, [selectedEmotion, secondaryEmotion, ratio]);
+
+  const themeColor = displayPalette[1] ?? currentEmotion.colorPalette[1];
+
+  /* ---------- 预设操作 ---------- */
+  const handleSavePreset = () => {
+    const name = presetName.trim();
+    if (!name) {
+      toast.error('请输入预设名称');
+      return;
     }
+    const entry = saveEmotionPreset({
+      name,
+      primaryId: currentEmotion.id,
+      secondaryId: secondaryEmotionData?.id ?? null,
+      ratio,
+      intensity,
+      params: genParams,
+      customPalette,
+    });
+    setPresets((prev) => [entry, ...prev].slice(0, 20));
+    setPresetName('');
+    setShowPresetInput(false);
+    toast.success('预设已保存', `「${name}」可在预设栏快速载入`);
   };
 
+  const handleLoadPreset = (preset: EmotionPreset) => {
+    const primary = getEmotionById(preset.primaryId);
+    setSelectedEmotion(primary.name);
+    const secondary = preset.secondaryId ? getEmotionById(preset.secondaryId) : null;
+    setSecondaryEmotion(secondary && secondary.id !== primary.id ? secondary.name : null);
+    setRatio(preset.ratio);
+    setIntensity(preset.intensity);
+    setGenParams({ ...preset.params });
+    setCustomPalette(preset.customPalette ? [...preset.customPalette] : null);
+    toast.success('预设已载入', `「${preset.name}」`);
+  };
+
+  const handleRemovePreset = (preset: EmotionPreset) => {
+    removeEmotionPreset(preset.id);
+    setPresets((prev) => prev.filter((p) => p.id !== preset.id));
+    toast.success('预设已删除', preset.name);
+  };
+
+  /* ---------- 生成 ---------- */
   const handleGenerate = async () => {
     setGenerating(true);
     setResults([]);
     try {
-      const images = await generateEmotionCanvas(selectedEmotion + (secondaryEmotion ? `+${secondaryEmotion}` : ''));
+      /* 将配比/浓度/参数暂存,imageService 读取后构建 prompt */
+      sessionStorage.setItem(
+        'danqing-emotion-gen-config',
+        JSON.stringify({ ratio, intensity, params: genParams }),
+      );
+      const expr = selectedEmotion + (secondaryEmotion ? `-${secondaryEmotion}` : '');
+      const images = await generateEmotionCanvas(expr);
       setResults(images);
       toast.success('情绪画布已生成', `共 ${images.length} 张参考图`);
     } catch (error) {
@@ -126,6 +175,22 @@ export default function EmotionPage() {
       toast.error('生成失败', '请检查网络后重试');
     } finally {
       setGenerating(false);
+    }
+  };
+
+  // 将当前情绪色板通过 data-service 保存并跳转到风格库
+  const handleApplyToStyles = async () => {
+    try {
+      await saveEmotionPalette({
+        emotion: selectedEmotion + (secondaryEmotion ? `+${secondaryEmotion}` : ''),
+        colorPalette: displayPalette,
+        intensity,
+      });
+      toast.success('色板已保存，可在风格库查看');
+      navigate('/styles?from=emotion');
+    } catch (err) {
+      console.error('保存色板失败:', err);
+      toast.error('保存失败', '请稍后重试');
     }
   };
 
@@ -140,12 +205,11 @@ export default function EmotionPage() {
   };
 
   // 渐变色
-  const getGradient = (colors: string[], intensity: number) => {
-    const alpha = Math.floor(intensity * 255).toString(16).padStart(2, '0');
-    return `linear-gradient(135deg, ${colors[0]} 0%, ${colors[2]} 35%, ${colors[4]} 70%, ${colors[5]}${alpha} 100%)`;
+  const getGradient = (colors: string[], alpha: number) => {
+    const a = Math.floor(alpha * 255).toString(16).padStart(2, '0');
+    return `linear-gradient(135deg, ${colors[0]} 0%, ${colors[2]} 35%, ${colors[4]} 70%, ${colors[5]}${a} 100%)`;
   };
 
-  // 混合色
   const intensityLabel = intensityLevels.find((l) => Math.abs(l.value - intensity) < 0.15)?.label || '中';
 
   return (
@@ -163,176 +227,266 @@ export default function EmotionPage() {
           <p className="text-ink-600 max-w-2xl mx-auto text-lg">
             把抽象情感转化为视觉语言，让内心感受化作可触可感的画面
             <br />
-            <span className="text-sm text-ink-500">选择情绪 · 调节浓淡 · 组合心境 · 生成灵感</span>
+            <span className="text-sm text-ink-500">18 种东方情绪 · 双情绪配比 · 参数化生成 · 预设收藏</span>
           </p>
         </div>
 
-        {/* Emotion Selection */}
+        {/* 预设栏 */}
+        <div className="mb-8 bg-rice-50 rounded-2xl p-4 shadow-card">
+          <div className="flex items-center gap-3 flex-wrap">
+            <p className="text-sm font-medium text-ink-700 flex items-center gap-1.5">
+              <Bookmark className="w-4 h-4 text-cinnabar" />
+              我的预设
+            </p>
+            {presets.length === 0 && (
+              <span className="text-xs text-ink-400">暂无预设 — 调好情绪与参数后点击「存为预设」</span>
+            )}
+            <div className="flex items-center gap-2 flex-wrap flex-1">
+              {presets.map((preset) => {
+                const p = getEmotionById(preset.primaryId);
+                const s = preset.secondaryId ? getEmotionById(preset.secondaryId) : null;
+                return (
+                  <div
+                    key={preset.id}
+                    className="group flex items-center gap-1.5 pl-2 pr-1 py-1 bg-rice-100 hover:bg-rice-200 rounded-full transition-all"
+                  >
+                    <div
+                      className="w-4 h-4 rounded-full shadow-inner"
+                      style={{ background: `linear-gradient(135deg, ${p.colorPalette[1]}, ${s?.colorPalette[1] ?? p.colorPalette[3]})` }}
+                    />
+                    <button
+                      onClick={() => handleLoadPreset(preset)}
+                      className="text-sm text-ink-700 hover:text-cinnabar transition-all"
+                      title={`${p.name}${s ? ` × ${s.name}` : ''} · 配比 ${Math.round(preset.ratio * 100)}%`}
+                    >
+                      {preset.name}
+                    </button>
+                    <button
+                      onClick={() => handleRemovePreset(preset)}
+                      aria-label={`删除预设 ${preset.name}`}
+                      className="p-0.5 text-ink-300 hover:text-cinnabar rounded-full opacity-0 group-hover:opacity-100 transition-all"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+            {/* 存为预设 */}
+            <div className="relative ml-auto">
+              {showPresetInput ? (
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={presetName}
+                    onChange={(e) => setPresetName(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleSavePreset()}
+                    placeholder="预设名称,如:雨后青山"
+                    maxLength={12}
+                    autoFocus
+                    className="px-3 py-1.5 text-sm border border-ink-200 rounded-lg focus:outline-none focus:border-cinnabar w-44"
+                  />
+                  <button
+                    onClick={handleSavePreset}
+                    className="px-3 py-1.5 text-sm bg-cinnabar text-white rounded-lg hover:bg-cinnabar/90 transition-all"
+                  >
+                    保存
+                  </button>
+                  <button
+                    onClick={() => setShowPresetInput(false)}
+                    aria-label="取消"
+                    className="p-1.5 text-ink-400 hover:text-ink-600"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setShowPresetInput(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-cinnabar bg-cinnabar/5 hover:bg-cinnabar/10 rounded-lg transition-all"
+                >
+                  <Save className="w-4 h-4" />
+                  存为预设
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Emotion Selection - 按 4 组展示 */}
         <div className="mb-8">
           <h2 className="font-serif text-xl font-bold text-ink-900 mb-4 flex items-center gap-2">
             <Palette className="w-5 h-5 text-cinnabar" />
             选择主情绪
+            <span className="text-xs font-normal text-ink-400 ml-1">18 种东方情绪 · 四大心境</span>
           </h2>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-            {emotionPresets.map((emotion) => {
-              const isSelected = selectedEmotion === emotion.name;
-              const data = emotionData[emotion.name];
-              const Icon = data?.icon || Heart;
-              return (
-                <button
-                  key={emotion.id}
-                  onClick={() => setSelectedEmotion(emotion.name)}
-                  aria-label={emotion.name}
-                  className={`group relative bg-rice-50 rounded-2xl p-6 shadow-card transition-all overflow-hidden ${
-                    isSelected
-                      ? 'ring-2 ring-cinnabar shadow-card-hover transform -translate-y-1'
-                      : 'hover:shadow-card-hover hover:-translate-y-0.5'
-                  }`}
-                >
-                  {isSelected && (
-                    <div
-                      className="absolute top-0 left-0 right-0 h-1"
-                      style={{ background: getGradient(data.colorPalette, 1) }}
-                    />
-                  )}
-                  <div
-                    className="w-full h-24 rounded-xl mb-4 flex items-center justify-center transition-all group-hover:scale-105 shadow-inner"
-                    style={{ background: getGradient(data.colorPalette, 0.7) }}
-                  >
-                    <Icon className="w-10 h-10 text-white drop-shadow-lg" />
-                  </div>
-                  <p className="font-serif text-xl font-bold text-ink-900 mb-1">{emotion.name}</p>
-                  <p className="text-xs text-ink-500 line-clamp-1">{data?.desc || ''}</p>
-                  <div className="flex gap-0.5 mt-2">
-                    {data?.colorPalette.slice(0, 5).map((c, i) => (
-                      <div
-                        key={i}
-                        className="h-2 flex-1 rounded-full first:rounded-l-full last:rounded-r-full"
-                        style={{ backgroundColor: c }}
-                      />
-                    ))}
-                  </div>
-                </button>
-              );
-            })}
+          <div className="space-y-6">
+            {groups.map(({ group, meta, items }) => (
+              <div key={group}>
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-1 h-4 rounded-full" style={{ backgroundColor: meta.accent }} />
+                  <p className="text-sm font-medium text-ink-700">{meta.label}</p>
+                  <span className="text-xs text-ink-400">{meta.desc}</span>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                  {items.map((entry) => {
+                    const isSelected = selectedEmotion === entry.name;
+                    const Icon = emotionIcon(entry);
+                    return (
+                      <button
+                        key={entry.id}
+                        onClick={() => setSelectedEmotion(entry.name)}
+                        aria-label={entry.name}
+                        className={`group relative bg-rice-50 rounded-2xl p-5 shadow-card transition-all overflow-hidden ${
+                          isSelected
+                            ? 'ring-2 ring-cinnabar shadow-card-hover transform -translate-y-1'
+                            : 'hover:shadow-card-hover hover:-translate-y-0.5'
+                        }`}
+                      >
+                        {isSelected && (
+                          <div
+                            className="absolute top-0 left-0 right-0 h-1"
+                            style={{ background: getGradient(entry.colorPalette, 1) }}
+                          />
+                        )}
+                        <div
+                          className="w-full h-20 rounded-xl mb-3 flex items-center justify-center transition-all group-hover:scale-105 shadow-inner"
+                          style={{ background: getGradient(entry.colorPalette, 0.7) }}
+                        >
+                          <Icon className="w-8 h-8 text-white drop-shadow-lg" />
+                        </div>
+                        <p className="font-serif text-lg font-bold text-ink-900 mb-1">{entry.name}</p>
+                        <p className="text-xs text-ink-500 line-clamp-1">{entry.desc}</p>
+                        <div className="flex gap-0.5 mt-2">
+                          {entry.colorPalette.slice(0, 5).map((c, i) => (
+                            <div
+                              key={i}
+                              className="h-1.5 flex-1 rounded-full first:rounded-l-full last:rounded-r-full"
+                              style={{ backgroundColor: c }}
+                            />
+                          ))}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
           </div>
         </div>
 
-        {/* Intensity + Secondary Emotion */}
+        {/* 控制区:浓度+叠加+配比 | 生成参数 */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-          {/* Intensity Control */}
-          <div className="bg-rice-50 rounded-2xl p-6 shadow-card">
-            <h3 className="font-serif text-lg font-bold text-ink-900 mb-4 flex items-center gap-2">
-              <Sliders className="w-5 h-5 text-cinnabar" />
-              情绪浓度
-            </h3>
-            <div className="mb-6">
-              <div className="flex justify-between mb-3">
-                {intensityLevels.map((level) => (
-                  <button
-                    key={level.value}
-                    onClick={() => setIntensity(level.value)}
-                    className={`text-sm font-medium transition-all ${
-                      Math.abs(intensity - level.value) < 0.15
-                        ? 'text-cinnabar'
-                        : 'text-ink-400 hover:text-ink-600'
-                    }`}
-                  >
-                    {level.label} · {level.desc}
-                  </button>
-                ))}
+          {/* 左:情绪控制 */}
+          <div className="space-y-6">
+            {/* Intensity Control */}
+            <div className="bg-rice-50 rounded-2xl p-6 shadow-card">
+              <h3 className="font-serif text-lg font-bold text-ink-900 mb-4 flex items-center gap-2">
+                <Sliders className="w-5 h-5 text-cinnabar" />
+                情绪浓度
+              </h3>
+              <div className="mb-4">
+                <div className="flex justify-between mb-3">
+                  {intensityLevels.map((level) => (
+                    <button
+                      key={level.value}
+                      onClick={() => setIntensity(level.value)}
+                      className={`text-sm font-medium transition-all ${
+                        Math.abs(intensity - level.value) < 0.15
+                          ? 'text-cinnabar'
+                          : 'text-ink-400 hover:text-ink-600'
+                      }`}
+                    >
+                      {level.label} · {level.desc}
+                    </button>
+                  ))}
+                </div>
+                <input
+                  type="range"
+                  min="0.2"
+                  max="1"
+                  step="0.05"
+                  value={intensity}
+                  onChange={(e) => setIntensity(parseFloat(e.target.value))}
+                  aria-label="情绪浓度"
+                  className="w-full h-2 rounded-full appearance-none cursor-pointer"
+                  style={{
+                    background: `linear-gradient(to right, ${displayPalette[5]} 0%, ${displayPalette[2]} 50%, ${displayPalette[0]} 100%)`,
+                  }}
+                />
+                <p className="text-center text-sm text-ink-500 mt-2">
+                  当前浓度：{Math.round(intensity * 100)}%
+                </p>
               </div>
-              <input
-                type="range"
-                min="0.2"
-                max="1"
-                step="0.05"
-                value={intensity}
-                onChange={(e) => setIntensity(parseFloat(e.target.value))}
-                className="w-full h-2 rounded-full appearance-none cursor-pointer"
-                style={{
-                  background: `linear-gradient(to right, ${currentEmotion.colorPalette[5]} 0%, ${currentEmotion.colorPalette[2]} 50%, ${currentEmotion.colorPalette[0]} 100%)`,
-                }}
-              />
-              <p className="text-center text-sm text-ink-500 mt-2">
-                当前浓度：{Math.round(intensity * 100)}%
-              </p>
+              <div
+                className="h-20 rounded-xl flex items-center justify-center transition-all"
+                style={{ background: getGradient(displayPalette, intensity) }}
+              >
+                <p className="text-white font-serif text-xl font-bold drop-shadow-lg">
+                  {selectedEmotion}{secondaryEmotion ? ` × ${secondaryEmotion}` : ''} · {intensityLabel}
+                </p>
+              </div>
             </div>
-            <div
-              className="h-24 rounded-xl flex items-center justify-center transition-all"
-              style={{ background: getGradient(currentEmotion.colorPalette, intensity) }}
-            >
-              <p className="text-white font-serif text-2xl font-bold drop-shadow-lg">
-                {selectedEmotion} · {intensityLabel}
+
+            {/* Secondary Emotion + Mixer */}
+            <div className="bg-rice-50 rounded-2xl p-6 shadow-card">
+              <h3 className="font-serif text-lg font-bold text-ink-900 mb-4 flex items-center gap-2">
+                <Layers className="w-5 h-5 text-cinnabar" />
+                情绪叠加
+                <span className="text-xs font-normal text-ink-400 ml-1">(可选)</span>
+              </h3>
+              <p className="text-sm text-ink-500 mb-4">
+                选择第二种情绪进行叠加混合，创造更复杂的情感表达
               </p>
+              <div className="grid grid-cols-6 gap-2">
+                {EMOTION_LIBRARY.map((entry) => {
+                  if (entry.name === selectedEmotion) return null;
+                  const isSelected = secondaryEmotion === entry.name;
+                  return (
+                    <button
+                      key={entry.id}
+                      onClick={() => setSecondaryEmotion(isSelected ? null : entry.name)}
+                      aria-label={entry.name}
+                      title={entry.name}
+                      className={`p-2 rounded-xl border-2 transition-all text-center ${
+                        isSelected
+                          ? 'border-cinnabar bg-cinnabar/5'
+                          : 'border-transparent bg-rice-100 hover:bg-rice-200'
+                      }`}
+                    >
+                      <div
+                        className="w-6 h-6 rounded-full mx-auto mb-1 shadow"
+                        style={{ backgroundColor: entry.colorPalette[1] }}
+                      />
+                      <p className="text-xs font-medium text-ink-700">{entry.name}</p>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* 双情绪比例滑杆 */}
+              <EmotionMixer
+                primary={currentEmotion}
+                secondary={secondaryEmotionData}
+                ratio={ratio}
+                onRatioChange={setRatio}
+                onClearSecondary={() => setSecondaryEmotion(null)}
+              />
             </div>
           </div>
 
-          {/* Secondary Emotion (Mix) */}
+          {/* 右:生成参数 */}
           <div className="bg-rice-50 rounded-2xl p-6 shadow-card">
             <h3 className="font-serif text-lg font-bold text-ink-900 mb-4 flex items-center gap-2">
-              <Layers className="w-5 h-5 text-cinnabar" />
-              情绪叠加
-              <span className="text-xs font-normal text-ink-400 ml-1">(可选)</span>
+              <Brush className="w-5 h-5 text-cinnabar" />
+              生成参数
+              <span className="text-xs font-normal text-ink-400 ml-1">画幅 · 构图 · 笔触 · 留白</span>
             </h3>
-            <p className="text-sm text-ink-500 mb-4">
-              选择第二种情绪进行叠加混合，创造更复杂的情感表达
-            </p>
-            <div className="grid grid-cols-3 gap-2 mb-4">
-              {emotionPresets.map((emotion) => {
-                if (emotion.name === selectedEmotion) return null;
-                const isSelected = secondaryEmotion === emotion.name;
-                const data = emotionData[emotion.name];
-                return (
-                  <button
-                    key={emotion.id}
-                    onClick={() => setSecondaryEmotion(isSelected ? null : emotion.name)}
-                    aria-label={emotion.name}
-                    className={`p-3 rounded-xl border-2 transition-all text-center ${
-                      isSelected
-                        ? 'border-cinnabar bg-cinnabar/5'
-                        : 'border-transparent bg-rice-100 hover:bg-rice-200'
-                    }`}
-                  >
-                    <div
-                      className="w-8 h-8 rounded-full mx-auto mb-1 shadow"
-                      style={{ backgroundColor: data?.color || emotion.color }}
-                    />
-                    <p className="text-sm font-medium text-ink-700">{emotion.name}</p>
-                  </button>
-                );
-              })}
-            </div>
-            {secondaryEmotion && secondaryEmotionData && (
-              <div className="relative">
-                <div className="flex items-center gap-2">
-                  <div
-                    className="flex-1 h-16 rounded-l-xl flex items-center justify-center"
-                    style={{ background: getGradient(currentEmotion.colorPalette, 0.8) }}
-                  >
-                    <span className="text-white font-bold drop-shadow">{selectedEmotion}</span>
-                  </div>
-                  <div className="absolute left-1/2 -translate-x-1/2 z-10">
-                    <div className="w-8 h-8 bg-white rounded-full flex items-center justify-center shadow-lg">
-                      <span className="text-cinnabar font-bold text-sm">+</span>
-                    </div>
-                  </div>
-                  <div
-                    className="flex-1 h-16 rounded-r-xl flex items-center justify-center"
-                    style={{ background: getGradient(secondaryEmotionData.colorPalette, 0.8) }}
-                  >
-                    <span className="text-white font-bold drop-shadow">{secondaryEmotion}</span>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setSecondaryEmotion(null)}
-                  aria-label="移除叠加情绪"
-                  className="absolute -top-2 -right-2 w-6 h-6 bg-white rounded-full shadow flex items-center justify-center hover:bg-cinnabar hover:text-white transition-all"
-                >
-                  <span className="text-xs">×</span>
-                </button>
-              </div>
-            )}
+            <GenerationParamsPanel
+              params={genParams}
+              onChange={setGenParams}
+              accentColor={themeColor}
+            />
           </div>
         </div>
 
@@ -343,24 +497,27 @@ export default function EmotionPage() {
               <div className="flex items-center gap-3 mb-4">
                 <div
                   className="w-14 h-14 rounded-2xl flex items-center justify-center shadow-lg"
-                  style={{ background: getGradient(currentEmotion.colorPalette, 1) }}
+                  style={{ background: getGradient(displayPalette, 1) }}
                 >
                   {(() => {
-                    const Icon = currentEmotion.icon || Heart;
+                    const Icon = emotionIcon(currentEmotion);
                     return <Icon className="w-7 h-7 text-white" />;
                   })()}
                 </div>
                 <div>
                   <h3 className="font-serif text-3xl font-bold text-ink-900">
                     {selectedEmotion}
-                    {secondaryEmotion && (
-                      <span className="text-ink-300 mx-2">×</span>
-                    )}
-                    {secondaryEmotion && (
-                      <span className="text-ink-700">{secondaryEmotion}</span>
-                    )}
+                    {secondaryEmotion && <span className="text-ink-300 mx-2">×</span>}
+                    {secondaryEmotion && <span className="text-ink-700">{secondaryEmotion}</span>}
                   </h3>
-                  <p className="text-ink-500">{currentEmotion.desc}</p>
+                  <p className="text-ink-500">
+                    {currentEmotion.desc}
+                    {secondaryEmotionData && (
+                      <span className="text-ink-400">
+                        {' '}· 配比 {Math.round(ratio * 100)}:{100 - Math.round(ratio * 100)}
+                      </span>
+                    )}
+                  </p>
                 </div>
               </div>
 
@@ -381,7 +538,10 @@ export default function EmotionPage() {
                   <span className="text-xs font-normal text-ink-400 ml-2">点击复制</span>
                 </p>
                 <div className="flex flex-wrap gap-2">
-                  {currentEmotion.keywords.map((kw) => (
+                  {(secondaryEmotionData && ratio < 0.6
+                    ? [...currentEmotion.keywords, ...secondaryEmotionData.keywords.slice(0, 2)]
+                    : currentEmotion.keywords
+                  ).map((kw) => (
                     <button
                       key={kw}
                       type="button"
@@ -393,8 +553,8 @@ export default function EmotionPage() {
                       }}
                       className="px-3 py-1 text-sm rounded-full transition-all hover:scale-105 hover:shadow-card cursor-pointer active:scale-95"
                       style={{
-                        backgroundColor: `${currentEmotion.color}15`,
-                        color: currentEmotion.color,
+                        backgroundColor: `${themeColor}15`,
+                        color: themeColor,
                       }}
                     >
                       {kw}
@@ -420,30 +580,18 @@ export default function EmotionPage() {
 
             <div className="md:col-span-2 flex flex-col items-center justify-center">
               <div
-                className="w-48 h-48 rounded-full shadow-2xl mb-4"
+                className="w-48 h-48 rounded-full shadow-2xl mb-6 transition-all"
                 style={{
-                  background: `radial-gradient(circle at 30% 30%, ${currentEmotion.colorPalette[3]} 0%, ${currentEmotion.colorPalette[1]} 50%, ${currentEmotion.colorPalette[0]} 100%)`,
+                  background: `radial-gradient(circle at 30% 30%, ${displayPalette[3]} 0%, ${displayPalette[1]} 50%, ${displayPalette[0]} 100%)`,
                   opacity: 0.3 + intensity * 0.7,
                 }}
               />
               <div className="w-full max-w-xs">
-                <p className="text-sm font-medium text-ink-700 mb-2 text-center">色板</p>
-                <div className="flex gap-1">
-                  {currentEmotion.colorPalette.map((c, i) => (
-                    <div
-                      key={i}
-                      className="flex-1 h-10 first:rounded-l-lg last:rounded-r-lg shadow-sm cursor-pointer hover:scale-110 transition-transform group relative"
-                      style={{ backgroundColor: c }}
-                      onClick={() => navigator.clipboard?.writeText(c)}
-                      title={`${c} 点击复制`}
-                    >
-                      <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Copy className="w-3 h-3 text-white/70" />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                <p className="text-xs text-ink-400 text-center mt-2">点击色块复制色值</p>
+                <EditablePalette
+                  colors={displayPalette}
+                  originalColors={autoPalette}
+                  onChange={setCustomPalette}
+                />
               </div>
             </div>
           </div>
@@ -455,9 +603,28 @@ export default function EmotionPage() {
             <Brush className="w-5 h-5 text-cinnabar" />
             <h2 className="font-serif text-xl font-bold text-ink-900">手绘创作</h2>
             <span className="text-xs text-ink-400 ml-1">用画笔直接表达情绪</span>
+            <button
+              onClick={() => {
+                /* 携带当前情绪色板跳转独立画板(图层/橡皮/吸管/缩放) */
+                sessionStorage.setItem(
+                  'danqing-canvas-palette',
+                  JSON.stringify({
+                    emotion: selectedEmotion + (secondaryEmotion ? `-${secondaryEmotion}` : ''),
+                    colorPalette: displayPalette,
+                  }),
+                );
+                navigate('/canvas');
+              }}
+              className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-sm text-cinnabar bg-cinnabar/5 hover:bg-cinnabar/10 rounded-lg transition-all"
+              aria-label="打开完整画板"
+            >
+              <Brush className="w-4 h-4" />
+              打开完整画板
+              <span className="text-xs text-ink-400">图层 · 橡皮 · 缩放</span>
+            </button>
           </div>
           <EmotionBrushCanvas
-            colorPalette={currentEmotion.colorPalette}
+            colorPalette={displayPalette}
             emotionName={selectedEmotion + (secondaryEmotion ? `-${secondaryEmotion}` : '')}
             width={Math.min(900, typeof window !== 'undefined' ? window.innerWidth - 80 : 800)}
             height={420}
@@ -471,7 +638,7 @@ export default function EmotionPage() {
             disabled={generating}
             aria-label="生成情绪画面"
             className="inline-flex items-center gap-3 px-12 py-4 rounded-xl transition-all disabled:opacity-50 transform hover:scale-105 shadow-card text-white font-serif text-lg"
-            style={{ background: getGradient(currentEmotion.colorPalette, 1) }}
+            style={{ background: getGradient(displayPalette, 1) }}
           >
             {generating ? (
               <>
@@ -486,7 +653,7 @@ export default function EmotionPage() {
             )}
           </button>
           <p className="text-sm text-ink-400 mt-3">
-            生成 3 张参考画面 · 真实 AI 约需 1 分钟
+            生成 3 张参考画面 · {genParams.aspect === 'square' ? '斗方' : genParams.aspect === 'landscape' ? '横卷' : '立轴'}画幅 · 真实 AI 约需 1 分钟
           </p>
         </div>
 
@@ -496,7 +663,7 @@ export default function EmotionPage() {
             <GenerationLoading
               title={`AI 正在描绘「${selectedEmotion}」`}
               subtitle="将抽象情感转化为视觉语言 · 真实 AI 约需 1 分钟"
-              color={currentEmotion.color}
+              color={themeColor}
               estimatedSeconds={75}
             />
           </div>
@@ -515,7 +682,7 @@ export default function EmotionPage() {
                   onClick={handleApplyToStyles}
                   aria-label="应用到风格调色板"
                   className="flex items-center gap-2 px-3 py-1.5 text-sm border-2 rounded-lg transition-all hover:bg-cinnabar hover:text-white hover:border-cinnabar"
-                  style={{ borderColor: `${currentEmotion.color}40`, color: currentEmotion.color }}
+                  style={{ borderColor: `${themeColor}40`, color: themeColor }}
                   title="应用到风格调色板"
                 >
                   <Palette className="w-4 h-4" />
@@ -531,13 +698,15 @@ export default function EmotionPage() {
                 </button>
               </div>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {results.map((url, index) => (
                 <div
                   key={index}
                   className="bg-rice-50 rounded-2xl overflow-hidden shadow-card hover:shadow-card-hover transition-all group"
                 >
-                  <div className="aspect-square overflow-hidden relative">
+                  <div className={`overflow-hidden relative ${
+                    genParams.aspect === 'landscape' ? 'aspect-[4/3]' : genParams.aspect === 'portrait' ? 'aspect-[3/4]' : 'aspect-square'
+                  }`}>
                     <img
                       src={url}
                       alt={`${selectedEmotion}画面 ${index + 1}`}
@@ -546,7 +715,7 @@ export default function EmotionPage() {
                     />
                     <div
                       className="absolute top-3 left-3 px-2 py-1 rounded-full text-xs text-white"
-                      style={{ backgroundColor: currentEmotion.color }}
+                      style={{ backgroundColor: themeColor }}
                     >
                       {selectedEmotion} · {index + 1}
                     </div>

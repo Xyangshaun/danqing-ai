@@ -37,7 +37,9 @@
     text-rendering: optimizeLegibility;
   }
 
-  /* 全局透视舞台(2.5D 景深基线):让任何子元素可以安全地做微小 rotateX/Y */
+  /* 全局透视舞台(2.5D 景深基线):让任何子元素可以安全地做微小 rotateX/Y。
+     ⚠ 禁止挂在 body/html 上:perspective 会让所有 fixed 后代相对该元素而非视口定位,
+     全屏覆盖层(VideoIntro/Navbar/移动端菜单)会塌缩进文档流。需要景深处请局部使用。 */
   .depth-stage {
     perspective: 1600px;
     perspective-origin: 50% 30%;
@@ -187,7 +189,7 @@
       0 1px 2px rgba(26, 26, 26, 0.05),
       0 6px 18px rgba(26, 26, 26, 0.06),
       0 22px 48px -18px rgba(26, 26, 26, 0.08);
-    transform: translateZ(0) rotateX(0.3deg);
+    transform: perspective(1600px) translateZ(0) rotateX(0.3deg);
     transform-style: preserve-3d;
   }
   /* 接触阴影:卡片下方的"落地影子",加深景深感 */
@@ -212,7 +214,7 @@
       0 14px 36px rgba(26, 26, 26, 0.1),
       0 32px 64px -20px rgba(26, 26, 26, 0.12),
       0 0 0 1px rgba(201, 169, 97, 0.18);
-    transform: translateY(-6px) translateZ(20px) rotateX(0.5deg);
+    transform: perspective(1600px) translateY(-6px) translateZ(20px) rotateX(0.5deg);
     border-color: rgba(201, 169, 97, 0.35);
   }
   .ink-card:hover::after {

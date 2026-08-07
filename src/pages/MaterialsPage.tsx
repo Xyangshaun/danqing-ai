@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useCallback, useRef, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, Filter, X, ExternalLink, Heart, Download, Grid3X3, List, Globe, RefreshCw, Tag, ChevronDown, Check, Loader2, ImageOff, ChevronUp, Sparkles, Package, PackagePlus, Trash2 } from 'lucide-react';
-import { loadBuiltinArtworks, getFilterCounts, type ArtworkItem, type FilterCounts } from '../services/artworksDatabase';
+import { loadBuiltinArtworks, getFilterCounts, resolveArtworkThumbUrl, type ArtworkItem, type FilterCounts } from '../services/artworksDatabase';
 import { useToast } from '../components/ToastProvider';
 import { getFavorites, toggleFavorite as toggleFavoriteService } from '../services/data-service';
 import {
@@ -54,6 +54,8 @@ interface ArtworkCardProps {
   onToggleFavorite: (id: string) => void;
   /** 紧凑模式:用于详情弹窗「相关推荐」小卡片,缩小尺寸/字号并隐藏标签行 */
   compact?: boolean;
+  /** 首屏直出:跳过懒加载观察,立即加载(用于首屏可见的前 N 张) */
+  eager?: boolean;
 }
 
 /* ============================================================
@@ -76,9 +78,10 @@ const ArtworkCard = memo(function ArtworkCard({
   onPickPack,
   onToggleFavorite,
   compact = false,
+  eager = false,
 }: ArtworkCardProps) {
-  const artworkImageUrl = useArtworkImage(artwork);
-  const { imgRef, loadedSrc, isLoaded, isError } = useLazyImage(artworkImageUrl);
+  const artworkImageUrl = useArtworkImage(artwork, 'thumb');
+  const { imgRef, loadedSrc, isLoaded, isError } = useLazyImage(artworkImageUrl, { eager });
 
   return (
     <div
@@ -101,7 +104,7 @@ const ArtworkCard = memo(function ArtworkCard({
             ref={imgRef}
             src={loadedSrc}
             alt={artwork.title}
-            loading="lazy"
+            loading={eager ? 'eager' : 'lazy'}
             className={`w-full h-auto block transition-all duration-500 ${
               isLoaded ? 'opacity-100 group-hover:scale-105' : 'opacity-0'
             }`}
@@ -178,9 +181,10 @@ const ArtworkRow = memo(function ArtworkRow({
   onSendToFuse,
   onPickPack,
   onToggleFavorite,
+  eager = false,
 }: ArtworkCardProps) {
-  const artworkImageUrl = useArtworkImage(artwork);
-  const { imgRef, loadedSrc, isLoaded, isError } = useLazyImage(artworkImageUrl);
+  const artworkImageUrl = useArtworkImage(artwork, 'thumb');
+  const { imgRef, loadedSrc, isLoaded, isError } = useLazyImage(artworkImageUrl, { eager });
 
   return (
     <div
@@ -201,7 +205,7 @@ const ArtworkRow = memo(function ArtworkRow({
             ref={imgRef}
             src={loadedSrc}
             alt={artwork.title}
-            loading="lazy"
+            loading={eager ? 'eager' : 'lazy'}
             className={`w-full h-full object-cover transition-opacity duration-300 ${
               isLoaded ? 'opacity-100' : 'opacity-0'
             }`}
@@ -533,8 +537,9 @@ export default function MaterialsPage() {
   }, [toast]);
 
   /* 详情弹窗图片懒加载:useLazyImage 在 selectedArtwork 变化时自动加载,
-     弹窗打开时图片在视口内,IntersectionObserver 立即触发加载 */
-  const selectedArtworkImageUrl = useArtworkImage(selectedArtwork);
+     弹窗打开时图片在视口内,IntersectionObserver 立即触发加载。
+     弹窗用 full 原图(列表卡片用 thumb 缩略图)。 */
+  const selectedArtworkImageUrl = useArtworkImage(selectedArtwork, 'full');
   const {
     imgRef: detailImgRef,
     loadedSrc: detailLoadedSrc,
@@ -606,6 +611,39 @@ export default function MaterialsPage() {
 
   // 是否还有更多未加载作品(用于哨兵显隐与 IntersectionObserver 开关)
   const hasMore = visibleArtworks.length < filteredArtworks.length;
+
+  // 首屏直出集合:第一页(PAGE_SIZE 张)跳过懒加载观察,立即请求,
+  // 避免打开页面时首屏图片等待 IntersectionObserver 回调的白屏窗口。
+  const eagerIds = useMemo(() => {
+    return new Set(filteredArtworks.slice(0, PAGE_SIZE).map((a) => a.id));
+  }, [filteredArtworks, PAGE_SIZE]);
+
+  // 空闲预取下一页:首屏渲染完成后,requestIdleCallback 预载第 2 页缩略图,
+  // 用户滚动触底时图片已在 HTTP 缓存中,翻页零等待。搜索/筛选变化后同样生效。
+  useEffect(() => {
+    if (!hasMore) return;
+    const nextPageItems = filteredArtworks.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+    if (nextPageItems.length === 0) return;
+
+    const prefetch = () => {
+      nextPageItems.forEach((a) => {
+        const url = resolveArtworkThumbUrl(a);
+        // 跳过 data URI(内联 SVG 无需网络预取)
+        if (url && !url.startsWith('data:')) {
+          const img = new Image();
+          img.src = url;
+        }
+      });
+    };
+
+    if (typeof requestIdleCallback === 'function') {
+      const id = requestIdleCallback(prefetch, { timeout: 2000 });
+      return () => cancelIdleCallback(id);
+    }
+    // Safari 等无 requestIdleCallback 的浏览器:退化为 500ms 后预取
+    const timer = setTimeout(prefetch, 500);
+    return () => clearTimeout(timer);
+  }, [filteredArtworks, page, hasMore, PAGE_SIZE]);
 
   // 无限滚动:IntersectionObserver 监听底部哨兵,触底时 page+1。
   // 依赖 [hasMore, page] 让每次加载后重新建立观察:若哨兵仍在视口内(首屏未填满),
@@ -1131,6 +1169,7 @@ export default function MaterialsPage() {
                               onSendToFuse={handleSendToFuse}
                               onPickPack={setPackPickerArtwork}
                               onToggleFavorite={toggleFavorite}
+                              eager={eagerIds.has(artwork.id)}
                             />
                           ))}
                         </div>
@@ -1145,6 +1184,7 @@ export default function MaterialsPage() {
                               onSendToFuse={handleSendToFuse}
                               onPickPack={setPackPickerArtwork}
                               onToggleFavorite={toggleFavorite}
+                              eager={eagerIds.has(artwork.id)}
                             />
                           ))}
                         </div>

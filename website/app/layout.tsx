@@ -109,7 +109,9 @@ export default function RootLayout({
         {/* 组织结构化数据:全站注入 */}
         <JsonLd data={organizationJsonLd()} />
       </head>
-      <body className="min-h-screen flex flex-col antialiased depth-stage">
+      {/* 注意:body 不能加 depth-stage(perspective 会使所有 fixed 子元素相对 body 而非视口定位,
+          导致 VideoIntro/Navbar 等全屏覆盖层塌缩到文档流)。卡片景深由 .ink-card 自带 perspective 实现。 */}
+      <body className="min-h-screen flex flex-col antialiased">
         {/* 无障碍:跳转到主内容 */}
         <a
           href="#main-content"

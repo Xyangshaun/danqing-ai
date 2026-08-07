@@ -241,7 +241,8 @@ describe('useLazyImage', () => {
       }),
     );
     expect(observerInstances.length).toBeGreaterThan(0);
-    expect(observerInstances[0].options).toEqual({
+    // M-3 起 options 含 root(自动检测滚动祖先,测试环境为 null)
+    expect(observerInstances[0].options).toMatchObject({
       rootMargin: '100px',
       threshold: 0.5,
     });

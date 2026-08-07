@@ -5,13 +5,14 @@ import {
   User, Image as ImageIcon, LogOut, Check, Sparkles,
   CheckCircle2, TrendingUp, RefreshCw, Trash2, Clock,
   Brush, PenTool, Box, Layers, History, Download, type LucideIcon,
-  ExternalLink,
+  ExternalLink, Gauge,
 } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import LogoMark from './LogoMark';
 import { useToast } from './ToastProvider';
 import { useAuth } from '../hooks/useAuth';
 import TenantSwitcher, { RoleBadge } from './auth/TenantSwitcher';
+import { isAdminRole } from './auth/RequireAdminRole';
 import {
   getAnalysisHistory,
   clearAnalysisHistory,
@@ -1334,8 +1335,18 @@ export default function Header() {
                     </div>
                   </div>
 
-                  {/* 菜单项(个人中心 / 我的作品 / 设置) */}
+                  {/* 菜单项(管理后台[admin/owner] / 个人中心 / 我的作品 / 设置) */}
                   <div className="p-1">
+                    {isAdminRole(user?.role) && (
+                      <Link
+                        to="/admin"
+                        onClick={() => setUserOpen(false)}
+                        className="w-full flex items-center gap-2.5 h-10 px-2 rounded-md text-sm text-cinnabar hover:bg-cinnabar/5 transition-colors"
+                      >
+                        <Gauge className="w-4 h-4" />
+                        <span className="font-medium">管理后台</span>
+                      </Link>
+                    )}
                     {userMenuItems.map((item) => {
                       const Icon = item.icon;
                       return (

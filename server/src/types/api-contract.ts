@@ -1701,6 +1701,8 @@ export interface AdminStatsRealtime {
   systemLoad: number;
   /** 最近 5 分钟请求量 */
   recentRequests: number;
+  /** 待裁定争议数(全平台 open + reviewing,Phase 5 追加) */
+  openDisputes: number;
   /** 统计时间戳 */
   timestamp: ISODateString;
 }

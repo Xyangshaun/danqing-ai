@@ -13,12 +13,13 @@ import paintingMeta from '@/lib/painting-meta.json';
  * 关键升级:
  *  1) 真实 ratio 来自 build 时 scan-paintings.mjs 生成的 painting-meta.json
  *  2) 6 种 shape 变体(scroll-horizontal / arched-portrait / arch / round-fan / fan / seal / scroll-thin)
- *  3) BASE_OPACITY 0.28 / BASE_BLUR 3.5px(更克制,主题感强)
+ *  3) BASE_OPACITY 0.40 / BASE_BLUR 2.8px(静止时退居景深背景不抢中心,鼠标靠近点亮清晰)
  *  4) 边缘虚化:多 stop radial 过渡 + 边角渗墨柔晕
  *  5) 题跋式文字:SVG 笔触划出 + 朱砂落款
+ *  6) 画作交错入场:0.25s 起每张延迟 55ms 淡入上浮,如长卷徐徐展开
  */
 
-const TOTAL_MS = 3000; // 开场动画总时长(3.0s)
+const TOTAL_MS = 4500; // 开场动画总时长(4.5s:编排 ~2.9s 落齐后停留欣赏,最后 0.5s 退出)
 
 type PaintingShape =
   | 'scroll-horizontal'
@@ -144,8 +145,8 @@ function getRatio(src: string, meta: Meta): number {
 
 /**
  * 光标感应名作层。
- * 13 张画作以 S 形两岸分布,基线更克制(BASE_OPACITY 0.28 / BASE_BLUR 3.5px),
- * 鼠标靠近按距离渐显 + 轻微放大 + 去模糊;离开后 lerp 缓慢淡出。
+ * 13 张画作以 S 形两岸分布,基线退居景深(BASE_OPACITY 0.40 / BASE_BLUR 2.8px,不抢中央品牌区),
+ * 鼠标靠近按距离渐显提亮 + 轻微放大 + 去模糊;离开后 lerp 缓慢回落。
  */
 function IntroPaintings({ active }: { active: boolean }) {
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -201,8 +202,8 @@ function IntroPaintings({ active }: { active: boolean }) {
 
     const REVEAL_RADIUS = 340; // 光标感应半径 px
     const LERP = 0.14; // 跟随/淡出速度
-    const BASE_OPACITY = 0.28; // 基础可见度(更克制)
-    const BASE_BLUR = 3.5; // 基础模糊(更轻)
+    const BASE_OPACITY = 0.4; // 基础可见度(可见但不抢中央品牌区)
+    const BASE_BLUR = 2.8; // 基础模糊(景深退居背景,突出中央题跋)
     const SLOW_FRAME_MS = 16; // 60fps 单帧预算
     const SUMMARY_INTERVAL_MS = 2000; // 每 2s 汇总一次帧指标
     const MOVE_LOG_THROTTLE = 200; // mousemove 触发日志节流
@@ -430,7 +431,8 @@ function IntroPaintings({ active }: { active: boolean }) {
             <img
               src={p.src}
               alt={p.alt}
-              className="w-full h-full object-cover"
+              className="intro-painting-enter w-full h-full object-cover"
+              style={{ animationDelay: `${250 + i * 55}ms` }}
               draggable={false}
               loading="eager"
               decoding="sync"
@@ -515,6 +517,16 @@ export function VideoIntro({ onComplete }: { onComplete: () => void }) {
           60%  { transform: scale(1.12) rotate(-4deg); opacity: 1; }
           100% { transform: scale(1) rotate(-4deg); opacity: 1; }
         }
+        /* 画作交错入场:内层 img 一次性淡入上浮(与父级 JS 透明度/模糊正交,互不干扰) */
+        @keyframes intro-painting-enter {
+          from { opacity: 0; transform: translateY(14px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        .intro-painting-enter {
+          opacity: 0;
+          animation: intro-painting-enter 0.65s cubic-bezier(0.22, 1, 0.36, 1) both;
+        }
+
         /* 卷首卷尾晕染:缓慢呼吸 */
         @keyframes intro-paper-breathe {
           0%, 100% { opacity: 0.5; }
@@ -537,9 +549,9 @@ export function VideoIntro({ onComplete }: { onComplete: () => void }) {
         .intro-painting {
           position: absolute;
           pointer-events: none;
-          opacity: var(--p-opacity, 0.28);
+          opacity: var(--p-opacity, 0.4);
           transform: translate(-50%, -50%) scale(var(--p-scale, 0.98)) rotate(var(--p-rotate, 0deg));
-          filter: blur(var(--p-blur, 3.5px)) saturate(0.92);
+          filter: blur(var(--p-blur, 2.8px)) saturate(0.92);
           box-shadow:
             0 12px 32px -12px rgba(31, 28, 24, 0.22),
             0 0 0 1px rgba(26, 26, 26, 0.04);
@@ -556,7 +568,8 @@ export function VideoIntro({ onComplete }: { onComplete: () => void }) {
         .intro-reduced .intro-stat,
         .intro-reduced .intro-inscription,
         .intro-reduced .intro-seal,
-        .intro-reduced .intro-paper-edge {
+        .intro-reduced .intro-paper-edge,
+        .intro-reduced .intro-painting-enter {
           opacity: 1 !important;
           transform: none !important;
           animation: none !important;

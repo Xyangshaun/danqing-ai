@@ -27,8 +27,19 @@ const MaterialsPage = lazy(() => import('./pages/MaterialsPage'));
 const StylesPage = lazy(() => import('./pages/StylesPage'));
 const FusePage = lazy(() => import('./pages/FusePage'));
 const EmotionPage = lazy(() => import('./pages/EmotionPage'));
+const CanvasPage = lazy(() => import('./pages/CanvasPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const ImageSearchPage = lazy(() => import('./pages/ImageSearchPage'));
+/* 管理后台页面(RequireAdminRole 守卫,仅 admin/owner 可见) */
+const AdminDashboardPage = lazy(() => import('./pages/admin/AdminDashboardPage'));
+const AdminUsersPage = lazy(() => import('./pages/admin/AdminUsersPage'));
+const AdminTenantsPage = lazy(() => import('./pages/admin/AdminTenantsPage'));
+/* 教师工作台页面(RequireTeacherRole 守卫,teacher/admin/owner 可见) */
+const TeacherStudentsPage = lazy(() => import('./pages/teacher/TeacherStudentsPage'));
+const TeacherStudentDetailPage = lazy(() => import('./pages/teacher/TeacherStudentDetailPage'));
+const TeacherDisputesPage = lazy(() => import('./pages/teacher/TeacherDisputesPage'));
+import RequireAdminRole from './components/auth/RequireAdminRole';
+import RequireTeacherRole from './components/auth/RequireTeacherRole';
 
 /**
  * 受保护的业务布局(Header + Sidebar + Main + StatusBar)
@@ -194,10 +205,61 @@ export function AppLayout() {
                   <Route path="/styles" element={<StylesPage />} />
                   <Route path="/fuse" element={<FusePage />} />
                   <Route path="/emotion" element={<EmotionPage />} />
+                  <Route path="/canvas" element={<CanvasPage />} />
                   <Route path="/history" element={<HistoryPage />} />
                   <Route path="/growth" element={<GrowthPage />} />
                   <Route path="/images" element={<ImageSearchPage />} />
                   <Route path="/settings" element={<SettingsPage />} />
+                  {/* 管理后台(仅 admin/owner;RequireAdminRole 内部已处理无权限降级 UI) */}
+                  <Route
+                    path="/admin"
+                    element={
+                      <RequireAdminRole>
+                        <AdminDashboardPage />
+                      </RequireAdminRole>
+                    }
+                  />
+                  <Route
+                    path="/admin/users"
+                    element={
+                      <RequireAdminRole>
+                        <AdminUsersPage />
+                      </RequireAdminRole>
+                    }
+                  />
+                  <Route
+                    path="/admin/tenants"
+                    element={
+                      <RequireAdminRole>
+                        <AdminTenantsPage />
+                      </RequireAdminRole>
+                    }
+                  />
+                  {/* 教师工作台(teacher/admin/owner;RequireTeacherRole 内部已处理无权限降级 UI) */}
+                  <Route
+                    path="/teacher"
+                    element={
+                      <RequireTeacherRole>
+                        <TeacherStudentsPage />
+                      </RequireTeacherRole>
+                    }
+                  />
+                  <Route
+                    path="/teacher/students/:studentId"
+                    element={
+                      <RequireTeacherRole>
+                        <TeacherStudentDetailPage />
+                      </RequireTeacherRole>
+                    }
+                  />
+                  <Route
+                    path="/teacher/disputes"
+                    element={
+                      <RequireTeacherRole>
+                        <TeacherDisputesPage />
+                      </RequireTeacherRole>
+                    }
+                  />
                 </Routes>
               </Suspense>
             </RouteTransition>

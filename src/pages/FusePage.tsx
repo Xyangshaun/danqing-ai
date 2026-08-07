@@ -4,16 +4,22 @@ import {
   Heart, Upload, Download, Loader2, Sparkles, X, Plus, Layout, Palette,
   Layers, Wand2, MapPin, Zap, Shuffle, Settings2, ChevronRight, Check,
   Grid3X3, ImageIcon, Info, ArrowRight, Bookmark, TrendingUp, Target,
-  Lightbulb, ChevronDown, ChevronUp, RefreshCw, Save
+  Lightbulb, ChevronDown, ChevronUp, RefreshCw, Save, Scan, Gem, Hourglass,
+  Scale, Trash2,
 } from 'lucide-react';
 import {
   fuseStyles, fuseMethods, fuseIntensities, fusePresets,
-  buildFusePrompt, generateFusionAnalysis,
+  generateFusionAnalysis,
   getStyleById, getMethodById, getIntensityById,
   type FuseStyle, type FuseMethod, type FuseIntensity, type FusionAnalysis,
 } from '../services/fuseStandards';
+import { buildFusionPrompt } from '../services/fusionAlgorithms';
+import {
+  listFuseUserPresets, saveFuseUserPreset, removeFuseUserPreset,
+  type FuseUserPreset,
+} from '../services/fusePresetStore';
 import { generateImage } from '../services/imageService';
-import { loadBuiltinArtworks, resolveArtworkImageUrl, type ArtworkItem } from '../services/artworksDatabase';
+import { loadBuiltinArtworks, resolveArtworkImageUrl, resolveArtworkThumbUrl, type ArtworkItem } from '../services/artworksDatabase';
 import { useToast } from '../components/ToastProvider';
 import { saveSavedMaterial } from '../services/data-service';
 import EmptyState from '../components/EmptyState';
@@ -26,6 +32,9 @@ const methodIconMap: Record<string, typeof Layout> = {
   'style-transformation': Wand2,
   'hybrid-landscape': MapPin,
   'mood-blending': Heart,
+  'region-swap': Scan,
+  'material-graft': Gem,
+  'time-fold': Hourglass,
 };
 
 interface FuseResult {
@@ -57,10 +66,20 @@ export default function FusePage() {
   const [selectedStyle, setSelectedStyle] = useState<FuseStyle>(fuseStyles[0]);
   const [selectedMethod, setSelectedMethod] = useState<FuseMethod>(fuseMethods[2]);
   const [selectedIntensity, setSelectedIntensity] = useState<FuseIntensity>(fuseIntensities[1]);
+  const [fusionRatio, setFusionRatio] = useState(0.5); // 作品A占比
   const [showSettings, setShowSettings] = useState(false);
   const [showPresets, setShowPresets] = useState(true);
   const [showAnalysis, setShowAnalysis] = useState(true);
   const [resultVariations, setResultVariations] = useState(1);
+
+  /* 用户自主搭配预设 */
+  const [userPresets, setUserPresets] = useState<FuseUserPreset[]>([]);
+  const [showUserPresetInput, setShowUserPresetInput] = useState(false);
+  const [userPresetName, setUserPresetName] = useState('');
+
+  useEffect(() => {
+    setUserPresets(listFuseUserPresets());
+  }, []);
 
   /* 素材数据状态 */
   const [artworks, setArtworks] = useState<ArtworkItem[]>([]);
@@ -111,6 +130,17 @@ export default function FusePage() {
       hasProcessedMaterialParamRef.current = true;
     }
   }, [artworks, searchParams, toast]);
+
+  // 接收来自独立画板的参考图:sessionStorage 'danqing-canvas-reference'(读后即删,一次性消费)
+  useEffect(() => {
+    const refImage = sessionStorage.getItem('danqing-canvas-reference');
+    if (!refImage) return;
+    sessionStorage.removeItem('danqing-canvas-reference');
+    setCustomImage1(refImage);
+    setArtwork1(null);
+    setResults([]);
+    toast.info('已载入画板参考图', '作为作品1参与灵感嫁接');
+  }, [toast]);
 
   // 保存当前嫁接结果到素材库（通过 data-service 异步落库）
   const handleSaveToMaterials = async () => {
@@ -185,6 +215,45 @@ export default function FusePage() {
     if (intensity) setSelectedIntensity(intensity);
   };
 
+  /* ---------- 用户自主搭配预设 ---------- */
+  const handleSaveUserPreset = () => {
+    const name = userPresetName.trim();
+    if (!name) {
+      toast.error('请输入搭配名称');
+      return;
+    }
+    const entry = saveFuseUserPreset({
+      name,
+      styleId: selectedStyle.id,
+      methodId: selectedMethod.id,
+      intensityId: selectedIntensity.id,
+      ratio: fusionRatio,
+      variations: resultVariations,
+    });
+    setUserPresets((prev) => [entry, ...prev].slice(0, 20));
+    setUserPresetName('');
+    setShowUserPresetInput(false);
+    toast.success('搭配已保存', `「${name}」可在「我的搭配」中快速载入`);
+  };
+
+  const handleLoadUserPreset = (preset: FuseUserPreset) => {
+    const style = getStyleById(preset.styleId);
+    const method = getMethodById(preset.methodId);
+    const intensity = getIntensityById(preset.intensityId);
+    if (style) setSelectedStyle(style);
+    if (method) setSelectedMethod(method);
+    if (intensity) setSelectedIntensity(intensity);
+    setFusionRatio(preset.ratio);
+    setResultVariations(preset.variations);
+    toast.success('搭配已载入', `「${preset.name}」`);
+  };
+
+  const handleRemoveUserPreset = (preset: FuseUserPreset) => {
+    removeFuseUserPreset(preset.id);
+    setUserPresets((prev) => prev.filter((p) => p.id !== preset.id));
+    toast.success('搭配已删除', preset.name);
+  };
+
   const handleFuse = async () => {
     if (!image1 || !image2) {
       toast.warning('请选择两张作品', '需要两张作品才能进行灵感嫁接');
@@ -195,13 +264,15 @@ export default function FusePage() {
     setSelectedResultIndex(0);
 
     try {
-      const prompt = buildFusePrompt(
-        selectedStyle,
-        selectedMethod,
-        selectedIntensity,
+      /* P2:按方法调度对应融合算法,传入作品配比 */
+      const prompt = buildFusionPrompt({
+        style: selectedStyle,
+        method: selectedMethod,
+        intensity: selectedIntensity,
+        ratio: fusionRatio,
         artwork1,
-        artwork2
-      );
+        artwork2,
+      });
 
       const analysis = generateFusionAnalysis(
         selectedStyle,
@@ -403,14 +474,97 @@ export default function FusePage() {
         )}
       </div>
 
+      {/* 我的搭配(用户自主保存) */}
+      <div className="mb-6">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <Bookmark className="w-4 h-4 text-cinnabar" />
+            <p className="font-medium text-ink-700">我的搭配</p>
+            <span className="text-xs text-ink-400">保存你的专属融合方案</span>
+          </div>
+          <div className="relative">
+            {showUserPresetInput ? (
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={userPresetName}
+                  onChange={(e) => setUserPresetName(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSaveUserPreset()}
+                  placeholder="搭配名称,如:青花骏马"
+                  maxLength={12}
+                  autoFocus
+                  className="px-3 py-1 text-sm border border-ink-200 rounded-lg focus:outline-none focus:border-cinnabar w-40"
+                />
+                <button
+                  onClick={handleSaveUserPreset}
+                  className="px-3 py-1 text-sm bg-cinnabar text-white rounded-lg hover:bg-cinnabar/90 transition-all"
+                >
+                  保存
+                </button>
+                <button
+                  onClick={() => setShowUserPresetInput(false)}
+                  aria-label="取消"
+                  className="p-1 text-ink-400 hover:text-ink-600"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setShowUserPresetInput(true)}
+                className="flex items-center gap-1 text-xs text-cinnabar hover:underline"
+              >
+                <Save className="w-3.5 h-3.5" />
+                存为我的搭配
+              </button>
+            )}
+          </div>
+        </div>
+        {userPresets.length === 0 ? (
+          <p className="text-xs text-ink-400 px-1">暂无保存的搭配 — 调好风格/方法/强度/配比后,点击右上角「存为我的搭配」</p>
+        ) : (
+          <div className="flex gap-2 flex-wrap">
+            {userPresets.map((preset) => {
+              const style = getStyleById(preset.styleId);
+              const method = getMethodById(preset.methodId);
+              return (
+                <div
+                  key={preset.id}
+                  className="group flex items-center gap-2 pl-2 pr-1 py-1.5 bg-rice-100 hover:bg-rice-200 rounded-full transition-all"
+                >
+                  <div
+                    className="w-4 h-4 rounded-full shadow-inner"
+                    style={{ backgroundColor: style?.color ?? '#c53030' }}
+                  />
+                  <button
+                    onClick={() => handleLoadUserPreset(preset)}
+                    className="text-sm text-ink-700 hover:text-cinnabar transition-all"
+                    title={`${style?.name ?? ''} + ${method?.name ?? ''} · 配比 ${Math.round(preset.ratio * 100)}%`}
+                  >
+                    {preset.name}
+                  </button>
+                  <button
+                    onClick={() => handleRemoveUserPreset(preset)}
+                    aria-label={`删除搭配 ${preset.name}`}
+                    className="p-0.5 text-ink-300 hover:text-cinnabar rounded-full opacity-0 group-hover:opacity-100 transition-all"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
       {/* Style */}
       <div className="mb-6">
         <div className="flex items-center gap-2 mb-3">
           <Palette className="w-4 h-4 text-ink-500" />
           <p className="font-medium text-ink-700">嫁接风格</p>
-          <span className="text-xs text-ink-400">选择融合后的艺术风格</span>
+          <span className="text-xs text-ink-400">选择融合后的艺术风格 · 12 种</span>
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
           {fuseStyles.map((style) => (
             <button
               key={style.id}
@@ -508,6 +662,55 @@ export default function FusePage() {
               </button>
             );
           })}
+        </div>
+      </div>
+
+      {/* Fusion Ratio */}
+      <div className="mb-6">
+        <div className="flex items-center gap-2 mb-3">
+          <Scale className="w-4 h-4 text-ink-500" />
+          <p className="font-medium text-ink-700">作品配比</p>
+          <span className="text-xs text-ink-400">作品A与作品B在融合中的主导权重</span>
+        </div>
+        <div className="bg-rice-50 rounded-xl p-4">
+          <div className="flex justify-between mb-2 text-sm">
+            <span className="font-medium text-cinnabar">作品A {Math.round(fusionRatio * 100)}%</span>
+            <span className="font-medium text-ink-600">作品B {100 - Math.round(fusionRatio * 100)}%</span>
+          </div>
+          <input
+            type="range"
+            min="10"
+            max="90"
+            step="5"
+            value={Math.round(fusionRatio * 100)}
+            onChange={(e) => setFusionRatio(parseInt(e.target.value, 10) / 100)}
+            aria-label="作品配比"
+            className="w-full h-2 rounded-full appearance-none cursor-pointer"
+            style={{
+              background: `linear-gradient(to right, #c53030 0%, #c53030 ${fusionRatio * 100}%, #8a8f98 ${fusionRatio * 100}%, #8a8f98 100%)`,
+            }}
+          />
+          <div className="flex justify-between mt-2">
+            {[
+              { v: 0.8, label: 'A为主' },
+              { v: 0.6, label: 'A侧重' },
+              { v: 0.5, label: '均衡' },
+              { v: 0.4, label: 'B侧重' },
+              { v: 0.2, label: 'B为主' },
+            ].map((preset) => (
+              <button
+                key={preset.v}
+                onClick={() => setFusionRatio(preset.v)}
+                className={`text-xs px-2 py-1 rounded-md transition-all ${
+                  Math.abs(fusionRatio - preset.v) < 0.03
+                    ? 'bg-cinnabar/10 text-cinnabar font-medium'
+                    : 'text-ink-400 hover:text-ink-600 hover:bg-ink-50'
+                }`}
+              >
+                {preset.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -1012,7 +1215,7 @@ export default function FusePage() {
                     >
                       <div className="aspect-[4/3] overflow-hidden bg-ink-100">
                         <img
-                          src={resolveArtworkImageUrl(artwork).imageUrl}
+                          src={resolveArtworkThumbUrl(artwork)}
                           alt={artwork.title}
                           className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                           loading="lazy"

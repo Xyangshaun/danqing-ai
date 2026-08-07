@@ -156,7 +156,13 @@ export interface RequestOptions {
 
 /** 构建完整 URL(Base URL + path + query) */
 function buildUrl(path: string, query?: RequestOptions['query']): string {
-  const url = path.startsWith('http') ? path : `${BASE_URL}${path}`;
+  // 绝对 URL 原样使用;以 /api/ 开头的路径视为完整 API 路径(如管理后台 /api/admin),
+  // 不再拼接 BASE_URL(其默认值为 /api/v1,与管理后台命名空间 /api/admin 不同)。
+  const url = path.startsWith('http')
+    ? path
+    : path.startsWith('/api/')
+      ? path
+      : `${BASE_URL}${path}`;
   if (!query) return url;
   const params = new URLSearchParams();
   Object.entries(query).forEach(([k, v]) => {

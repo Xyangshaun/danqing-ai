@@ -96,6 +96,8 @@ export interface LazyImageOptions {
   placeholder?: string;
   /** 触发一次后停止观察,默认 true */
   once?: boolean;
+  /** 首屏直出:跳过 IntersectionObserver,立即加载真实 src,默认 false */
+  eager?: boolean;
 }
 
 export interface LazyImageResult {
@@ -149,6 +151,7 @@ export function useLazyImage(
     threshold = 0,
     placeholder = DEFAULT_PLACEHOLDER,
     once = true,
+    eager = false,
   } = options;
 
   const observerRef = useRef<IntersectionObserver | null>(null);
@@ -247,6 +250,14 @@ export function useLazyImage(
     setIsLoaded(false);
     setIsError(false);
 
+    // eager 模式(首屏直出):跳过 IntersectionObserver,立即加载真实 src。
+    // 用于首屏可见图片,避免等待 observer 回调造成白屏闪烁。
+    if (eager) {
+      setLoadedSrc(src);
+      logLazy('eager-direct', src);
+      return;
+    }
+
     // data URI(素材库/风格库内联 SVG)同步可解码、零网络:
     // 无需 IntersectionObserver 懒加载,直接赋值 + 立即标记完成,
     // 避免 observer/ref 时序问题导致骨架屏常驻。
@@ -274,7 +285,7 @@ export function useLazyImage(
     return () => {
       disconnect();
     };
-  }, [src, rootMargin, threshold, placeholder, once, disconnect]);
+  }, [src, rootMargin, threshold, placeholder, once, eager, disconnect]);
 
   // 卸载时清理 observer
   useEffect(() => {

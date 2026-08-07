@@ -241,6 +241,16 @@ export function resolveArtworkImageUrl(item: ArtworkItem): ArtworkItem {
 }
 
 /**
+ * 解析列表用缩略图 URL:优先 thumbUrl(640x360,约 18KB),
+ * 无 thumbUrl 时回退 imageUrl。列表卡片应始终用此函数,
+ * 详情弹窗才使用 resolveArtworkImageUrl 加载原图。
+ */
+export function resolveArtworkThumbUrl(item: ArtworkItem): string {
+  const raw = item.thumbUrl || item.imageUrl;
+  return resolveProtocolUrl(raw, item);
+}
+
+/**
  * 异步加载内置艺术作品库
  * 幂等:已加载或正在加载时返回同一 Promise
  */

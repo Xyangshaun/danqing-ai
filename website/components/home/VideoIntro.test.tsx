@@ -1,6 +1,6 @@
 // ============================================================
 // VideoIntro 开场动画单元测试
-// 验证:1) 3.0s 后自动回调 onComplete
+// 验证:1) 4.5s 后自动回调 onComplete
 //       2) doneRef 防止重复触发(仅回调一次)
 //       3) 渲染包含状态条、笔触 SVG、品牌名、副标题、步骤、数据指标
 //       4) ?slow=N 调试参数放慢退出计时
@@ -30,12 +30,12 @@ describe('VideoIntro 开场动画 (v7 CSS-first)', () => {
     vi.clearAllTimers();
   });
 
-  it('3.0s 后自动回调 onComplete', () => {
+  it('4.5s 后自动回调 onComplete', () => {
     const onComplete = vi.fn();
     render(<VideoIntro onComplete={onComplete} />);
 
     act(() => {
-      vi.advanceTimersByTime(2500);
+      vi.advanceTimersByTime(4000);
     });
     expect(onComplete).not.toHaveBeenCalled();
 
@@ -117,7 +117,7 @@ describe('VideoIntro 开场动画 (v7 CSS-first)', () => {
     expect(container.textContent).toContain('风格预设');
   });
 
-  it('?slow=2 调试参数将定时器时长放慢 2 倍(6.0s 才完成)', () => {
+  it('?slow=2 调试参数将定时器时长放慢 2 倍(9.0s 才完成)', () => {
     const originalLocation = window.location;
     delete (window as { location?: unknown }).location;
     (window as { location: unknown }).location = {
@@ -129,12 +129,12 @@ describe('VideoIntro 开场动画 (v7 CSS-first)', () => {
     render(<VideoIntro onComplete={onComplete} />);
 
     act(() => {
-      vi.advanceTimersByTime(3000);
+      vi.advanceTimersByTime(8000);
     });
     expect(onComplete).not.toHaveBeenCalled();
 
     act(() => {
-      vi.advanceTimersByTime(3000);
+      vi.advanceTimersByTime(1000);
     });
     expect(onComplete).toHaveBeenCalledTimes(1);
 
