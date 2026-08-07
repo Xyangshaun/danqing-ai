@@ -4,7 +4,7 @@
 > 服务器: 43.128.25.202 (腾讯云 VPS)  
 > 域名: www.danqing.site  
 > 部署日期: 2026-08-02  
-> 最近更新: 2026-08-08 (备份定量清理策略 — 每周 cron 自动清理)  
+> 最近更新: 2026-08-07 (v6 动画改版 — 5 层叠加 + Topora 风格)  
 > 维护人: ubuntu (SSH 密钥认证)
 
 ---
@@ -144,7 +144,6 @@ pm2 restart danqing-api
 | 每分钟 | health-check.sh | 检查 API/PM2/Docker，异常自动重启 |
 | 每天 03:00 | backup-db.sh | pg_dump 备份，保留 7 天 |
 | 每小时 | disk-check.sh | 磁盘 >80% 告警 + 清理旧日志 |
-| 每周日 03:30 | cleanup-backups.sh | 备份定量清理（dist 保留 5 个完整版 / website 保留 3 个） |
 
 ### 4.2 告警检查
 
@@ -294,49 +293,6 @@ sudo nginx -t && sudo systemctl reload nginx
 echo "Rollback completed. Run health check to verify."
 ```
 
-### 5.5 备份定量清理策略 (2026-08-08 新增)
-
-> 历史部署备份在 `/var/www/danqing-ai` 下持续累积(曾达 11G),需定量清理;同时**保留前 3-5 个完整可运行版本**以便回滚。
-
-**清理脚本**: `cleanup-backups.sh`(已纳入 git 仓库,位于项目根目录)
-
-| 项 | 值 |
-|----|----|
-| dist 备份保留数 | 最近 **5** 个完整版(≥100M 视为完整) |
-| website 备份保留数 | 最近 **3** 个 |
-| 中间残留阈值 | <100M 视为部署中间产物,直接删除 |
-| 定时执行 | 每周日 03:30(cron:`/etc/cron.d/danqing-backup-cleanup`) |
-| 日志 | `/var/log/danqing-backup-cleanup.log` |
-
-**命令**:
-
-```bash
-# 立即执行清理(保留最新 dist 5 个完整版 / website 3 个)
-sudo bash /var/www/danqing-ai/cleanup-backups.sh
-
-# 仅预览将要删除的内容,不实际删除(安全演练)
-sudo bash /var/www/danqing-ai/cleanup-backups.sh --dry-run
-
-# 重新安装每周定时清理 cron
-sudo bash /var/www/danqing-ai/cleanup-backups.sh --install-cron
-
-# 查看清理日志
-sudo tail -50 /var/log/danqing-backup-cleanup.log
-```
-
-**清理规则说明**:
-1. **dist 备份**(`dist.bak*`):先删除所有 <100M 的中间残留(部署中间产物),再从完整备份中按时间保留最近 5 个。
-2. **website 备份**(`website-backups/`):按时间保留最近 3 个版本(含 tar.gz 或目录),删除更早的。
-3. **根目录遗留**(`website.bak-*` / `website-backup-*`):清理历史遗留小备份。
-4. **关键保障**: 当前 dist 完整备份不足 5 个时**全保留、不误删**;完整备份中的 `images/` 业务图片数据保留。
-5. **自动触发**: `deploy-website.sh` 在第 7 步(部署完成后)自动调用 `cleanup-backups.sh`,确保周内多次部署也不会累积超量备份(避免仅依赖每周 cron 的时间盲区)。
-
-**首次执行结果 (2026-08-08)**:
-- 释放约 2.3G(11G → 8.7G),磁盘使用率 33% → 31%
-- 已删除 8 项冗余(4 个 dist 中间残留 + 2 个旧 website 备份 + 2 个根目录遗留)
-- 保留 3 个完整 dist 备份(1.6G 各) + 3 个最新 website 备份
-- 清理后官网 `https://www.danqing.site/` → HTTP 200(功能未受影响)
-
 ## 6. 安全配置
 
 ### 6.1 SSH 加固
@@ -452,7 +408,7 @@ sudo docker system prune -f
 | AI_IMAGE_PROVIDER | 图像生成主提供商 | glm |
 | AI_IMAGE_API_KEY | 图像生成 API Key | 复用 GLM Key |
 | AI_IMAGE_API_URL | 图像生成端点 | https://open.bigmodel.cn/api/paas/v4/images/generations |
-| AI_IMAGE_API_MODEL | 图像生成模型 | cogview-3 |
+| AI_IMAGE_API_MODEL | 图像生成模型 | GLM-Image |
 | AI_IMAGE_TIMEOUT | 图像生成超时 | 30000 |
 | COOKIE_SECURE | Cookie Secure | true |
 | COOKIE_DOMAIN | Cookie 域名 | .danqing.site |
@@ -556,7 +512,7 @@ curl -s https://www.danqing.site/health
 4. `imageService.ts` 将 `generateImage` 改为调用后端 `/api/v1/generation` 接口(`sync: true`),失败时回退到本地 SVG 占位图。
 5. `FusePage.tsx` 在 `handleFuse` 中改为 `await generateImage(...)` 顺序生成,移除模拟延迟。
 6. 前后端 `api-contract.ts` 补充 `CreateGenerationResponse` / `GenerationStatus` / `GeneratedImage` / `ReviewStatus` 类型,保持类型一致。
-7. `server/.env` 新增 AI 图像生成配置:`AI_IMAGE_PROVIDER=glm`、`AI_IMAGE_API_KEY` 复用 GLM Key、`AI_IMAGE_API_URL=https://open.bigmodel.cn/api/paas/v4/images/generations`、`AI_IMAGE_API_MODEL=cogview-3`、`AI_IMAGE_TIMEOUT=30000`。
+7. `server/.env` 新增 AI 图像生成配置:`AI_IMAGE_PROVIDER=glm`、`AI_IMAGE_API_KEY` 复用 GLM Key、`AI_IMAGE_API_URL=https://open.bigmodel.cn/api/paas/v4/images/generations`、`AI_IMAGE_API_MODEL=GLM-Image`、`AI_IMAGE_TIMEOUT=30000`。
 
 **验证结果**:
 
@@ -591,7 +547,7 @@ curl -s --max-time 60 -X POST https://www.danqing.site/api/v1/generation \
 }
 ```
 
-模型 `cogview-3`,端到端耗时约 6-10s(受网络和模型排队影响)。
+模型 `GLM-Image`,端到端耗时约 6-10s(受网络和模型排队影响)。
 
 #### 验证 2: 前端灵感嫁接真实生成
 
@@ -870,7 +826,7 @@ curl -s http://127.0.0.1:3000/health
 ### 15.2 部署前诊断结论
 
 - 生产健康检查 OK (`/health` up)
-- `AI_IMAGE_*` 环境变量已配置 (glm / cogview-3 / GLM Key)
+- `AI_IMAGE_*` 环境变量已配置 (glm / GLM-Image / GLM Key)
 - Redis 中 `config:feature:generation` = **enabled** (value:true,已灰度开启)
 - 队列 `queue:generation` 长度 0 (空闲)
 - `GenerationTask` 迁移已存在 (20260806233736_add_generation_task),**无需新迁移**

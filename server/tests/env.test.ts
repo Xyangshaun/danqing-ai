@@ -569,7 +569,7 @@ describe('config/env (环境变量加载与启动自检)', () => {
       process.env.AI_IMAGE_PROVIDER = 'glm';
       process.env.AI_IMAGE_API_KEY = 'test-image-key';
       process.env.AI_IMAGE_API_URL = 'https://example.com/images/generations';
-      process.env.AI_IMAGE_API_MODEL = 'cogview-3';
+      process.env.AI_IMAGE_API_MODEL = 'GLM-Image';
       process.env.AI_IMAGE_TIMEOUT = '15000';
       process.env.GENERATION_RATE_LIMIT_PER_MIN = '3';
       process.env.GENERATION_MAX_COUNT = '2';
@@ -577,7 +577,7 @@ describe('config/env (环境变量加载与启动自检)', () => {
       expect(cfg.aiImageProvider).toBe('glm');
       expect(cfg.aiImageApiKey).toBe('test-image-key');
       expect(cfg.aiImageApiUrl).toBe('https://example.com/images/generations');
-      expect(cfg.aiImageApiModel).toBe('cogview-3');
+      expect(cfg.aiImageApiModel).toBe('GLM-Image');
       expect(cfg.aiImageTimeout).toBe(15000);
       expect(cfg.generationRateLimitPerMin).toBe(3);
       expect(cfg.generationMaxCount).toBe(2);
