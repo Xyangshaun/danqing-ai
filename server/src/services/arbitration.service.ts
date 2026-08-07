@@ -246,14 +246,46 @@ class ArbitrationServiceClass {
     resolverId: string,
     params: ResolveDisputeRequest,
   ): Promise<DisputeCaseDetail> {
+    logger.info(
+      {
+        disputeId,
+        tenantId,
+        resolverId,
+        rule: params.rule,
+        hasOverride: Boolean(params.overrideScore),
+      },
+      '[arbitration] resolveDispute start',
+    );
+
     // 1. 查询案件(强制 tenantId 过滤)
     const dispute = await disputeRepository.findById(tenantId, disputeId);
     if (!dispute) {
+      logger.warn({ disputeId, tenantId }, '[arbitration] resolve rejected: dispute not found');
       throw new BusinessError(ErrorCode.PHASE5_DISPUTE_NOT_FOUND, '争议案件不存在', 404);
     }
     if (dispute.status === 'resolved' || dispute.status === 'closed') {
+      logger.warn(
+        {
+          disputeId,
+          status: dispute.status,
+          resolvedBy: dispute.resolvedBy,
+          resolvedAt: dispute.resolvedAt,
+        },
+        '[arbitration] resolve rejected: already resolved',
+      );
       throw new BusinessError(ErrorCode.PHASE5_DISPUTE_ALREADY_RESOLVED, '争议案件已裁定', 409);
     }
+
+    logger.info(
+      {
+        disputeId,
+        status: dispute.status,
+        triggerLevel: dispute.triggerLevel,
+        reviewCount: dispute.reviews.length,
+        reviewerTypes: dispute.reviews.map((r) => r.reviewerType),
+      },
+      '[arbitration] dispute loaded, resolving',
+    );
 
     // 2. 手动覆盖优先
     let finalScore: DisputeFinalScore;
@@ -264,11 +296,25 @@ class ArbitrationServiceClass {
         rule: params.rule,
         weightsUsed: {},
       };
+      logger.info(
+        { disputeId, overrideScore: finalScore.overallScore, note: params.overrideScore.note },
+        '[arbitration] using manual override score',
+      );
     } else {
       // 3. 按规则计算
       const reviews = dispute.reviews.map(toReviewView);
       const cfg = dispute.arbitrationConfig as unknown as ArbitrationConfig;
       finalScore = this.computeFinalScore(reviews, params.rule, cfg);
+      logger.info(
+        {
+          disputeId,
+          rule: params.rule,
+          computedOverall: finalScore.overallScore,
+          dimensions: finalScore.dimensions,
+          weightsUsed: finalScore.weightsUsed,
+        },
+        '[arbitration] final score computed',
+      );
     }
 
     // 4. 写入 finalScore + 标记评审 superseded
@@ -287,7 +333,12 @@ class ArbitrationServiceClass {
     }
 
     logger.info(
-      { disputeId, rule: params.rule, finalScore: finalScore.overallScore },
+      {
+        disputeId,
+        rule: params.rule,
+        finalScore: finalScore.overallScore,
+        supersededReviews: dispute.reviews.length,
+      },
       '[arbitration] dispute resolved',
     );
 
@@ -376,6 +427,18 @@ class ArbitrationServiceClass {
       }
       return cfg.judgeWeights.regular.ai;
     });
+    logger.debug(
+      {
+        reviewers: reviews.map((r, i) => ({
+          id: r.id,
+          type: r.reviewerType,
+          score: r.scores.overallScore,
+          confidence: r.confidence,
+          rawWeight: rawWeights[i],
+        })),
+      },
+      '[arbitration] weighted: raw weights assigned',
+    );
 
     // 2. 归一化权重(评委缺席时总和可能<1)
     const totalWeight = rawWeights.reduce((a, b) => a + b, 0);
@@ -390,6 +453,15 @@ class ArbitrationServiceClass {
       }
       return w;
     });
+    const halvedReviewIds = reviews
+      .filter((_, i) => outlierAdjusted[i] !== normalizedWeights[i])
+      .map((r) => r.id);
+    if (halvedReviewIds.length > 0) {
+      logger.debug(
+        { median, outlierDiff: cfg.edgeCases.outlierDiff, halvedReviewIds },
+        '[arbitration] weighted: outlier weights halved',
+      );
+    }
     // 再次归一化
     const sumAfterOutlier = outlierAdjusted.reduce((a, b) => a + b, 0);
     const finalWeights = outlierAdjusted.map((w) => w / sumAfterOutlier);
@@ -398,6 +470,14 @@ class ArbitrationServiceClass {
     const weightedOverall = reviews.reduce(
       (sum, r, i) => sum + r.scores.overallScore * finalWeights[i]!,
       0,
+    );
+    logger.debug(
+      {
+        finalWeights: finalWeights.map((w) => Math.round(w * 1000) / 1000),
+        weightedOverallRaw: Math.round(weightedOverall * 100) / 100,
+        boundaryTolerance: cfg.rules.boundaryTolerance,
+      },
+      '[arbitration] weighted: aggregation done',
     );
 
     // 5. 维度级加权
@@ -452,22 +532,67 @@ class ArbitrationServiceClass {
     disputeId: string,
     tenantId: string,
   ): Promise<ApplyDisputeResultResponse> {
+    logger.info({ disputeId, tenantId }, '[arbitration] applyResult start');
+
     const dispute = await disputeRepository.findById(tenantId, disputeId);
     if (!dispute) {
+      logger.warn({ disputeId, tenantId }, '[arbitration] apply rejected: dispute not found');
       throw new BusinessError(ErrorCode.PHASE5_DISPUTE_NOT_FOUND, '争议案件不存在', 404);
     }
     if (!dispute.finalScore) {
+      logger.warn(
+        { disputeId, status: dispute.status },
+        '[arbitration] apply rejected: no finalScore (not resolved yet)',
+      );
       throw new BusinessError(ErrorCode.PHASE5_DISPUTE_ALREADY_RESOLVED, '争议案件尚未裁定', 409);
     }
 
     const finalScore = dispute.finalScore as unknown as DisputeFinalScore;
+
+    // 回写前读取旧值(便于日志对比 + 存在性校验)
+    const analysis = await analysisRepository.findById(tenantId, dispute.analysisId);
+    if (!analysis) {
+      // 防御:理论上 dispute.analysisId 必然存在,但跨租户/误删场景必须显式暴露而非静默成功
+      logger.error(
+        { disputeId, analysisId: dispute.analysisId, tenantId },
+        '[arbitration] apply failed: analysis not found or cross-tenant',
+      );
+      return {
+        disputeId,
+        analysisId: dispute.analysisId,
+        appliedScore: finalScore.overallScore,
+        applied: false,
+      };
+    }
+    const previousScore = analysis.overallScore;
+
     // 回写 Analysis.overallScore(强制 tenantId 过滤)
-    await analysisRepository.updateResult(tenantId, dispute.analysisId, {
+    const updated = await analysisRepository.updateResult(tenantId, dispute.analysisId, {
       overallScore: finalScore.overallScore,
     });
+    if (!updated) {
+      // updateResult 返回 null = 记录不存在/跨租户(竞态:刚被查出来又被删)
+      logger.error(
+        { disputeId, analysisId: dispute.analysisId, tenantId },
+        '[arbitration] apply failed: updateResult returned null (race delete?)',
+      );
+      return {
+        disputeId,
+        analysisId: dispute.analysisId,
+        appliedScore: finalScore.overallScore,
+        applied: false,
+      };
+    }
 
     logger.info(
-      { disputeId, analysisId: dispute.analysisId, score: finalScore.overallScore },
+      {
+        disputeId,
+        analysisId: dispute.analysisId,
+        previousScore,
+        appliedScore: finalScore.overallScore,
+        rule: finalScore.rule,
+        resolvedBy: dispute.resolvedBy,
+      },
       '[arbitration] result applied to analysis',
     );
 

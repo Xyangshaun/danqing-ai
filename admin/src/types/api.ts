@@ -539,6 +539,8 @@ export interface AdminStatsRealtime {
   pendingTasks: number;
   systemLoad: number;
   recentRequests: number;
+  /** 待裁定争议数(全平台 open + reviewing,Phase 5 追加) */
+  openDisputes: number;
   timestamp: ISODateString;
 }
 

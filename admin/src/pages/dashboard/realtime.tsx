@@ -124,6 +124,21 @@ export default function RealtimePage() {
             </Col>
           </Row>
 
+          {/* Phase 5:待裁定争议实时可见(仲裁积压预警) */}
+          <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+            <Col xs={12} md={6}>
+              <div className="dq-screen-card">
+                <div className="dq-screen-label">待裁定争议</div>
+                <div
+                  className="dq-screen-value"
+                  style={{ color: (rt?.openDisputes ?? 0) > 0 ? '#c0504d' : undefined }}
+                >
+                  {formatNumber(rt?.openDisputes)}
+                </div>
+              </div>
+            </Col>
+          </Row>
+
           <ProCard
             title={<span style={{ color: '#f0ede4' }}>实时趋势</span>}
             style={{ marginTop: 16, background: 'transparent', border: 'none' }}
