@@ -156,14 +156,12 @@ export async function generateClassMaterial(
   scene: string
 ): Promise<string[]> {
   const prompt = buildPrompt(keywords, style, scene);
-  const results: string[] = [];
 
-  // 生成4张参考素材
-  for (let i = 0; i < 4; i++) {
-    results.push(await generateImage(`${prompt} variant ${i + 1}`, 'landscape_4_3'));
-  }
-
-  return results;
+  // 并行生成 4 张参考素材,避免顺序等待(每张真实 AI 约 50-70s)
+  const tasks = Array.from({ length: 4 }, (_, i) =>
+    generateImage(`${prompt} variant ${i + 1}`, 'landscape_4_3')
+  );
+  return Promise.all(tasks);
 }
 
 /**
@@ -232,11 +230,11 @@ export async function generateEmotionCanvas(emotion: string): Promise<string[]> 
   const emotionData = emotionPresets.find(e => e.name === emotion) || emotionPresets[0];
   const prompt = `${emotionData.name} emotion in chinese ink painting, ${emotionData.name} mood, ${emotionData.color} color palette`;
 
-  const results: string[] = [];
-  for (let i = 0; i < 3; i++) {
-    results.push(await generateImage(prompt + ` version ${i + 1}`, 'square'));
-  }
-  return results;
+  // 并行生成 3 张情绪画布,避免顺序等待(每张真实 AI 约 50-70s)
+  const tasks = Array.from({ length: 3 }, (_, i) =>
+    generateImage(`${prompt} version ${i + 1}`, 'square')
+  );
+  return Promise.all(tasks);
 }
 
 export { stylePresets, emotionPresets, scenePresets, getStyleDemoImage };

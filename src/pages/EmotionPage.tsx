@@ -6,6 +6,7 @@ import { saveEmotionPalette } from '../services/data-service';
 import { useToast } from '../components/ToastProvider';
 import EmptyState from '../components/EmptyState';
 import EmotionBrushCanvas from '../components/EmotionBrushCanvas';
+import GenerationLoading from '../components/GenerationLoading';
 
 const emotionData: Record<string, {
   desc: string;
@@ -485,41 +486,19 @@ export default function EmotionPage() {
             )}
           </button>
           <p className="text-sm text-ink-400 mt-3">
-            生成 4 张参考画面 · 约 3-5 秒
+            生成 3 张参考画面 · 真实 AI 约需 1 分钟
           </p>
         </div>
 
         {/* Loading State */}
         {generating && (
-          <div className="bg-rice-50 rounded-2xl p-12 shadow-card text-center mb-8">
-            <div className="relative w-24 h-24 mx-auto mb-6">
-              <div
-                className="absolute inset-0 rounded-full animate-pulse"
-                style={{ background: getGradient(currentEmotion.colorPalette, 0.3) }}
-              />
-              <div className="absolute inset-0 flex items-center justify-center">
-                <Loader2 className="w-10 h-10 text-cinnabar animate-spin" />
-              </div>
-            </div>
-            <h3 className="font-serif text-xl font-semibold text-ink-700 mb-2">
-              AI 正在描绘「{selectedEmotion}」
-            </h3>
-            <p className="text-ink-500 mb-4">将抽象情感转化为视觉语言...</p>
-            <div className="flex justify-center gap-1">
-              {currentEmotion.keywords.map((kw, i) => (
-                <span
-                  key={kw}
-                  className="px-2 py-1 text-xs rounded-full animate-pulse"
-                  style={{
-                    backgroundColor: `${currentEmotion.color}20`,
-                    color: currentEmotion.color,
-                    animationDelay: `${i * 0.2}s`,
-                  }}
-                >
-                  {kw}
-                </span>
-              ))}
-            </div>
+          <div className="mb-8">
+            <GenerationLoading
+              title={`AI 正在描绘「${selectedEmotion}」`}
+              subtitle="将抽象情感转化为视觉语言 · 真实 AI 约需 1 分钟"
+              color={currentEmotion.color}
+              estimatedSeconds={75}
+            />
           </div>
         )}
 

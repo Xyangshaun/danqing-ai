@@ -17,6 +17,7 @@ import { loadBuiltinArtworks, resolveArtworkImageUrl, type ArtworkItem } from '.
 import { useToast } from '../components/ToastProvider';
 import { saveSavedMaterial } from '../services/data-service';
 import EmptyState from '../components/EmptyState';
+import GenerationLoading from '../components/GenerationLoading';
 
 const methodIconMap: Record<string, typeof Layout> = {
   composition: Layout,
@@ -59,7 +60,7 @@ export default function FusePage() {
   const [showSettings, setShowSettings] = useState(false);
   const [showPresets, setShowPresets] = useState(true);
   const [showAnalysis, setShowAnalysis] = useState(true);
-  const [resultVariations, setResultVariations] = useState(3);
+  const [resultVariations, setResultVariations] = useState(1);
 
   /* 素材数据状态 */
   const [artworks, setArtworks] = useState<ArtworkItem[]>([]);
@@ -211,12 +212,11 @@ export default function FusePage() {
       );
 
       const sizes = ['landscape_4_3', 'portrait_4_3', 'square'];
-      const newResults: FuseResult[] = [];
 
-      for (let i = 0; i < resultVariations; i++) {
+      // 并行生成多张变体,避免顺序等待(每张真实 AI 约 50-70s)
+      const tasks = Array.from({ length: resultVariations }, (_, i) => {
         const variationPrompt = `${prompt} variation ${i + 1}, ${['dramatic lighting', 'soft ambient light', 'golden hour glow'][i % 3]}`;
-        const url = await generateImage(variationPrompt, sizes[i % sizes.length]);
-        newResults.push({
+        return generateImage(variationPrompt, sizes[i % sizes.length]).then((url) => ({
           id: `result-${Date.now()}-${i}`,
           url,
           prompt: variationPrompt,
@@ -224,9 +224,10 @@ export default function FusePage() {
           style: selectedStyle,
           method: selectedMethod,
           intensity: selectedIntensity,
-        });
-      }
+        }));
+      });
 
+      const newResults = await Promise.all(tasks);
       setResults(newResults);
       toast.success('灵感融合完成', `生成 ${newResults.length} 张融合作品`);
     } catch (error) {
@@ -805,53 +806,13 @@ export default function FusePage() {
 
         {/* Process Animation */}
         {fusing && (
-          <div className="bg-rice-50 rounded-2xl p-12 shadow-card text-center mb-8">
-            <div className="flex items-center justify-center gap-4 mb-6 flex-wrap">
-              <div className="w-20 h-20 rounded-xl overflow-hidden shadow">
-                <img
-                  src={image1}
-                  alt="作品1"
-                  loading="lazy"
-                  className="w-full h-full object-cover"
-                  onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                />
-              </div>
-              <Plus className="w-8 h-8 text-cinnabar" />
-              <div className="w-20 h-20 rounded-xl overflow-hidden shadow">
-                <img
-                  src={image2}
-                  alt="作品2"
-                  loading="lazy"
-                  className="w-full h-full object-cover"
-                  onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                />
-              </div>
-              <div className="font-serif text-2xl text-cinnabar">=</div>
-              <div className="w-20 h-20 border-2 border-dashed border-cinnabar rounded-xl flex items-center justify-center">
-                <Loader2 className="w-8 h-8 text-cinnabar animate-spin" />
-              </div>
-            </div>
-            <h3 className="font-serif text-xl font-semibold text-ink-700 mb-2">
-              AI 正在嫁接创意
-            </h3>
-            <p className="text-ink-500 mb-4">
-              以「{selectedStyle.name}」风格，通过「{selectedMethod.name}」方法进行融合...
-            </p>
-            <div className="flex justify-center gap-2 flex-wrap">
-              {selectedStyle.characteristics.map((c, i) => (
-                <span
-                  key={c}
-                  className="px-3 py-1 text-xs rounded-full animate-pulse"
-                  style={{
-                    backgroundColor: `${selectedStyle.color}15`,
-                    color: selectedStyle.color,
-                    animationDelay: `${i * 0.15}s`,
-                  }}
-                >
-                  {c}
-                </span>
-              ))}
-            </div>
+          <div className="mb-8">
+            <GenerationLoading
+              title="AI 正在嫁接创意"
+              subtitle={`以「${selectedStyle.name}」风格,通过「${selectedMethod.name}」方法融合 · 生成 ${resultVariations} 张方案`}
+              color={selectedStyle.color}
+              estimatedSeconds={75}
+            />
           </div>
         )}
 
