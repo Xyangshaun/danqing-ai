@@ -39,11 +39,28 @@ function loadAlertConfig() {
   };
 }
 
-function buildAlertText({ targetDir, missing, modified, added, elapsed }) {
+function formatTimestamp(date = new Date()) {
+  const pad = (n) => String(n).padStart(2, '0');
+  const y = date.getFullYear();
+  const m = pad(date.getMonth() + 1);
+  const d = pad(date.getDate());
+  const h = pad(date.getHours());
+  const min = pad(date.getMinutes());
+  const s = pad(date.getSeconds());
+  return `${y}-${m}-${d} ${h}:${min}:${s}`;
+}
+
+function buildAlertText({ targetDir, missing, modified, added, elapsed, timestamp, source }) {
   const lines = [
     '[丹青有AI] 素材库完整性校验异常',
+    '',
+    '=== 触发信息 ===',
+    `触发时间: ${timestamp || formatTimestamp()}`,
+    `触发来源: ${source || '手动执行'}`,
     `目标目录: ${targetDir}`,
     `校验耗时: ${elapsed}s`,
+    '',
+    '=== 统计 ===',
     `缺失文件: ${missing.length} 个`,
     `被篡改文件: ${modified.length} 个`,
     `新增未知文件: ${added.length} 个`,
@@ -149,8 +166,11 @@ async function sendAlert(differences) {
     return;
   }
 
-  const subject = '[丹青有AI] 素材库完整性校验异常';
-  const text = buildAlertText(differences);
+  const timestamp = formatTimestamp();
+  const source = process.env.ALERT_SOURCE || '手动执行';
+  const enriched = { ...differences, timestamp, source };
+  const subject = `[丹青有AI] 素材库完整性校验异常 [${timestamp}] [${source}]`;
+  const text = buildAlertText(enriched);
 
   try {
     try {
@@ -334,6 +354,7 @@ function printUsage() {
   ALERT_TO           收件人,默认 2692963779@qq.com
   ALERT_FROM         发件人,默认 2692963779@qq.com
   ALERT_MAX_RETRIES  邮件发送最大重试次数,默认 3
+  ALERT_SOURCE       告警来源标记,默认 手动执行。建议 cron 任务设为 cron
 
 示例:
   生成基准清单:
