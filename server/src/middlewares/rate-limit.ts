@@ -22,6 +22,7 @@ import { redis } from '../config/redis.js';
 import { logger } from '../utils/logger.js';
 import { env } from '../config/env.js';
 import { getClientIp } from '../utils/ip.js';
+import { redisMetrics } from '../services/redis-metrics.service.js';
 
 /** 滑动窗口大小(毫秒),对应每分钟限流 */
 const RATE_LIMIT_WINDOW_MS = 60_000;
@@ -66,24 +67,50 @@ function isNoScriptError(err: unknown): boolean {
   return code === 'NOSCRIPT' || /NOSCRIPT/i.test(err.message);
 }
 
+/** Redis 操作硬超时(毫秒),超时后 fail open 放行请求,避免 Redis 抖动阻塞用户 */
+const RATE_LIMIT_REDIS_TIMEOUT_MS = 200;
+
 /**
  * 执行滑动窗口限流脚本,返回当前窗口内请求数
  * EVALSHA 优先,NOSCRIPT 时降级为 EVAL(脚本加载到 Redis 后续可复用)
  * 导出供 client-adapt.ts 的 clientRateLimiter 复用,保证原子语义一致
+ *
+ * 容错策略:
+ *   - Redis 操作加 200ms 硬超时,超时返回 -1(由调用方 fail open)
+ *   - 避免因 Redis 重连/重试(maxRetriesPerRequest)累积导致请求阻塞 3-5 秒
  */
 export async function checkSlidingWindowRateLimit(key: string): Promise<number> {
   const now = Date.now();
   const member = crypto.randomUUID();
   const args = [String(now), member, String(RATE_LIMIT_WINDOW_MS), String(RATE_LIMIT_TTL_SEC)];
-  try {
-    const result = await redis().evalsha(getScriptSha(), 1, key, ...args);
-    return Number(result);
-  } catch (err) {
-    if (!isNoScriptError(err)) throw err;
-    // 脚本尚未在 Redis 缓存,降级 EVAL(会同时缓存,后续 EVALSHA 可用)
-    const result = await redis().eval(RATE_LIMIT_SCRIPT, 1, key, ...args);
-    return Number(result);
+
+  const exec = async (): Promise<number> => {
+    const tStart = performance.now();
+    try {
+      const result = await redis().evalsha(getScriptSha(), 1, key, ...args);
+      redisMetrics.recordCommand('evalsha', performance.now() - tStart);
+      return Number(result);
+    } catch (err) {
+      if (!isNoScriptError(err)) {
+        throw err;
+      }
+      // 脚本尚未在 Redis 缓存,降级 EVAL(会同时缓存,后续 EVALSHA 可用)
+      const result = await redis().eval(RATE_LIMIT_SCRIPT, 1, key, ...args);
+      redisMetrics.recordCommand('eval', performance.now() - tStart);
+      return Number(result);
+    }
+  };
+
+  // 硬超时保护:Redis 操作超过 200ms 视为不可用,返回 -1 触发 fail open
+  const timeout = new Promise<number>((resolve) => {
+    setTimeout(() => resolve(-1), RATE_LIMIT_REDIS_TIMEOUT_MS);
+  });
+
+  const result = await Promise.race([exec(), timeout]);
+  if (result === -1) {
+    redisMetrics.recordRateLimitTimeout();
   }
+  return result;
 }
 
 /**
@@ -99,17 +126,25 @@ export function createRateLimiter(maxPerMin: number, scope: string): RequestHand
 
     try {
       const count = await checkSlidingWindowRateLimit(key);
+      // count === -1 表示 Redis 超时,fail open 放行(可用性优先于限流精度)
+      if (count === -1) {
+        redisMetrics.recordRateLimitFailOpen();
+        logger.warn({ scope, ip, traceId: req.traceId }, '[rate-limit] redis timeout, fail open');
+        return next();
+      }
       if (count > maxPerMin) {
+        redisMetrics.recordRateLimitHit();
         logger.warn({ ip, scope, count, max: maxPerMin, traceId: req.traceId }, '[rate-limit] hit');
         res.setHeader('Retry-After', '60');
         return error(res, ErrorCode.RATE_LIMITED, '请求过于频繁,请稍后再试', 429);
       }
       next();
     } catch (err) {
-      // Redis 不可达时:Deny by default 拒绝请求(对应 auth-design.md §3.3)
+      // Redis 真正不可达(非超时):fail open 并告警,避免单点故障拖垮所有 API
+      redisMetrics.recordRateLimitFailOpen();
       const msg = err instanceof Error ? err.message : String(err);
-      logger.error({ err: msg, scope, ip }, '[rate-limit] redis error');
-      return error(res, ErrorCode.CACHE_ERROR, '缓存服务不可用', 503);
+      logger.error({ err: msg, scope, ip }, '[rate-limit] redis error, fail open');
+      return next();
     }
   };
 }

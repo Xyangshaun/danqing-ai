@@ -7,12 +7,17 @@
 import { Redis } from 'ioredis';
 import { env } from './env.js';
 import { logger } from '../utils/logger.js';
+import { redisMetrics } from '../services/redis-metrics.service.js';
 
 let redisInstance: Redis | null = null;
 
 /**
  * 初始化 Redis 单例
  * 在 src/index.ts 启动时调用
+ *
+ * 监控接入(对应 redis-brpop-fix-2026-08-07.md §7):
+ *   - connect/reconnecting/error/close 事件接入 redisMetrics
+ *   - 便于实时观察连接池状态与异常重连
  */
 export function initRedis(): Redis {
   if (redisInstance) {
@@ -33,12 +38,33 @@ export function initRedis(): Redis {
 
   redisInstance.on('connect', () => {
     logger.info('[redis] connected');
+    redisMetrics.onConnect();
+  });
+
+  redisInstance.on('reconnecting', (delayMs: number) => {
+    logger.warn({ delayMs }, '[redis] reconnecting');
+    redisMetrics.onReconnecting();
   });
 
   redisInstance.on('error', (err: Error) => {
     // 不暴露完整错误(可能含 URL/密码)
     logger.error({ err: err.message }, '[redis] connection error');
+    redisMetrics.onError(err.message);
   });
+
+  redisInstance.on('close', () => {
+    logger.warn('[redis] connection closed');
+    redisMetrics.onClose();
+  });
+
+  // 状态变更同步到 metrics(供快照读取当前 status)
+  const origReadyCheck = redisInstance.options.enableReadyCheck;
+  if (origReadyCheck) {
+    // ioredis 内部 ready check 完成后会触发 'ready',此处仅做状态同步
+    redisInstance.on('ready', () => {
+      redisMetrics.setStatus('ready');
+    });
+  }
 
   return redisInstance;
 }

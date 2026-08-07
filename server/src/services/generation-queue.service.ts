@@ -30,6 +30,7 @@
 
 import { redis } from '../config/redis.js';
 import { logger } from '../utils/logger.js';
+import { redisMetrics } from './redis-metrics.service.js';
 import type { ArtType, GenerationInputType } from '../types/api-contract.js';
 
 /**
@@ -122,17 +123,41 @@ class GenerationQueueServiceClass {
   }
 
   /**
-   * 出队:Worker 阻塞读取任务
-   * BRPOP 从队列尾部取(FIFO),取到后更新状态为 processing
-   * @param timeoutSeconds 阻塞超时(秒),默认 5
+   * 出队:Worker 读取任务
+   * - timeoutSeconds > 0:BRPOP 阻塞读取(FIFO,带超时)
+   * - timeoutSeconds === 0:RPOP 非阻塞读取(立即返回,队列为空返回 null)
+   *
+   * 关键修复:Redis BRPOP key 0 = 永久阻塞,会锁死 ioredis 单连接,
+   * 导致所有后续 Redis 命令(rate-limit EVALSHA、黑名单 EXISTS 等)排队等待。
+   * 当 Worker 轮询调用(已有 1s 间隔)时应使用 RPOP 非阻塞出队。
+   *
+   * @param timeoutSeconds 阻塞超时(秒),0 表示非阻塞(RPOP),默认 5
    * @returns 任务数据;队列为空时返回 null
    */
   async dequeue(timeoutSeconds: number = 5): Promise<GenerationJob | null> {
     try {
-      const result = await redis().brpop(QUEUE_KEY, timeoutSeconds);
-      if (!result) return null;
+      let serialized: string | null = null;
 
-      const [_queueKey, serialized] = result;
+      if (timeoutSeconds === 0) {
+        // 非阻塞:RPOP 立即返回,不占用连接
+        const tRpop = performance.now();
+        serialized = await redis().rpop(QUEUE_KEY);
+        redisMetrics.recordRpop(performance.now() - tRpop, !serialized);
+      } else {
+        // 阻塞:BRPOP 带超时(仅在专用 Worker 场景使用)
+        const tBrpop = performance.now();
+        const result = await redis().brpop(QUEUE_KEY, timeoutSeconds);
+        const brpopMs = performance.now() - tBrpop;
+        redisMetrics.recordBrpop(brpopMs, !result);
+        // BRPOP 耗时异常告警(超过 1s 可能连接有问题)
+        if (brpopMs > 1000) {
+          logger.warn({ brpopMs, timeoutSeconds }, '[generation-queue] brpop slow');
+        }
+        if (!result) return null;
+        serialized = result[1];
+      }
+
+      if (!serialized) return null;
       const job = JSON.parse(serialized) as GenerationJob;
 
       // 更新状态为 processing

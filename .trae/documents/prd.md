@@ -432,6 +432,39 @@ stateDiagram-v2
 
 > 对应 API：`POST /api/v1/generation`、`GET /api/v1/generation/:id`（契约见 api-contract.ts §3.17，DOC-2026-08-006/007/009）。
 
+#### 8.1.3 实现状态（M-2 已实现，2026-08-07）
+
+> M-2 阶段（任务 M2-T1~T9/T11）已将 §8.1 全部能力落地，回归 1192 用例 100% 通过。本节登记已实现能力清单与对应实现文件，作为产品需求与实现一致性的"单一真相源"回填。
+
+| 能力 | 状态 | 实现文件 | 验收对应 |
+|------|:----:|----------|---------|
+| 异步任务状态机（pending→processing→success/failed） | 已实现 | `server/src/services/generation-queue.service.ts`（Redis LPUSH/BRPOP + 状态 TTL 1h）+ `server/src/services/generation-worker.service.ts`（递归 setTimeout + isProcessing 防重入） | D2 / 验收项 4 |
+| 双提供商降级（主 trae→备 glm，复用诊断 GLM 凭据） | 已实现 | `server/src/services/image-generation.service.ts`（`resolveImageAIConfig` + `generateImage`，超时独立 30s，不重试） | D3 / 验收项 5 |
+| 创建/查询生成接口（严格按冻结契约） | 已实现 | `server/src/routes/generation.routes.ts`（auth→tenant→apiRateLimiter→[csrf]→controller）+ `server/src/controllers/generation.controller.ts`（Zod 校验） | D1 / 验收项 3 |
+| 业务编排（配额+限流+校验+落库+入队+审核+用量+闭环） | 已实现 | `server/src/services/generation.service.ts`（`createGeneration`/`getGeneration`/`processGenerationJob`/`submitForAnalysis`） | D4 / 验收项 4-9 |
+| 数据访问层（多租户强制 + 失败不扣配额） | 已实现 | `server/src/repositories/generation.repository.ts`（`findById` 强制 tenantId；`countMonthlyGenerateUsage` 排除 failed） | D7 / 验收项 1 |
+| 独立生成配额（free=10/standard=200/enterprise=-1，耗尽→6101） | 已实现 | `server/src/services/generation.service.ts`（`checkGenerationQuota` + `GENERATION_PLAN_QUOTA` 常量） | D4 / 验收项 6 |
+| 单用户限流（5 次/分钟，超限→6106，Redis 异常 fail-open） | 已实现 | `server/src/services/generation.service.ts`（`checkRateLimit`，Redis INCR+EXPIRE 固定窗口） | D4 / 验收项 7 |
+| 内容审核（关键词规则 + 语义组合规则，命中→flagged/rejected） | 已实现 | `server/src/services/content-review.service.ts`（rejected/flagged/semantic 三类规则，纯函数无 IO） | D5 / 验收项 8 |
+| 灰度开关（生成功能默认 disabled，percentage 按租户哈希放量，fail-closed） | 已实现 | `server/src/services/config-feature.service.ts`（`isGenerationEnabled` + `FEATURE_DEFINITIONS[generation].defaultStatus='disabled'`） | D8 / 验收项 12 |
+| 教学闭环（生成图一键提交诊断，复用 `analysis.service.createAnalysis`） | 已实现 | `server/src/services/generation.service.ts#submitForAnalysis`（校验归属+status=success+非 flagged/rejected→调 `analysisService.createAnalysis`） | D6 / 验收项 9 |
+| 用量日志（`AiUsageLog.usageType=generate`，失败不扣配额） | 已实现 | `server/src/services/generation.service.ts#recordUsage`（仅 provider 非空时记录，成功/调用失败均记录） | D4 / 验收项 6 |
+| 数据模型（`GenerationTask` 表 + `AiUsageLog.usageType`） | 已实现 | `server/prisma/schema.prisma`（`enum GenerationStatus` + `model GenerationTask` + `AiUsageLog.usageType/generationId`，三索引就位） | D7 / 验收项 1 |
+| 前端生成交互（form→generating→result/failed，2s 轮询，6101/6106 差异化提示） | 已实现 | `src/pages/GenerationPage.tsx` + `src/pages/generation/*`（`GenerationForm/GenerationLoading/GenerationResult/GenerationFailed`） | D6 / 验收项 10 |
+| 错误码 6101-6106 全链路对齐 | 已实现 | `server/src/types/api-contract.ts` §3.17（冻结，零改动）+ 各服务 `BusinessError(ErrorCode.GENERATION_*)` | D1 / 验收项 3 |
+
+**关键验收对照**：
+- US-GEN-01（文字提示词生成 1-4 张参考图 + 一键诊断）：`submitForAnalysis` 已接通 `analysis.service.createAnalysis`，闭环可达。
+- US-GEN-02（草稿图生成 + 轮询）：`GenerationPage` 2s 轮询 + `inputType=sketch` 走 `sketchImageUrl` 路径，`image-generation.service.buildImageRequestBody` 注入草稿图引用。
+- US-GEN-03（生成计入配额，超出返回配额不足）：`checkGenerationQuota` 独立配额，耗尽抛 `GENERATION_QUOTA_EXCEEDED(6101)` HTTP 402；`recordUsage` 写 `AiUsageLog.usageType=generate`。
+- US-GEN-04（生成内容合规审核，违规标记 flagged）：`content-review.service` 关键词+语义规则，`GeneratedImage.reviewStatus` 在 `GenerationTask.images` JSON 持久化，flagged/rejected 不进入一键诊断（`submitForAnalysis` 403 拦截）。
+
+**门禁结论（M2-1~M2-4 全 PASS，详见 `m2-generation-plan-2026-08-07.md` §1.3）**：
+- M2-1（契约零改动）：PASS — 实现代码反复声明"禁止修改 api-contract.ts"，错误码 6101-6106/字段名/状态机与冻结类型完全对齐。
+- M2-2（数据模型迁移）：PASS — `schema.prisma` 含 `GenerationTask` + `AiUsageLog.usageType`，三索引就位，`prisma generate` 0 错误。
+- M2-3（多租户隔离）：PASS — `generation.repository` 所有查询强制 `tenantId` 过滤，跨租户→`findById` 返回 null→service 抛 `GENERATION_TASK_NOT_FOUND(6102)` 404，不泄露存在性。
+- M2-4（默认关闭灰度开启）：PASS — `config-feature.service` 中 `generation` 开关 `defaultStatus='disabled'`、`type='percentage'`、`defaultValue=0`（fail-closed），经 `/api/v1/config/features/generation` PATCH 灰度开启。
+
 ### 8.2 租户级仲裁配置覆盖（P-04）
 
 #### 8.2.1 需求说明

@@ -421,3 +421,50 @@ describe('generateImage(生成调用)', () => {
     expect(String(body.prompt)).toContain('https://cdn.example.com/draft.jpg');
   });
 });
+
+// ============================================================
+// M2-T11 专项补齐:错误分类未知分支 + count 请求体截断
+// ============================================================
+
+describe('generateImage M2-T11 专项补齐(错误分类/请求体截断)', () => {
+  beforeEach(() => {
+    resetEnv();
+    mockedAxiosPost.mockReset();
+  });
+
+  it('无法识别的错误(无 code/无 response)→ AI_UNKNOWN_ERROR', async () => {
+    // 仅 message,不匹配超时/网络/HTTP 任一分类 → 归为未知错误
+    mockedAxiosPost.mockRejectedValueOnce(buildAxiosError('', 'some weird failure'));
+    const result = await generateImage(buildTextRequest());
+    expect(result.success).toBe(false);
+    expect(result.failureReason).toBe('AI_UNKNOWN_ERROR');
+  });
+
+  it('CanceledError(主动取消)→ AI_TIMEOUT(超时信号分类)', async () => {
+    const err = new Error('canceled') as Error & { code: string };
+    err.code = 'ERR_CANCELED';
+    mockedAxiosPost.mockRejectedValueOnce(err);
+    const result = await generateImage(buildTextRequest());
+    expect(result.success).toBe(false);
+    expect(result.failureReason).toBe('AI_TIMEOUT');
+  });
+
+  it('count 超上限 → 请求体 n 截断为 generationMaxCount(4)', async () => {
+    mockedAxiosPost.mockResolvedValueOnce(buildUrlResponse([
+      'https://cdn.example.com/1.png',
+      'https://cdn.example.com/2.png',
+      'https://cdn.example.com/3.png',
+      'https://cdn.example.com/4.png',
+    ]));
+    // 请求 count=10,请求体 n 应被截断为 4(契约 §4.4 上限)
+    await generateImage(buildTextRequest({ count: 10 }));
+    const [_url, body] = mockedAxiosPost.mock.calls[0] as unknown as [string, Record<string, unknown>];
+    expect(body.n).toBe(4);
+  });
+
+  it('extractImageUrls:count 边界(1 张结果)→ 只返回 1 张', () => {
+    // 契约 count 最小为 1;验证 1 张结果时正常提取(不越界)
+    const urls = extractImageUrls({ data: [{ url: 'a' }] }, 1);
+    expect(urls).toEqual(['a']);
+  });
+});

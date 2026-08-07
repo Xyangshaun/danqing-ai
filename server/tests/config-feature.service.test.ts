@@ -22,30 +22,31 @@ const TENANT_B = 't-feat-b';
 
 describe('ConfigFeatureService(功能开关,M2-T6)', () => {
   beforeEach(async () => {
-    // 恢复默认:生成功能默认开启(真实 AI 生成对接后上线)
+    // 恢复默认:生成功能默认关闭(门禁 M2-4,经 /config 灰度开启)
     await configFeatureService.resetToDefaults();
   });
 
-  it('生成功能默认开启', async () => {
-    expect(configFeatureService.isGenerationEnabled()).toBe(true);
-    expect(configFeatureService.isGenerationEnabled(TENANT_A)).toBe(true);
+  it('生成功能默认关闭', async () => {
+    expect(configFeatureService.isGenerationEnabled()).toBe(false);
+    expect(configFeatureService.isGenerationEnabled(TENANT_A)).toBe(false);
     const feature = await configFeatureService.getFeature('generation');
-    expect(feature?.status).toBe('enabled');
-    expect(feature?.value).toBe(true);
+    expect(feature?.status).toBe('disabled');
+    expect(feature?.type).toBe('percentage');
+    expect(feature?.value).toBe(0);
   });
 
-  it('listFeatures 返回 generation 开关(默认 enabled)', async () => {
+  it('listFeatures 返回 generation 开关(默认 disabled)', async () => {
     const features = await configFeatureService.listFeatures();
     const gen = features.find((f) => f.featureId === 'generation');
     expect(gen).toBeDefined();
-    expect(gen!.status).toBe('enabled');
+    expect(gen!.status).toBe('disabled');
   });
 
   it('listFeatures 按状态过滤', async () => {
     const enabled = await configFeatureService.listFeatures({ status: 'enabled' });
-    expect(enabled.some((f) => f.featureId === 'generation')).toBe(true);
+    expect(enabled.some((f) => f.featureId === 'generation')).toBe(false);
     const disabled = await configFeatureService.listFeatures({ status: 'disabled' });
-    expect(disabled.some((f) => f.featureId === 'generation')).toBe(false);
+    expect(disabled.some((f) => f.featureId === 'generation')).toBe(true);
   });
 
   it('updateFeature 开启后 → isGenerationEnabled true(全局 + 按租户)', async () => {
@@ -72,16 +73,36 @@ describe('ConfigFeatureService(功能开关,M2-T6)', () => {
     }
   });
 
-  it('gradual + boolean value=true → 全局开启、按租户开启', async () => {
-    await configFeatureService.updateFeature('generation', { status: 'gradual', value: true }, 'op');
+  it('gradual + value=100 → 全局开启、按租户开启(100% 放量)', async () => {
+    await configFeatureService.updateFeature('generation', { status: 'gradual', value: 100 }, 'op');
     expect(configFeatureService.isGenerationEnabled()).toBe(true);
     expect(configFeatureService.isGenerationEnabled(TENANT_A)).toBe(true);
   });
 
-  it('gradual + boolean value=false → 全局关闭、按租户关闭', async () => {
-    await configFeatureService.updateFeature('generation', { status: 'gradual', value: false }, 'op');
-    expect(configFeatureService.isGenerationEnabled()).toBe(false);
+  it('gradual + value=0 → 全局视角进行中、按租户关闭(0% 放量)', async () => {
+    await configFeatureService.updateFeature('generation', { status: 'gradual', value: 0 }, 'op');
+    // 全局视角(无 tenantId):灰度进行中,worker 需运行 → true
+    expect(configFeatureService.isGenerationEnabled()).toBe(true);
+    // 按租户:hash < 0 恒为 false → 0% 放量
     expect(configFeatureService.isGenerationEnabled(TENANT_A)).toBe(false);
+  });
+
+  it('gradual + percentage 按租户确定性哈希放量', async () => {
+    await configFeatureService.updateFeature('generation', { status: 'gradual', value: 50 }, 'op');
+    // 同一租户多次判定结果一致(确定性,避免灰度抖动)
+    expect(configFeatureService.isGenerationEnabled(TENANT_A)).toBe(
+      configFeatureService.isGenerationEnabled(TENANT_A),
+    );
+    // 0% 恒不命中 / 100% 恒命中(边界)
+    await configFeatureService.updateFeature('generation', { status: 'gradual', value: 0 }, 'op');
+    expect(configFeatureService.isGenerationEnabled(TENANT_A)).toBe(false);
+    await configFeatureService.updateFeature('generation', { status: 'gradual', value: 100 }, 'op');
+    expect(configFeatureService.isGenerationEnabled(TENANT_A)).toBe(true);
+    // 部分百分比下,不同租户哈希不同 → 存在放行与不放行两类(抽样校验)
+    await configFeatureService.updateFeature('generation', { status: 'gradual', value: 50 }, 'op');
+    const sample = Array.from({ length: 40 }, (_, i) => configFeatureService.isGenerationEnabled(`t-hash-${i}`));
+    expect(sample.some(Boolean)).toBe(true);
+    expect(sample.some((v) => !v)).toBe(true);
   });
 
   it('updateFeature 变更持久化到 Redis', async () => {
@@ -92,10 +113,10 @@ describe('ConfigFeatureService(功能开关,M2-T6)', () => {
     expect(parsed.status).toBe('enabled');
   });
 
-  it('resetToDefaults 后恢复开启', async () => {
-    await configFeatureService.updateFeature('generation', { status: 'disabled' }, 'op');
-    expect(configFeatureService.isGenerationEnabled()).toBe(false);
-    await configFeatureService.resetToDefaults();
+  it('resetToDefaults 后恢复默认关闭', async () => {
+    await configFeatureService.updateFeature('generation', { status: 'enabled' }, 'op');
     expect(configFeatureService.isGenerationEnabled()).toBe(true);
+    await configFeatureService.resetToDefaults();
+    expect(configFeatureService.isGenerationEnabled()).toBe(false);
   });
 });

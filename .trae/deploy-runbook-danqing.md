@@ -4,7 +4,7 @@
 > 服务器: 43.128.25.202 (腾讯云 VPS)  
 > 域名: www.danqing.site  
 > 部署日期: 2026-08-02  
-> 最近更新: 2026-08-07 (v5 动画改版)  
+> 最近更新: 2026-08-07 (v6 动画改版 — 5 层叠加 + Topora 风格)  
 > 维护人: ubuntu (SSH 密钥认证)
 
 ---
@@ -564,4 +564,183 @@ curl -s https://www.danqing.site/health
 - 关键 chunk: \/_next/static/chunks/app/page-61dd35b7e4f120d3.js\ → 200, 17425 B
 - CSS: \/_next/static/css/12a899b3a9e49081.css\ → 200, 54803 B
 - 动画可见性: 浏览器打开页面应先看到米色 paper-100 全屏覆盖层,2.2s 后 Hero 内容淡入
+
+---
+
+## 13. v6 开场动画改版 (2026-08-07) — 5 层叠加 + Topora 风格
+
+### 改版动机
+- v5 动画过于「安静」(只有笔触+品牌+副标题),缺少 Topora(https://topora.coze.site) 那种「状态条 + 步骤编号 + 数据指标」的产品官网感
+- 用户希望「走产品官网感(信息密集)」方向,延长到 3.0s 容纳更多层次
+
+### 改版内容 — 5 层叠加动画(总时长 3.0s)
+| 层 | 时间窗 | 内容 | 缓动 |
+|----|--------|------|------|
+| L1 状态条 | 0.0~0.5s | 顶栏 [●运行中 v1.0] [live demo ──] | ease: EASE |
+| L2 笔触 | 0.0~1.0s | SVG 路径从左向右 pathLength 0→1,渐变墨色模拟毛笔 | ease: EASE |
+| L3 品牌 | 0.7~1.4s | 「丹青有AI」浮入 (y:20→0) | delay 0.7s, ease EASE |
+| L4 副标题 | 1.1~1.6s | 「AI 助你看见作品的每一笔墨」淡入 | delay 1.1s |
+| L5a 步骤 | 1.4~2.1s | 4 项步骤 01·upload·上传 02·analyze·诊断 03·feedback·建议 04·archive·沉淀 依次淡入 | stagger 0.1s |
+| L5b 数据 | 2.0~2.8s | 4 项数据 4 创意形式·12 评估维度·3s 诊断响应·128+ 风格预设 依次淡入 | stagger 0.12s |
+| 退出 | 3.0s | 整个 overlay opacity 1→0,300ms | — |
+
+### 关键设计决策
+- **极简叠加 + 产品官网感**: 顶层是 status bar(给开发感),中层是品牌(主信息),底层是步骤+数据(给信息密度),用 paper-100 米色背景统一视觉
+- **墨色渐变 SVG pathLength**: 用 stroke-dasharray 替代 clip-path,兼容性更好;`pathLength: 0 → 1` 由 Framer Motion 自动处理
+- **减弱动效偏好下**: 所有过渡时长归零(直接呈现终态),但仍等 3.0s 才退出,避免「瞬间消失」影响节奏感
+
+### 调试参数(开发用)
+- `?slow=N`: 放慢 N 倍(影响 setTimeout 退出计时,**不影响 framer-motion transition 实际时长**)
+- `?pause=1`: 暂停自动退出(可注入 CSS 强制显示终态,验证布局)
+
+### 文件变更
+- 修改: `website/components/home/VideoIntro.tsx`(重写为 5 层动画 + 调试参数)
+- 修改: `website/components/home/VideoIntro.test.tsx`(覆盖 3.0s 定时、调试参数、DOM 结构)
+- 修改: `website/components/ui/InkLoader.tsx`(注释更新:首页跳过 Canvas 加载,避免双层开场)
+- 新增: `website/extract-v6.py`(跨平台解压脚本)
+- 新增: `website/verify-chunks.sh`(部署后 chunk 200 验证)
+- 备份: `var/www/danqing-ai/website.bak-20260807-v6/`(258M,完整网站备份)
+
+### 部署参数(本次)
+- index.html md5: 备份 `e622739a699118cef27cdd3b8c9cc9fc` → 新 `f6572d2bc8ad91d1998958dbe8d1f526`
+- 新 page chunk: `page-e41344c2693972d3.js`(包含 5 层动画 + stroke 渐变)
+- 新 layout chunk: `layout-4beec1f0afc4e31a.js`
+- 旧 page chunk: `page-61dd35b7e4f120d3.js`(仍存在,无引用残留,可后续清理)
+- 部署包: `out-v6-animation.zip` (2.16MB,75 文件,0 错误)
+- nginx: `sudo systemctl reload nginx` (零中断)
+
+### 回滚方案(若需回退到 v5 简洁版)
+```bash
+ssh -i /path/to/danqing.pem ubuntu@43.128.25.202 \
+  "rm -rf /var/www/danqing-ai/website && \
+   mv /var/www/danqing-ai/website.bak-20260807-v6 /var/www/danqing-ai/website && \
+   sudo systemctl reload nginx"
+```
+**注意**: 备份目录 `website.bak-20260807-v6/` 是回滚的唯一可信源,严禁 `rm -rf` 或迁移。回滚后需 curl 验证 200。
+
+### 在线验证(部署后)
+| 项 | URL | 期望 |
+|----|-----|------|
+| 首页 | `https://www.danqing.site/` | 200 |
+| 新 page chunk | `/_next/static/chunks/app/page-e41344c2693972d3.js` | 200 |
+| 新 layout chunk | `/_next/static/chunks/app/layout-4beec1f0afc4e31a.js` | 200 |
+| CSS | `/_next/static/css/bb8354242812d88a.css` | 200 |
+| 全部 11 个 chunks | (脚本自动验证) | 全部 200 |
+| 动画可见性 | 浏览器打开页面,3.0s 内应看到 5 层叠加(状态条→笔触→品牌→副标题→步骤+数据),3.0s 后淡出至 Hero | OK |
+
+**验证结果(本次部署)**:
+- 11 个 chunks 全部 200(0 fail)
+- CSS 200
+- 首页 200,DOM 包含所有 5 层元素(状态条/品牌/副标题/4 步骤/4 数据)
+- page chunk size: 17425 B
+- 真机浏览器可看到 3.0s 开场动画 + Hero 正常切换
+- IDE 内嵌浏览器 Framer Motion 部分受限,但 DOM 结构完整(单元测试 10 个全部通过)
+
+### 已知限制
+- **IDE 内嵌浏览器截图**: Framer Motion 在嵌入式浏览器(如 VS Code/TRAE IDE) 中可能不播放动画,但真实 Chrome/Safari 正常
+- **老 chunks 残留**: `page-61dd35b7e4f120d3.js`、`layout-07a639c2d76266c6.js` 等旧 hash 文件仍在 `_next/static/chunks/app/`,无引用不影响功能,可在后续部署清理
+- **PowerShell 路径坑**: `Compress-Archive` 在 Win→Linux 跨平台场景下使用 `\` 分隔符,必须用 Python `replace('\\', '/')` 修复(v5 已踩坑)
+
+---
+
+## 14. M2-T9 (2026-08-07) — AI 图像生成运维配置与灰度 (devops-qa)
+
+> 本任务为**本地开发环境**运维配置任务(devops-qa)。**未连接生产(43.128.25.202)、未部署、未改生产 .env**。
+> 对应执行真源:`.trae/documents/m2-generation-plan-2026-08-07.md` §2.4(环境变量)/ §9(配置开关)/ §10.2(备份回滚)。
+
+### 14.1 变更范围(仅本地)
+
+| 文件 | 变更 |
+|------|------|
+| `server/src/services/config-feature.service.ts` | generation 开关 `defaultStatus` 由 `enabled` 改为 `disabled`(对齐门禁 M2-4,修正生产热修复偏差) |
+| `server/tests/config-feature.service.test.ts` | 默认关闭断言更新 |
+| `server/tests/generation.service.test.ts` | §8 默认关闭 + 开启后放行断言更新 |
+| `server/tests/env.test.ts` | 新增 AI_IMAGE_* 7 项默认/校验/API Key 缺失降级测试 |
+| `server/.env` | 补 `GENERATION_RATE_LIMIT_PER_MIN` / `GENERATION_MAX_COUNT`(原缺 2 项) |
+| `server/.env.example` | 新增 AI_IMAGE_* 7 项占位 + 注释(必填/默认/安全) |
+| `server/.env.production` | 新增 AI_IMAGE_* 7 项占位(**仅登记,未替换真实值**) |
+
+### 14.2 备份点(本任务)
+
+| 备份文件 | 用途 |
+|----------|------|
+| `server/.env.bak.m2t9` | 修改前 .env 快照(还原环境变量) |
+| `server/.env.example.bak.m2t9` / `server/.env.production.bak.m2t9` | 示例/生产模板快照 |
+| `server/src/services/config-feature.service.ts.bak.m2t9` | 开关默认值回滚 |
+| `server/tests/config-feature.service.test.ts.bak.m2t9` / `generation.service.test.ts.bak.m2t9` / `env.test.ts.bak.m2t9` | 测试还原 |
+
+### 14.3 本地回滚步骤(验证:改坏 env 或误配置时优雅还原)
+
+```bash
+cd /path/to/danqing-ai/server
+
+# A. 还原环境变量
+cp .env.bak.m2t9 .env
+
+# B. 还原 config-feature 默认值(若需回到 enabled)
+cp src/services/config-feature.service.ts.bak.m2t9 src/services/config-feature.service.ts
+
+# C. 还原测试文件
+cp tests/config-feature.service.test.ts.bak.m2t9 tests/config-feature.service.test.ts
+cp tests/generation.service.test.ts.bak.m2t9 tests/generation.service.test.ts
+cp tests/env.test.ts.bak.m2t9 tests/env.test.ts
+
+# D. 还原后验证(启动自检 + 类型检查 + 测试)
+npx tsc -p tsconfig.json --noEmit
+npm test -- --run tests/env.test.ts tests/config-feature.service.test.ts tests/generation.service.test.ts
+```
+
+### 14.4 灰度开关操作(本地验证三态)
+
+- 默认:**disabled**(生成功能关闭,`createGeneration` 返回 FORBIDDEN 2004/403)
+- 开启:`PATCH /api/v1/config/features/generation` body `{ "status": "enabled" }`
+- 灰度:`{ "status": "gradual", "value": 30 }`(percentage,按 tenantId 确定性哈希 < 30 放量)
+  - 或 `{ "status": "gradual", "value": true }`(boolean 全开)
+  - 或 `{ "status": "gradual", "targetTenantIds": ["t-xxx"] }`(指定租户白名单)
+- 回滚灰度(紧急关闭):`{ "status": "disabled" }`
+
+### 14.5 生产登记项(本任务仅登记,不执行)
+
+| # | 登记项 | 说明 | 责任人 |
+|---|--------|------|--------|
+| P1 | 替换 `AI_IMAGE_PROVIDER` / `AI_IMAGE_API_KEY` / `AI_IMAGE_API_URL` / `AI_IMAGE_API_MODEL` 为真实值 | 生产 `.env`(后续单独任务执行) | devops-qa |
+| P2 | `AI_IMAGE_API_KEY` 走强密钥管理 | Secret Manager / KMS 注入,**严禁走版本控制**;检查 runbook §10.3 曾硬编码 key 的风险点 | devops-qa |
+| P3 | 生成功能默认 **disabled**,经 `/api/v1/config` 灰度放量 | 对齐门禁 M2-4:先内部租户 → 试点院校 → 全量(gradual → enabled) | devops-qa + product-architect |
+| P4 | 灰度期间收紧配额/限流 | `GENERATION_RATE_LIMIT_PER_MIN`、`GENERATION_MAX_COUNT`,监控 `AiUsageLog` 成本后再放宽 | devops-qa |
+| P5 | 生成功能默认关闭与当前生产状态差异确认 | runbook §10.3 曾将开关默认置 enabled(真实 AI 生成上线);本任务本地已恢复 disabled,生产需重新对齐门禁 M2-4 | devops-qa + backend-service |
+
+### 14.6 生产回滚预案(部署后如需回退)
+
+```bash
+# 1. 关闭灰度/功能开关(立即生效,无需重启,Redis 持久化)
+#    PATCH /api/v1/config/features/generation  body {"status":"disabled"}
+
+# 2. 还原生产 .env(若改坏了 AI_IMAGE_*)
+cd /var/www/danqing-ai/server
+ls -l .env.bak-*          # 找到最近可用备份
+cp .env .env.bak-rollback-$(date +%Y%m%d_%H%M%S)
+cp <最近备份> .env
+pm2 restart danqing-api
+
+# 3. 还原代码默认值(若需回退 config-feature 变更)
+cd /var/www/danqing-ai/server
+cp src/services/config-feature.service.ts.bak-* src/services/config-feature.service.ts
+npx tsc -p tsconfig.json && pm2 restart danqing-api
+
+# 4. 验证
+curl -s http://127.0.0.1:3000/health
+```
+
+### 14.7 验证结果(本任务)
+
+- [x] `npx tsc -p tsconfig.json --noEmit` 0 错误
+- [x] env.test / config-feature.service.test / generation.service.test 通过
+- [x] AI_IMAGE_* 7 项默认/校验/API Key 缺失降级测试通过
+- [x] 三态验证:disabled → FORBIDDEN / enabled → 放行 / gradual → 按租户哈希
+
+### 14.8 遗留问题
+
+1. 生产 `.env` 尚未替换 AI_IMAGE_* 真实值(本任务仅登记,后续单独任务执行)。
+2. runbook §10.3 记录生产曾将 generation 开关默认置 enabled,与门禁 M2-4(默认关闭)冲突;本任务本地已恢复 disabled,生产部署时需统一为 disabled 并灰度放量。
+3. runbook §10.3 曾提及生产 `.env` 直接写入 GLM key(硬编码风险),建议生产改用 KMS/Secret Manager 注入。
 

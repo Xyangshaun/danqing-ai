@@ -246,33 +246,239 @@ AI 模块采用 OpenAI 兼容协议，可接入 GLM/TRAE/OpenAI/Azure/vLLM。
 
 ---
 
-## 6. AI图像生成架构（M-0 新增）
+## 6. AI图像生成架构（M-2 已实现，2026-08-07）
 
-> 对应升级痛点 P-02 / P-07，契约见 `api-contract.ts` §3.17（DOC-2026-08-006/007/009）。
+> 对应升级痛点 P-02 / P-07，契约见 `api-contract.ts` §3.17（DOC-2026-08-006/007/009，M-0 已冻结）。
+> M-2 阶段（任务 M2-T1~T9/T11）已将本节架构全部落地，回归 1192 用例 100% 通过。本节为"已实现"状态回填，事实来源为 `server/src/services/generation*.ts` 与 `server/prisma/schema.prisma`。
 
-### 6.1 架构职责
+### 6.1 架构职责（已实现）
 
-`image-generation.service` 负责 AI 参考图生成，与诊断链路解耦：
+生成功能为**异步任务**，不阻塞诊断主链路（3 秒 SLA 硬约束）。核心服务与落地实现如下：
 
-| 关注点 | 方案 |
-|--------|------|
-| 异步任务状态机 | `pending → processing → success/failed`，前端轮询 `GET /generation/:id` |
-| 双提供商降级 | 复用 GLM/TRAE 降级，`usedFallback` 透出；双不可用返回 `GENERATION_PROVIDER_UNAVAILABLE` |
-| 输入 | 文字提示词(`text`) 或 草稿图(`sketch`) |
-| 配额护栏 | 计入 `AiUsageLog`(`usageType=generate`)，与订阅配额对齐 |
-| 限流 | 单用户 5 次/分钟(`GENERATION_RATE_LIMITED`) |
-| 内容审核 | 生成图经 `ReviewStatus` 审核，违规标记 `flagged` |
-
-### 6.2 教学闭环
-
+```mermaid
+graph TD
+    FE[前端 GenerationPage] -->|POST /api/v1/generation| CT[generation.controller Zod 校验]
+    CT -->|auth→tenant→apiRateLimiter→csrf| RLM[中间件链]
+    CT --> GS[generation.service 业务编排]
+    GS -->|开关校验 M2-4| CF[config-feature.service isGenerationEnabled]
+    GS -->|配额校验 6101| QT[GENERATION_PLAN_QUOTA + countMonthlyGenerateUsage]
+    GS -->|限流 6106| RL[Redis INCR+EXPIRE 固定窗口 5/分]
+    GS -->|入队/降级同步| GQ[generation-queue.service Redis List]
+    GQ -->|RPOP 非阻塞出队| WRK[generation-worker 递归 setTimeout + isProcessing 防重入]
+    WRK -->|双提供商降级| IGS[image-generation.service resolveImageAIConfig]
+    IGS -->|主 trae 完整| TRAE[TRAE 图像生成端点]
+    IGS -->|主残缺→降级| GLM[GLM 端点 复用诊断 aiApiKey]
+    WRK -->|用量日志| GR_REPO[generation.repository + ai-usage.repository]
+    WRK -->|内容审核| RV[content-review.service 关键词+语义规则]
+    GR_REPO -->|结果落库| DB[(GenerationTask.images JSON)]
+    GQ -->|状态/结果 Redis TTL 1h| REDIS[(Redis job:id:status/result)]
+    FE -->|GET /generation/:id 2s 轮询| CT
+    CT -->|RBAC 数据范围| GR_REPO
+    FE -->|一键提交诊断| SUB[generation.service.submitForAnalysis]
+    SUB -->|复用同步链路| AS[analysis.service.createAnalysis ≤3s]
 ```
-文字/草稿图 → POST /generation → 生成参考图
-  → 前端一键"提交诊断"(复用 analysis.service.runAnalysis)
-  → 获得批改建议
-  形成"生成 → 诊断 → 批改"闭环
+
+**已实现组件清单**：
+
+| 关注点 | 落地实现 | 关键文件 |
+|--------|---------|---------|
+| 异步任务状态机 | `pending → processing → success/failed`，Redis List(LPUSH/RPOP 非阻塞)+ 状态/结果 TTL 1h + DB 持久化跨进程 | `server/src/services/generation-queue.service.ts` |
+| Worker 轮询防重入 | 递归 setTimeout(防叠加) + isProcessing 锁(防并发) + 优雅退出挂 gracefulShutdown | `server/src/services/generation-worker.service.ts` |
+| 双提供商降级 | 主 trae 配置残缺自动降级到 glm(复用诊断 `aiApiKey`)，超时独立 30s，不重试 | `server/src/services/image-generation.service.ts` |
+| 创建/查询接口 | POST/GET 严格按冻结契约返回，Zod 全量校验(inputType/artType/aspect/count/sync) | `server/src/routes/generation.routes.ts` + `server/src/controllers/generation.controller.ts` |
+| 业务编排 | 配额→限流→校验→落库→入队/同步降级→审核→用量→闭环 | `server/src/services/generation.service.ts` |
+| 数据访问层 | 强制 `tenantId` 过滤，跨租户→null→404；失败不扣配额(status 非 failed 计数) | `server/src/repositories/generation.repository.ts` |
+| 独立生成配额 | `free=10/standard=200/enterprise=-1`，耗尽→`GENERATION_QUOTA_EXCEEDED(6101)` 402 | `generation.service.ts#checkGenerationQuota` + `GENERATION_PLAN_QUOTA` |
+| 单用户限流 | 5 次/分钟，超限→`GENERATION_RATE_LIMITED(6106)` 429，Redis 异常 fail-open | `generation.service.ts#checkRateLimit` |
+| 内容审核 | rejected(明确违禁)/flagged(敏感)/semantic(组合规则)三类，纯函数无 IO，`GeneratedImage.reviewStatus` 持久化 | `server/src/services/content-review.service.ts` |
+| 灰度开关 | `generation` 开关 `defaultStatus='disabled'`、`type='percentage'`、`defaultValue=0`(fail-closed)，按租户哈希放量 | `server/src/services/config-feature.service.ts` |
+| 教学闭环 | 生成图一键提交诊断，校验归属+status=success+非 flagged/rejected→调 `analysisService.createAnalysis` | `generation.service.ts#submitForAnalysis` |
+| 用量日志 | `AiUsageLog.usageType=generate`，仅 provider 非空时记录，成功/调用失败均记录(成本审计) | `generation.service.ts#recordUsage` |
+
+### 6.2 双提供商降级策略（已实现）
+
+`image-generation.service.resolveImageAIConfig()` 复用 `ai-vision.service.resolveAIConfig` 同源思路，但使用独立 `AI_IMAGE_*` 配置，与诊断链路解耦：
+
+| 场景 | 行为 | 代码位置 |
+|------|------|---------|
+| 主=glm 且 `aiImageApiKey` 存在 | 使用 glm，`usedFallback=false` | `resolveImageAIConfig` 第 112-121 行 |
+| 主=trae 且 key+url 均非空 | 使用 trae，`usedFallback=false` | 第 124-133 行 |
+| 主=trae 但 key/url 残缺 | 降级到 glm(复用诊断 `aiApiKey`)，`usedFallback=true`，warning 日志 | 第 136-151 行 |
+| 双提供商均不可用 | 返回 null，上层标记 `GENERATION_PROVIDER_UNAVAILABLE(6103)` | 第 154 行 |
+
+**降级设计要点（已实现）**：
+- 生成超时独立配置(`AI_IMAGE_TIMEOUT`，默认 30000ms)，不受诊断 2.5s 限制。
+- 双层超时保障：axios `timeout` + `AbortController` wall-clock deadline（`image-generation.service.ts` 第 321-322 行）。
+- 不重试：失败交上层异步任务标记 failed，由编排层决定降级/失败策略。
+- 主提供商失败时 `ImageGenerationResult.usedFallback=true`，落库 `GenerationTask.usedFallback` 透出前端。
+
+### 6.3 异步任务状态机（已实现）
+
+```mermaid
+stateDiagram-v2
+    [*] --> pending: POST /generation 入队(Redis SET job:id:status)
+    pending --> processing: Worker RPOP 出队(更新 Redis status)
+    processing --> success: generateImage 成功 + content-review + 落库 + Redis markSuccess
+    processing --> failed: 双提供商不可用/超时/解析失败 → markFailed + DB updateStatus
+    pending --> failed: 配额校验失败/入队前异常
 ```
 
-生成任务强制归属 `req.tenantId`，计入 `AiUsageLog`（`usageType=generate`），成本进入可观测性聚合。
+- 状态存 Redis `job:{id}:status`（TTL 1 小时），供前端轮询加速。
+- 结果存 Redis `job:{id}:result`（`GeneratedImage[]`，TTL 1 小时），同时落库 `GenerationTask.images`（持久化，跨进程 GET 以 DB 为准）。
+- 前端轮询 `GET /generation/:id`（2s 间隔），`status=success` 返回 `images`；DB 为 pending/processing 时以 Redis 最新状态补充。
+
+### 6.4 教学闭环（已实现）
+
+```mermaid
+sequenceDiagram
+    participant FE as 前端 GenerationPage
+    participant GS as generation.service
+    participant AS as analysis.service
+    participant AI as AI(双提供商)
+
+    FE->>GS: POST /generation(文字/草图)
+    GS->>AI: 异步生成(主 trae→备 glm,30s 超时)
+    AI-->>GS: ImageGenerationResult(imageUrls)
+    GS->>GS: content-review 标记 reviewStatus
+    GS-->>FE: taskId + status(轮询 GET)
+    FE->>GS: GET /generation/:id(2s polling)
+    GS-->>FE: images[](非 flagged/rejected)
+    FE->>GS: submitForAnalysis(imageUrl)
+    GS->>GS: 校验归属 + status=success + 审核
+    GS->>AS: createAnalysis(artType, imageUrl, title)
+    AS->>AI: 诊断(Jimp+GLM-4V,≤3s)
+    AS-->>FE: 诊断报告(批改建议)
+```
+
+**闭环实现要点**：
+- 生成源头：文字提示词(`text`) 或 基于已上传草稿图(`sketch`，`image-generation.service.buildImageRequestBody` 注入草稿图引用)。
+- 一键诊断：`generation.service.submitForAnalysis` 校验生成任务归属(tenantId+userId)→status=success→目标图非 flagged/rejected→调 `analysisService.createAnalysis({ artType, imageUrl, title })`，诊断配额/图片校验/落库/通知均由 analysis 模块内部完成(同步 ≤3s)。
+- 3 秒 SLA：生成走异步队列，诊断仍走同步(≤3s)，**生成不阻塞诊断**(独立 Worker + 独立超时)。
+- 类型贯通：生成任务的 `artType` 透传到诊断(`task.artType as ArtType`)，保证四类作品维度一致。
+
+### 6.5 数据模型落地（已实现，schema.prisma）
+
+```prisma
+// 生成任务状态(对齐 api-contract.ts §3.17 GenerationStatus)
+enum GenerationStatus {
+  pending    // 待处理(已入队)
+  processing // 处理中(Worker 已取走)
+  success    // 成功
+  failed     // 失败
+}
+
+/// AI 图像生成任务表(异步,教学闭环源头,M-2-T1 已迁移)
+model GenerationTask {
+  id             String           @id @default(uuid()) @map("id")
+  tenantId       String           @map("tenant_id") // 多租户隔离核心字段
+  userId         String           @map("user_id")
+  inputType      String           @map("input_type") @db.VarChar(16) // text | sketch
+  prompt         String?          @map("prompt") @db.Text
+  sketchImageUrl String?          @map("sketch_image_url") @db.Text
+  artType        ArtType          @map("art_type")
+  aspect         String?          @map("aspect") @db.VarChar(16)
+  count          Int              @default(1) @map("count")
+  status         GenerationStatus @default(pending) @map("status")
+  images         Json?            @map("images") // GeneratedImage[] 数组(含 reviewStatus)
+  failureReason  String?          @map("failure_reason") @db.Text
+  usedFallback   Boolean          @default(false) @map("used_fallback")
+  provider       String?          @map("provider") @db.VarChar(16)
+  model          String?          @map("model") @db.VarChar(64)
+  createdAt      DateTime         @default(now()) @map("created_at")
+  completedAt    DateTime?        @map("completed_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@index([tenantId, createdAt], map: "generation_tasks_tenant_id_created_at_idx")
+  @@index([tenantId, userId], map: "generation_tasks_tenant_id_user_id_idx")
+  @@index([tenantId, status], map: "generation_tasks_tenant_id_status_idx")
+  @@map("generation_tasks")
+}
+
+// AiUsageLog 扩展(M-2-T1 已迁移,向后兼容)
+model AiUsageLog {
+  // ... 现有字段不变 ...
+  usageType    String   @default("diagnose") @map("usage_type") @db.VarChar(16) // diagnose | generate
+  generationId String?  @map("generation_id") // generate 类型关联的生成任务 ID
+}
+```
+
+**已落地索引**（3 个，对应 §3.4 查询模式）：
+
+| 查询场景 | 索引 | 用途 |
+|---------|------|------|
+| 租户内生成历史倒序 | `(tenantId, createdAt)` | Web/移动端历史列表 |
+| 指定用户生成记录 | `(tenantId, userId)` | 学生个人生成记录 |
+| 按状态筛选待处理/失败 | `(tenantId, status)` | Worker 失败重试/管理后台 |
+
+### 6.6 配额与计费落地（已实现）
+
+| 护栏 | 落地实现 | 代码位置 |
+|------|---------|---------|
+| 独立生成配额 | `GENERATION_PLAN_QUOTA = { free:10, standard:200, enterprise:-1 }` | `generation.service.ts` 第 56-60 行 |
+| 配额耗尽 | 抛 `GENERATION_QUOTA_EXCEEDED(6101)` HTTP 402 | `checkGenerationQuota` 第 422-428 行 |
+| 单用户限流 | Redis `rl:gen:{tenantId}:{userId}` INCR+EXPIRE(60s)，超限→`GENERATION_RATE_LIMITED(6106)` 429 | `checkRateLimit` 第 440-465 行 |
+| 失败不扣配额 | `countMonthlyGenerateUsage` 统计 `status in [success, processing, pending]`（排除 failed） | `generation.repository.ts` 第 181-191 行 |
+| 用量日志 | `aiUsageRepository.create({ usageType:'generate', generationId, provider, model, success, durationMs, costYuan:null })` | `recordUsage` 第 533-563 行 |
+| Redis 异常 fail-open | 限流检查捕获异常后仅 warning 日志，不阻断生成 | `checkRateLimit` 第 456-464 行 |
+
+### 6.7 内容审核落地（已实现）
+
+`content-review.service.ts` 三类规则（纯函数无 IO，便于单元测试）：
+
+| 规则类型 | 严重级别 | 行为 | 示例 |
+|---------|---------|------|------|
+| `REJECTED_RULES`（6 组） | rejected | 明确违禁，不进入一键诊断 | 恐怖主义/毒品/枪支/儿童色情/邪教/违禁交易 |
+| `FLAGGED_RULES`（6 组） | flagged | 敏感需人工复核，前端灰显 | 血腥/暴力/色情裸露/自残自杀/歧视仇恨/恐怖惊悚 |
+| `SEMANTIC_RULES`（2 组） | flagged | 组合规则（每组都命中才触发），消除单关键词误报 | 校园暴力/青少年色情 |
+
+- 审核结果：`ContentReviewResult { reviewStatus, reasons, ruleId, needsManualReview }`。
+- `GeneratedImage.reviewStatus` 在 `GenerationTask.images` JSON 持久化（契约 frozen，不新增字段）。
+- `reasons/ruleId` 写入审计日志（`generation.service.handleReview` 第 511-522 行）。
+- `submitForAnalysis` 拦截 flagged/rejected 图（403），不进入一键诊断。
+
+### 6.8 灰度开关落地（已实现，门禁 M2-4）
+
+`config-feature.service.ts` 中 `generation` 开关定义（`FEATURE_DEFINITIONS`）：
+
+```typescript
+{
+  featureId: 'generation',
+  name: 'AI 图像生成',
+  description: 'AI 图像生成功能(异步队列 + 教学闭环),默认关闭,经 /api/v1/config 按租户百分比灰度开启',
+  type: 'percentage',
+  defaultStatus: 'disabled',  // 门禁 M2-4:默认关闭
+  defaultValue: 0,             // fail-closed:即使误切 gradual 也按 0% 放量
+}
+```
+
+**三态判定**（`isEnabled`）：
+- `enabled`：开启（全量）。
+- `disabled`：关闭（默认）。
+- `gradual`：按 `type=percentage` 做租户哈希 < value 判定（`hashForTenant` 0-99）。
+
+**灰度路径**：`disabled`（默认）→ PATCH `/api/v1/config/features/generation` 设 `status='gradual', value=10`（10% 租户）→ 逐步提升 value → `status='enabled'`（全量）。
+
+**存储**：内存 Map（进程真源）+ Redis `config:feature:generation`（跨进程/重启保持，尽力而为）。
+
+### 6.9 多租户隔离落地（已实现，门禁 M2-3）
+
+| 隔离点 | 落地实现 | 代码位置 |
+|--------|---------|---------|
+| `tenantId` 注入 | `authMiddleware` 从 JWT 解析→`req.tenantId`→`tenantMiddleware` 校验存在 | `generation.routes.ts` 第 35-36 行 |
+| 禁止从请求体读 tenantId | controller 仅从 `req.tenantId` 取值，Zod schema 不含 tenantId 字段 | `generation.controller.ts` 第 97-112 行 |
+| Repository 强制过滤 | `findById(id, tenantId)` `findFirst({ where:{ id, tenantId } })` | `generation.repository.ts` 第 103-107 行 |
+| 跨租户→404 | `findById` 返回 null→service 抛 `GENERATION_TASK_NOT_FOUND(6102)` 404，不泄露存在性 | `generation.service.ts` 第 196-198 行 |
+| student ownership | `canReadTenantWide(role)` 校验，student 查他人记录→404 | `generation.service.ts` 第 200-202 行 |
+| 写操作预检 | `updateStatus` 先 `findFirst(id+tenantId)` 预检归属，越权返回 null | `generation.repository.ts` 第 119-123 行 |
+
+### 6.10 与现有体系的关系
+
+- 复用现有 `ReviewStatus` 枚举与 `review.service.ts`，**不新增审核表**（生成审核走 `content-review.service` 自动规则 + 人工复核挂点）。
+- 生成图若被"一键诊断"进入 `Analysis`，其 `Analysis.reviewStatus` 独立走诊断审核流程（不互相覆盖）。
+- 生成任务的 `GenerationTask` 本身不落入 `Artwork` 素材库（除非用户主动收藏），避免与现有素材库审核混淆。
+- 双提供商降级复用诊断链路已配置的 GLM 凭据（`aiApiKey/aiApiUrl/aiApiModel`）作为备用，保证"至少一个提供商可用"。
 
 ---
 
@@ -331,7 +537,7 @@ resolveConfig(tenantId)
 - **数据库**：PostgreSQL 15（生产强制，禁 SQLite）
 - **主键**：UUID v4；**多租户**：所有业务表强制 `tenant_id`（除 Tenant 表本身）
 - **命名**：Prisma 字段 camelCase，DB 列 snake_case（`@map`），表名复数蛇形（`@@map`）
-- **Schema**：`server/prisma/schema.prisma`（18 个模型）
+- **Schema**：`server/prisma/schema.prisma`（19 个模型，M-2 新增 `GenerationTask`）
 
 ### 9.1 模型清单
 
@@ -352,21 +558,33 @@ resolveConfig(tenantId)
 | EvaluationPreset | `evaluation_presets` | 评分预设 |
 | ReviewRecord | `review_records` | 评委评分 |
 | DisputeCase | `dispute_cases` | 争议仲裁 |
-| AiUsageLog | `ai_usage_logs` | AI 用量日志 |
+| AiUsageLog | `ai_usage_logs` | AI 用量日志（M-2 追加 `usageType`/`generationId`） |
+| GenerationTask | `generation_tasks` | AI 图像生成任务（M-2 新增，异步状态机 + 教学闭环源头） |
 | Notification | `notifications` | 通知 |
 | DeploymentLog | `deployment_logs` | 部署日志 |
 
 ### 9.2 M-0 数据模型增量
 
-> 以下为 M-0 定义的**规划中**数据模型变更（尚未落库，由 M-1/M-3 实现），迁移方案见 §9.3。
+> M-0 定义的规划中数据模型变更。其中 `Tenant.arbitrationConfig` 与 `AiUsageLog.usageType` 已在 M-2 落地；`GenerationTask` 表为 M-2 新增（计划 §3.2），已迁移完成（详见 §6.5）。
 
 ```prisma
 // Tenant 新增字段(P-04,仲裁配置覆盖)
 // arbitrationConfig Json?  @map("arbitration_config")  // null 回退系统默认
 
-// AiUsageLog 新增枚举(P-02/P-07,AI 用量类型)
-// usageType String  @default("diagnose") @map("usage_type")  // diagnose | generate
+// AiUsageLog 新增枚举(P-02/P-07,AI 用量类型) —— M-2 已落地
+// usageType    String  @default("diagnose") @map("usage_type")  // diagnose | generate
+// generationId String? @map("generation_id")  // generate 类型关联的生成任务 ID(M-2 追加)
+
+// GenerationTask 表(P-02/P-07,M-2 新增,已落地) —— 详见 §6.5
+// model GenerationTask { ... }
+// enum GenerationStatus { pending | processing | success | failed }
 ```
+
+**M-2 落地状态**：
+- `AiUsageLog.usageType` + `generationId`：已迁移，默认 `diagnose` 向后兼容。
+- `GenerationTask` 表：已迁移，含 3 个复合索引（`tenantId+createdAt` / `tenantId+userId` / `tenantId+status`）。
+- `GenerationStatus` 枚举：已定义（对齐 `api-contract.ts` §3.17）。
+- `Tenant.arbitrationConfig`：M-2 范围外，由后续里程碑落地。
 
 ### 9.3 数据模型迁移与回滚方案（M-0 规划）
 
@@ -466,14 +684,14 @@ resolveConfig(tenantId)
 
 ### 12.2 待优化项（M-1~M-7 落地）
 
-| 项 | 说明 | 对应 M-0 升级痛点 |
-|----|------|------------------|
-| 跨端批删服务端化 | `POST /analyses/batch-delete` 落地 | P-06 |
-| 租户仲裁配置覆盖 | `Tenant.arbitrationConfig` 深合并落地 | P-04 |
-| AI 图像生成 | `image-generation.service` + 异步任务落地 | P-02/P-07 |
-| 管理后台三级确认 | ConfirmAction 完善 + 后端强制校验分两步 | P-05 |
-| config/ui 激活 | 预留接口从 501 变为可用 | P-03 |
-| 可观测性指标 | Redis 计数器聚合 + admin 指标接口 | P-08 |
+| 项 | 说明 | 对应 M-0 升级痛点 | 状态 |
+|----|------|------------------|:----:|
+| 跨端批删服务端化 | `POST /analyses/batch-delete` 落地 | P-06 | M-1 已实现 |
+| 租户仲裁配置覆盖 | `Tenant.arbitrationConfig` 深合并落地 | P-04 | M-1 已实现 |
+| AI 图像生成 | `image-generation.service` + 异步任务 + 双提供商降级 + 教学闭环 | P-02/P-07 | **M-2 已实现（2026-08-07）** |
+| 管理后台三级确认 | ConfirmAction 完善 + 后端强制校验分两步 | P-05 | M-1 已实现 |
+| config/ui 激活 | 预留接口从 501 变为可用 | P-03 | M-2 部分实现（config-feature 已落地，供生成灰度） |
+| 可观测性指标 | Redis 计数器聚合 + admin 指标接口 | P-08 | 待实现 |
 
 ---
 

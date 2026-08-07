@@ -52,15 +52,25 @@ interface FeatureDefinition {
 /**
  * 已登记的功能开关定义
  * 生成功能默认关闭(门禁 M2-4:生成功能默认关闭,经 /api/v1/config 灰度开启)
+ *
+ * M2-T9(devops-qa)修正:
+ *   1) 历史上一处生产热修复(runbook §10.3)将 defaultStatus 误改为 'enabled',
+ *      与本计划门禁 M2-4"生成功能默认关闭"冲突。默认关闭是安全性/成本护栏:
+ *      AI 图像生成为付费外部 API,默认关闭可避免未授权成本;经 /config 灰度
+ *      (disabled → gradual → enabled)逐步放量。本任务恢复为 'disabled'。
+ *   2) 类型由 'boolean' 改为 'percentage',使 gradual 真正支持"按租户哈希放量"
+ *      (hashForTenant < value 判定)。boolean 类型 gradual 仅支持全量开/关,
+ *      无法满足计划"按租户灰度开启"(门禁 M2-4)的成本可控放量诉求。
+ *      defaultValue=0:即使误切 gradual 且未设 value 也按 0% 放量(fail-closed)。
  */
 const FEATURE_DEFINITIONS: readonly FeatureDefinition[] = [
   {
     featureId: 'generation',
     name: 'AI 图像生成',
-    description: 'AI 图像生成功能(异步队列 + 教学闭环),已上线开启',
-    type: 'boolean',
-    defaultStatus: 'enabled',
-    defaultValue: true,
+    description: 'AI 图像生成功能(异步队列 + 教学闭环),默认关闭,经 /api/v1/config 按租户百分比灰度开启',
+    type: 'percentage',
+    defaultStatus: 'disabled',
+    defaultValue: 0,
   },
 ];
 

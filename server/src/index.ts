@@ -32,6 +32,7 @@ import app from './app.js';
 // M2-T6:AI 图像生成后台 Worker + 功能开关(生成功能默认关闭,经 /config 灰度开启)
 import { generationWorker } from './services/generation-worker.service.js';
 import { configFeatureService } from './services/config-feature.service.js';
+import { redisMetrics } from './services/redis-metrics.service.js';
 
 /**
  * 启动服务器(主入口)
@@ -90,6 +91,10 @@ async function startServer(): Promise<void> {
     logger.warn({ err: msg }, '[startup] generation worker start skipped');
   }
 
+  // 4b. Redis 指标定时日志(每 30 秒输出摘要,便于运维实时观察连接池与 BRPOP 耗时)
+  // 对应文档:redis-brpop-fix-2026-08-07.md §7 后续改进
+  redisMetrics.startLogInterval(30_000);
+
   // 5. HTTP 服务(由 app.ts 已构建)
   const server = http.createServer(app);
 
@@ -135,6 +140,9 @@ async function startServer(): Promise<void> {
     // 6a-1. 停止 AI 图像生成 Worker(M2-T6)
     // 置停止标志并清空 pending timer;处理中的任务让其自然完成,随后再关 Redis
     generationWorker.stop();
+
+    // 6a-2. 停止 Redis 指标定时日志
+    redisMetrics.stopLogInterval();
 
     // 6b. 关闭 Redis(给 in-flight 请求 5s 缓冲)
     try {

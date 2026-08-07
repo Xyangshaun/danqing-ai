@@ -47,6 +47,9 @@ function applyEnv(record: Record<string, string | undefined>): void {
     'RATE_LIMIT_REFRESH_PER_MIN', 'RATE_LIMIT_API_PER_MIN',
     'TENANT_DEFAULT_PLAN', 'TENANT_DEFAULT_TYPE',
     'ENABLE_HSTS', 'LOG_LEVEL', 'NODE_ENV', 'PORT',
+    // AI 图像生成(M2-T9)
+    'AI_IMAGE_PROVIDER', 'AI_IMAGE_API_KEY', 'AI_IMAGE_API_URL', 'AI_IMAGE_API_MODEL',
+    'AI_IMAGE_TIMEOUT', 'GENERATION_RATE_LIMIT_PER_MIN', 'GENERATION_MAX_COUNT',
   ];
   for (const k of keys) {
     delete process.env[k];
@@ -543,6 +546,64 @@ describe('config/env (环境变量加载与启动自检)', () => {
       const cfg = loadEnv();
       expect(cfg.cookieDomain).toBe('.example.com');
       expect(cfg.cookiePath).toBe('/api/auth');
+    });
+  });
+
+  // ============================================================
+  // AI 图像生成(M2-T9,对应 m2-generation-plan §2.4)
+  // 目标:确认 7 项 AI_IMAGE_* 的默认值/校验/API Key 缺失降级
+  // ============================================================
+  describe('AI 图像生成配置(M2-T9)', () => {
+    it('缺失时使用合理默认值(provider=trae,timeout=30000,限流=5,最大张数=4)', () => {
+      const cfg = loadEnv();
+      expect(cfg.aiImageProvider).toBe('trae');
+      expect(cfg.aiImageApiKey).toBe('');
+      expect(cfg.aiImageApiUrl).toBe('');
+      expect(cfg.aiImageApiModel).toBe('');
+      expect(cfg.aiImageTimeout).toBe(30000);
+      expect(cfg.generationRateLimitPerMin).toBe(5);
+      expect(cfg.generationMaxCount).toBe(4);
+    });
+
+    it('自定义值正确解析', () => {
+      process.env.AI_IMAGE_PROVIDER = 'glm';
+      process.env.AI_IMAGE_API_KEY = 'test-image-key';
+      process.env.AI_IMAGE_API_URL = 'https://example.com/images/generations';
+      process.env.AI_IMAGE_API_MODEL = 'cogview-3';
+      process.env.AI_IMAGE_TIMEOUT = '15000';
+      process.env.GENERATION_RATE_LIMIT_PER_MIN = '3';
+      process.env.GENERATION_MAX_COUNT = '2';
+      const cfg = loadEnv();
+      expect(cfg.aiImageProvider).toBe('glm');
+      expect(cfg.aiImageApiKey).toBe('test-image-key');
+      expect(cfg.aiImageApiUrl).toBe('https://example.com/images/generations');
+      expect(cfg.aiImageApiModel).toBe('cogview-3');
+      expect(cfg.aiImageTimeout).toBe(15000);
+      expect(cfg.generationRateLimitPerMin).toBe(3);
+      expect(cfg.generationMaxCount).toBe(2);
+    });
+
+    it('AI_IMAGE_PROVIDER 非法值 → 抛错(Deny by default,拒绝启动)', () => {
+      process.env.AI_IMAGE_PROVIDER = 'openai';
+      expect(() => loadEnv()).toThrow(/AI_IMAGE_PROVIDER/);
+    });
+
+    it('AI_IMAGE_TIMEOUT 非整数 → 抛错', () => {
+      process.env.AI_IMAGE_TIMEOUT = 'abc';
+      expect(() => loadEnv()).toThrow(/env parse failed/);
+    });
+
+    it('AI_IMAGE_PROVIDER 大小写不敏感(glm/GLM)', () => {
+      process.env.AI_IMAGE_PROVIDER = 'GLM';
+      expect(loadEnv().aiImageProvider).toBe('glm');
+    });
+
+    it('API Key 缺失时不抛错,返回空字符串(由 image-generation.service 优雅降级)', () => {
+      // aiImageApiKey 为非必填:缺失时 env 加载成功(key=''),生成时 resolveImageAIConfig
+      // 检测双提供商不可用返回 null → GENERATION_PROVIDER_UNAVAILABLE,不崩溃
+      delete process.env.AI_IMAGE_API_KEY;
+      const cfg = loadEnv();
+      expect(cfg.aiImageApiKey).toBe('');
     });
   });
 });

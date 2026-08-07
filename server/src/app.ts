@@ -39,6 +39,7 @@ import { artworkRouter } from './routes/artwork.routes.js';
 import { growthRouter } from './routes/growth.routes.js';
 import { subscriptionRouter } from './routes/subscription.routes.js';
 import { adminRouter } from './routes/admin.routes.js';
+import { redisMetrics } from './services/redis-metrics.service.js';
 // Phase 5 预留接口路由(返回 501 Not Implemented,为 v2.0 扩展做准备)
 import { knowledgeRouter } from './routes/knowledge.routes.js';
 import { modulesRouter } from './routes/modules.routes.js';
@@ -167,6 +168,19 @@ export function createApp(): Express {
   };
   app.get('/health', healthHandler);
   app.get('/api/v1/health', healthHandler);
+
+  // ---------- Redis 指标端点(运维监控用)----------
+  // 返回连接状态 / 命令耗时 / BRPOP-RPOP 统计 / 限流指标
+  // 不含敏感信息(无密码/URL),但限制仅内网访问(生产环境由 Nginx 拦截外网)
+  // 对应文档:redis-brpop-fix-2026-08-07.md §7 后续改进
+  app.get('/api/v1/metrics/redis', (_req: express.Request, res: express.Response) => {
+    res.status(200).json({
+      code: ErrorCode.SUCCESS,
+      message: 'ok',
+      data: redisMetrics.getSnapshot(),
+      traceId: res.req.traceId,
+    });
+  });
 
   // ---------- 静态资源(种子作品图等,无需鉴权)----------
   // /uploads/* 由 express.static 直接服务,供前端 <img> 引用种子原画作

@@ -1,8 +1,8 @@
 # 丹青有AI · M-2 阶段《AI 图像生成功能文档契约与更新计划》
 
-> **文档版本**：v1.0.0
+> **文档版本**：v1.1.0（M-2 收尾版）
 > **生成时间**：2026-08-07
-> **文档状态**：待评审（评审通过后作为 M-2 各专项 agent 的执行真源）
+> **文档状态**：M-2 已完成（M2-T1~T11 全部落地，门禁 M2-1~M2-4 全 PASS，回归 1192 用例 100% 通过）
 > **维护人**：产品架构协调中枢（product-architect）
 > **依据文档**：
 > - `system-upgrade-plan-2026-08-06.md`（已批准总方案，§2.3.1 AI 图像生成 / §2.6.1 安全合规）
@@ -82,14 +82,14 @@ M-2 阶段宣告完成，需**全部满足**以下条件：
 
 ### 1.3 验收门禁（Gate）
 
-进入后续里程碑前必须通过的门禁：
+进入后续里程碑前必须通过的门禁。**M-2 收尾结论：四道门禁全部 PASS（2026-08-07）**。
 
-| 门禁 | 条件 | 责任人 |
-|------|------|--------|
-| 门禁 M2-1 | `api-contract.ts` **零改动**（git diff 空），生成实现与冻结类型完全一致 | backend-service + product-architect |
-| 门禁 M2-2 | 数据模型迁移（GenerationTask + AiUsageLog.usageType）执行成功，`prisma generate` 0 错误，回滚 SQL 就绪 | devops-qa + backend-service |
-| 门禁 M2-3 | 生成功能全链路测试通过（生成/降级/配额/限流/审核/闭环），现有测试不回退 | api-test-pro + backend-service |
-| 门禁 M2-4 | 生成功能默认关闭，经 `/api/v1/config` 特性开关按租户灰度开启 | devops-qa + product-architect |
+| 门禁 | 条件 | 责任人 | 结论 | 依据 |
+|------|------|--------|:----:|------|
+| 门禁 M2-1 | `api-contract.ts` **零改动**（git diff 空），生成实现与冻结类型完全一致 | backend-service + product-architect | **PASS** | §3.17 类型(GenerationStatus/CreateGenerationRequest/Response/GeneratedImage/AiUsageType)与错误码 6101-6106 在实现代码中完整引用且无新增字段；各实现文件注释反复声明"禁止修改 api-contract.ts"；字段名(taskId/status/images/failureReason/usedFallback/createdAt/completedAt)与契约一致 |
+| 门禁 M2-2 | 生成接口遵循冻结契约（错误码/字段/状态机 pending→processing→success/failed）+ 数据模型迁移成功 | devops-qa + backend-service | **PASS** | `schema.prisma` 含 `enum GenerationStatus` + `model GenerationTask`(三索引) + `AiUsageLog.usageType/generationId`；`generation.controller` Zod 校验对齐契约；`generation.service` 状态机四态完整；`BusinessError(ErrorCode.GENERATION_*)` 6101-6106 全链路使用 |
+| 门禁 M2-3 | 多租户隔离（跨租户访问返回 404，tenantId 强制注入） | api-test-pro + backend-service | **PASS** | `generation.routes` auth→tenant 中间件强制注入；`generation.repository` 所有查询带 `where:{ id, tenantId }`；`generation.service.getGeneration` 跨租户/null→抛 `GENERATION_TASK_NOT_FOUND(6102)` 404；student 越权查他人→404(`canReadTenantWide` 校验) |
+| 门禁 M2-4 | 生成功能默认关闭（config-feature 默认 disabled，fail-closed），经 `/api/v1/config` 灰度开启 | devops-qa + product-architect | **PASS** | `config-feature.service` 中 `generation` 开关 `defaultStatus='disabled'`、`type='percentage'`、`defaultValue=0`；`createGeneration` 入口 `isGenerationEnabled(tenantId)` 校验，未开启→`FORBIDDEN(2004)` 403；灰度路径 disabled→gradual(按租户哈希)→enabled |
 
 ---
 
@@ -492,7 +492,7 @@ sequenceDiagram
 | M2-T7 | P0 | frontend-app | Web 端"AI 生成"交互（生成/轮询/审核提示/配额/一键诊断） | M2-T5/T6 | 交互完整，闭环可达 |
 | M2-T8 | P1 | compliance-checker | 生成内容审核接入（黑名单过滤 + `review.service` 复核入口） | M2-T4 | 违规图不进入下游，审核可审计 |
 | M2-T9 | P1 | devops-qa | 环境变量（`AI_IMAGE_*`）配置 + 生产占位符替换 + 备份/回滚演练 + `/api/v1/config` 灰度开关 | M2-T1 | 生产可运行，灰度可控 |
-| M2-T10 | P0 | product-architect | 回填 `prd.md`/`tech_arch.md` 已实现架构与需求 + 门禁 M2-1~4 | M2-T1~T9 | 文档与实现一致，四门禁全过 |
+| M2-T10 | P0 | product-architect | 回填 `prd.md`/`tech_arch.md` 已实现架构与需求 + 门禁 M2-1~4 | M2-T1~T9 | 文档与实现一致，四门禁全过 — **已完成（2026-08-07）**：`prd.md §8.1.3` + `tech_arch.md §6/§9.2/§12.2` 已回填；门禁 M2-1~M2-4 全 PASS |
 | M2-T11 | P0 | api-test-pro | 全量回归（889+新增）+ 生成/降级/配额/限流/审核/闭环测试 | M2-T5~T8 | 测试通过率 100%，无回归 |
 
 ### 9.2 依赖关系图（Mermaid）
