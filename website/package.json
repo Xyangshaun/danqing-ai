@@ -9,6 +9,8 @@
     "start": "next start",
     "lint": "next lint",
     "export": "next build",
+    "scan:paintings": "node scripts/scan-paintings.mjs",
+    "prebuild": "node scripts/scan-paintings.mjs",
     "deploy": "node deploy-gh-pages.cjs",
     "test": "vitest run",
     "test:watch": "vitest"

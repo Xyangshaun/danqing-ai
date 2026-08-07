@@ -2,39 +2,150 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { useReducedMotion } from 'framer-motion';
+import paintingMeta from '@/lib/painting-meta.json';
+
+/**
+ * VideoIntro · v8 宣纸长卷 · 一河两岸
+ *
+ * 设计:沿一条隐形的「S 形负空间」将 13 张画作分置于东西两岸。
+ * 中央品牌区是「手卷正中题跋」。东方/东亚在左岸与上方,西方在右岸与下方。
+ *
+ * 关键升级:
+ *  1) 真实 ratio 来自 build 时 scan-paintings.mjs 生成的 painting-meta.json
+ *  2) 6 种 shape 变体(scroll-horizontal / arched-portrait / arch / round-fan / fan / seal / scroll-thin)
+ *  3) BASE_OPACITY 0.28 / BASE_BLUR 3.5px(更克制,主题感强)
+ *  4) 边缘虚化:多 stop radial 过渡 + 边角渗墨柔晕
+ *  5) 题跋式文字:SVG 笔触划出 + 朱砂落款
+ */
 
 const TOTAL_MS = 3000; // 开场动画总时长(3.0s)
 
-/**
- * 开场隐藏的名作配置。
- * 这里是占位框架，后续直接替换 src/alt 即可引入全球各时期名作。
- * x/y 使用百分比定位，size 为像素宽度，rotate 为旋转角度。
- */
-const INTRO_PAINTINGS: Array<{
+type PaintingShape =
+  | 'scroll-horizontal'
+  | 'arched-portrait'
+  | 'arch'
+  | 'round-fan'
+  | 'fan'
+  | 'seal'
+  | 'scroll-thin';
+
+type IntroPainting = {
   src: string;
   alt: string;
+  /** 视口水平百分比(0-100) */
   x: string;
+  /** 视口垂直百分比(0-100) */
   y: string;
+  /** 显示宽度 px;高度 = width / ratio(从图本身读取) */
   size: number;
+  /** 旋转角度 deg */
   rotate: number;
-}> = [
-  { src: '/images/gallery-hero.jpg', alt: '水墨山水', x: '12%', y: '16%', size: 220, rotate: -8 },
-  { src: '/images/gallery-lotus.jpg', alt: '荷塘', x: '86%', y: '20%', size: 190, rotate: 6 },
-  { src: '/images/gallery-mountain.jpg', alt: '山峦', x: '22%', y: '78%', size: 210, rotate: 5 },
-  { src: '/images/gallery-flower.jpg', alt: '花鸟', x: '78%', y: '74%', size: 200, rotate: -5 },
-  { src: '/images/gallery-hero.jpg', alt: '水墨山水', x: '52%', y: '12%', size: 170, rotate: 3 },
-  { src: '/images/gallery-lotus.jpg', alt: '荷塘', x: '8%', y: '48%', size: 160, rotate: -4 },
-  { src: '/images/gallery-mountain.jpg', alt: '山峦', x: '92%', y: '52%', size: 180, rotate: 7 },
-  { src: '/images/gallery-flower.jpg', alt: '花鸟', x: '48%', y: '86%', size: 175, rotate: -3 },
-  { src: '/images/gallery-sculpture.jpg', alt: '雕塑', x: '66%', y: '44%', size: 150, rotate: 4 },
-  { src: '/images/gallery-hero.jpg', alt: '水墨山水', x: '34%', y: '44%', size: 140, rotate: -6 },
+  shape: PaintingShape;
+  /** 岸位标识,纯说明,不影响布局 */
+  bank: 'east' | 'west' | 'bridge';
+};
+
+type Meta = Record<string, { w: number; h: number; ratio: number }>;
+
+/**
+ * 13 张画作在「S 形长卷」上的位置(东岸 6 + 顶部桥 1 + 西岸 6)。
+ * 全部使用真实 ratio 渲染。布局避免遮挡中央品牌区(30-70% x · 38-64% y)。
+ */
+const INTRO_PAINTINGS: IntroPainting[] = [
+  // ================ 东岸(中国/东亚 + 卷首卷尾):左侧与上方 ================
+  // 1. 水墨山水 · 卷首(左岸顶部)
+  { src: '/images/gallery-hero.jpg',     alt: '水墨山水',           x: '10%', y: '15%', size: 230, rotate: -8,  shape: 'scroll-horizontal', bank: 'east' },
+  // 2. 花鸟 · 小品点缀
+  { src: '/images/gallery-flower.jpg',   alt: '花鸟',               x: '27%', y: '5%',  size: 160, rotate: 6,   shape: 'fan',              bank: 'east' },
+  // 3. 荷塘 · 左岸中
+  { src: '/images/gallery-lotus.jpg',    alt: '荷塘',               x: '5%',  y: '40%', size: 200, rotate: -4,  shape: 'round-fan',        bank: 'east' },
+  // 4. 雕塑 · 内圈(印章方)
+  { src: '/images/gallery-sculpture.jpg',alt: '雕塑 · 形神兼备',    x: '23%', y: '58%', size: 180, rotate: 5,   shape: 'seal',             bank: 'east' },
+  // 5. 山峦 · 左岸下
+  { src: '/images/gallery-mountain.jpg', alt: '山峦',               x: '10%', y: '83%', size: 220, rotate: -3,  shape: 'scroll-horizontal',bank: 'east' },
+  // 6. 神奈川冲浪里 · 葛饰北斋 · 长卷条
+  { src: '/images/gallery-greavewave.jpg',alt: '神奈川冲浪里 · 葛饰北斋', x: '34%', y: '23%', size: 210, rotate: 4, shape: 'scroll-thin',  bank: 'east' },
+
+  // ================ 顶部桥(中性,横跨东西):长卷水波 ================
+  // 7. 日出·印象 · 顶部桥(莫奈属印象派,放在中线桥上)
+  { src: '/images/gallery-sunrise.jpg',  alt: '日出·印象 · 莫奈',  x: '50%', y: '3%',  size: 200, rotate: 0,   shape: 'arch',             bank: 'bridge' },
+
+  // ================ 西岸(西方经典):右侧与下方 ================
+  // 8. 星夜 · 梵高 · 西岸顶部(主锚)
+  { src: '/images/gallery-starrynight.jpg',alt: '星夜 · 梵高',       x: '65%', y: '13%', size: 280, rotate: 6,   shape: 'scroll-horizontal',bank: 'west' },
+  // 9. 蒙娜丽莎 · 达·芬奇(竖幅肖像)
+  { src: '/images/gallery-monalisa.jpg',alt: '蒙娜丽莎 · 达·芬奇',  x: '88%', y: '16%', size: 200, rotate: -5,  shape: 'arched-portrait',  bank: 'west' },
+  // 10. 贺拉斯兄弟之誓 · 大卫(横卷)
+  { src: '/images/gallery-horatii.jpg', alt: '贺拉斯兄弟之誓 · 大卫',x: '92%', y: '47%', size: 200, rotate: 4,  shape: 'scroll-horizontal',bank: 'west' },
+  // 11. 思想者 · 罗丹(印章方)
+  { src: '/images/gallery-thinker.jpg', alt: '思想者 · 罗丹',       x: '95%', y: '66%', size: 180, rotate: -6,  shape: 'seal',             bank: 'west' },
+  // 12. 睡莲 · 莫奈(近方)
+  { src: '/images/gallery-waterlilies.jpg',alt: '睡莲 · 莫奈',      x: '76%', y: '73%', size: 240, rotate: 5,   shape: 'round-fan',        bank: 'west' },
+  // 13. 倒牛奶的女仆 · 维米尔
+  { src: '/images/gallery-pearl.jpg',   alt: '倒牛奶的女仆 · 维米尔',x: '88%', y: '87%', size: 180, rotate: -3,  shape: 'arch',             bank: 'west' },
 ];
 
 /**
+ * 6+ 种形状变体的 border-radius + 边缘虚化 mask。
+ * 共同原则:多 stop radial 过渡,中间实色区更窄,让边缘羽化更柔。
+ */
+const SHAPE_STYLES: Record<PaintingShape, { radius: string; mask: string }> = {
+  // 横卷:木轴风格
+  'scroll-horizontal': {
+    radius: '6px 22px 6px 22px / 4px 18px 4px 18px',
+    mask:
+      'radial-gradient(ellipse 90% 72% at 50% 50%, black 30%, black 70%, transparent 92%)',
+  },
+  // 拱形竖幅(教堂尖拱)
+  arch: {
+    radius: '50% 50% 2px 2px / 28% 28% 2px 2px',
+    mask:
+      'radial-gradient(ellipse 80% 90% at 50% 50%, black 30%, black 75%, transparent 96%)',
+  },
+  // 顶部圆拱(肖像画框)
+  'arched-portrait': {
+    radius: '50% 50% 4px 4px / 18% 18% 4px 4px',
+    mask:
+      'radial-gradient(ellipse 78% 86% at 50% 44%, black 25%, black 72%, transparent 95%)',
+  },
+  // 团扇:圆右下角切平
+  'round-fan': {
+    radius: '50% 50% 50% 8% / 50% 50% 50% 14%',
+    mask:
+      'radial-gradient(circle 78% at 50% 50%, black 35%, black 76%, transparent 96%)',
+  },
+  // 折扇:上方平,下方半圆
+  fan: {
+    radius: '8% 8% 50% 50% / 6% 6% 38% 38%',
+    mask:
+      'linear-gradient(to bottom, transparent 0%, black 18%, black 78%, transparent 96%)',
+  },
+  // 印章:方,带轻微撕纸
+  seal: {
+    radius: '10% 10% 10% 10% / 7% 7% 7% 7%',
+    mask:
+      'linear-gradient(to right, transparent 0%, black 6%, black 94%, transparent 100%), linear-gradient(to bottom, transparent 0%, black 5%, black 95%, transparent 100%)',
+  },
+  // 北斋长条(葛饰北斋专用)
+  'scroll-thin': {
+    radius: '4px 28px 4px 28px / 4px 22px 4px 22px',
+    mask:
+      'radial-gradient(ellipse 92% 78% at 50% 50%, black 40%, black 80%, transparent 97%)',
+  },
+};
+
+/**
+ * 获取 src 对应的真实 ratio(优先用 naturalWidth/Height 修正)。
+ * SSR 阶段使用 JSON 静态值,useEffect 中再以 img.onLoad 精确化。
+ */
+function getRatio(src: string, meta: Meta): number {
+  return meta[src]?.ratio ?? 1;
+}
+
+/**
  * 光标感应名作层。
- * 多幅画作以模糊、椭圆柔边、低透明度散布在画面中；
- * 鼠标靠近时按距离渐显、轻微放大并去模糊；
- * 离开后按 lerp 缓慢淡出，保证快速移动也能流畅跟随。
+ * 13 张画作以 S 形两岸分布,基线更克制(BASE_OPACITY 0.28 / BASE_BLUR 3.5px),
+ * 鼠标靠近按距离渐显 + 轻微放大 + 去模糊;离开后 lerp 缓慢淡出。
  */
 function IntroPaintings({ active }: { active: boolean }) {
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -47,8 +158,10 @@ function IntroPaintings({ active }: { active: boolean }) {
     const wrapper = wrapperRef.current;
     if (!wrapper) return;
 
-    const REVEAL_RADIUS = 260; // 光标感应半径 px
-    const LERP = 0.18; // 跟随/淡出速度，越大越灵敏
+    const REVEAL_RADIUS = 340; // 光标感应半径 px
+    const LERP = 0.14; // 跟随/淡出速度
+    const BASE_OPACITY = 0.28; // 基础可见度(更克制)
+    const BASE_BLUR = 3.5; // 基础模糊(更轻)
 
     const refreshCache = () => {
       const items: Array<{ el: HTMLElement; cx: number; cy: number }> = [];
@@ -68,7 +181,6 @@ function IntroPaintings({ active }: { active: boolean }) {
       const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
       mouseRef.current = { x: clientX, y: clientY, active: true };
     };
-
     const onLeave = () => {
       mouseRef.current.active = false;
     };
@@ -77,20 +189,23 @@ function IntroPaintings({ active }: { active: boolean }) {
       const { x, y, active: mouseActive } = mouseRef.current;
 
       for (const p of cacheRef.current) {
-        let target = 0;
+        let reveal = 0;
         if (mouseActive) {
           const dist = Math.hypot(x - p.cx, y - p.cy);
           if (dist < REVEAL_RADIUS) {
-            target = 1 - dist / REVEAL_RADIUS;
-            target = Math.pow(target, 0.85); // 让中心区域更明亮
+            reveal = 1 - dist / REVEAL_RADIUS;
+            reveal = Math.pow(reveal, 0.9);
           }
         }
 
-        const current = parseFloat(p.el.style.getPropertyValue('--p-opacity') || '0');
+        const target = BASE_OPACITY + (1 - BASE_OPACITY) * reveal;
+        const current = parseFloat(
+          p.el.style.getPropertyValue('--p-opacity') || String(BASE_OPACITY)
+        );
         const next = current + (target - current) * LERP;
 
-        const scale = 0.9 + next * 0.14;
-        const blur = 10 - next * 10;
+        const scale = 0.98 + next * 0.08;
+        const blur = Math.max(0, BASE_BLUR - next * BASE_BLUR);
 
         p.el.style.setProperty('--p-opacity', next.toFixed(4));
         p.el.style.setProperty('--p-scale', scale.toFixed(4));
@@ -120,35 +235,51 @@ function IntroPaintings({ active }: { active: boolean }) {
 
   return (
     <div ref={wrapperRef} className="absolute inset-0 z-[1] pointer-events-none overflow-hidden">
-      {INTRO_PAINTINGS.map((p, i) => (
-        <div
-          key={`${p.src}-${i}`}
-          className="intro-painting"
-          style={{
-            left: p.x,
-            top: p.y,
-            width: p.size,
-            height: Math.round(p.size * 0.72),
-            '--p-rotate': `${p.rotate}deg`,
-          } as React.CSSProperties}
-        >
-          <img src={p.src} alt={p.alt} className="w-full h-full object-cover" draggable={false} />
-        </div>
-      ))}
+      {INTRO_PAINTINGS.map((p, i) => {
+        const shape = SHAPE_STYLES[p.shape];
+        const ratio = getRatio(p.src, paintingMeta as Meta);
+        return (
+          <div
+            key={`${p.src}-${i}`}
+            className="intro-painting"
+            data-shape={p.shape}
+            data-bank={p.bank}
+            style={{
+              left: p.x,
+              top: p.y,
+              width: p.size,
+              height: Math.round(p.size / ratio),
+              '--p-rotate': `${p.rotate}deg`,
+              borderRadius: shape.radius,
+              maskImage: shape.mask,
+              WebkitMaskImage: shape.mask,
+            } as React.CSSProperties}
+          >
+            <img
+              src={p.src}
+              alt={p.alt}
+              className="w-full h-full object-cover"
+              draggable={false}
+              loading="eager"
+              decoding="sync"
+            />
+          </div>
+        );
+      })}
     </div>
   );
 }
 
 /**
- * 首页开场动画 — topora 风格「产品状态屏」+ 光标感应名作揭示
+ * 首页开场动画 — 宣纸长卷 · 一河两岸(v8)
  *
- * 参考 https://topora.coze.site 的开屏结构(状态标签 + 步骤编号 + 数据指标)
- * 同时保留原「笔触划出 + 品牌」作为视觉锚点。
+ * 主题感来源:
+ *  - S 形负空间:13 张画作两岸分布,中央品牌区是「手卷正中题跋」
+ *  - 朱砂落款:中央品牌区下方有一方朱砂小印,东方绘画的落款语言
+ *  - 笔触划出:中央 SVG 长笔触,1s 划出后淡化为题跋线
+ *  - 顶部水波线:暗示手卷首尾的水波,卷首/卷尾各有极淡晕染
  *
- * 实现策略:CSS animation 为主,Framer Motion 仅用于「减弱动效」检测。
- * 原因:纯 Framer Motion 的 initial/animate 在 Next.js static export + hydration
- * 场景下,偶发因 hydration mismatch 导致动画不触发(元素卡在 opacity:0)。
- * CSS animation 不依赖 JS 状态,首屏必然可见,SSR/CSR 表现一致。
+ * SSR/CSR 一致:所有入场动画使用 CSS keyframes;不依赖 framer-motion 的 initial/animate。
  */
 export function VideoIntro({ onComplete }: { onComplete: () => void }) {
   const prefersReduced = useReducedMotion();
@@ -201,6 +332,22 @@ export function VideoIntro({ onComplete }: { onComplete: () => void }) {
           from { opacity: 0; transform: translateY(6px); }
           to { opacity: 1; transform: translateY(0); }
         }
+        /* 题跋线:从中心 0% 扩展到 100% */
+        @keyframes intro-inscription-draw {
+          from { transform: scaleX(0); }
+          to { transform: scaleX(1); }
+        }
+        /* 朱砂方印:scale 0→1 + 微微弹跳 */
+        @keyframes intro-seal-pop {
+          0%   { transform: scale(0) rotate(-8deg); opacity: 0; }
+          60%  { transform: scale(1.12) rotate(-4deg); opacity: 1; }
+          100% { transform: scale(1) rotate(-4deg); opacity: 1; }
+        }
+        /* 卷首卷尾晕染:缓慢呼吸 */
+        @keyframes intro-paper-breathe {
+          0%, 100% { opacity: 0.5; }
+          50%      { opacity: 0.8; }
+        }
 
         .intro-overlay {
           transition:
@@ -218,14 +365,14 @@ export function VideoIntro({ onComplete }: { onComplete: () => void }) {
         .intro-painting {
           position: absolute;
           pointer-events: none;
-          opacity: var(--p-opacity, 0);
-          transform: translate(-50%, -50%) scale(var(--p-scale, 0.9)) rotate(var(--p-rotate, 0deg));
-          filter: blur(var(--p-blur, 10px));
+          opacity: var(--p-opacity, 0.28);
+          transform: translate(-50%, -50%) scale(var(--p-scale, 0.98)) rotate(var(--p-rotate, 0deg));
+          filter: blur(var(--p-blur, 3.5px)) saturate(0.92);
+          box-shadow:
+            0 12px 32px -12px rgba(31, 28, 24, 0.22),
+            0 0 0 1px rgba(26, 26, 26, 0.04);
           will-change: opacity, transform, filter;
-          box-shadow: 0 18px 50px rgba(0,0,0,0.18);
-          border-radius: 2px;
-          mask-image: radial-gradient(ellipse at center, black 0%, black 45%, transparent 78%);
-          -webkit-mask-image: radial-gradient(ellipse at center, black 0%, black 45%, transparent 78%);
+          /* border-radius / mask-image 由 inline style 根据 shape 动态设置 */
         }
 
         /* 减弱动效:所有子元素直接显示,不播放动画 */
@@ -234,7 +381,10 @@ export function VideoIntro({ onComplete }: { onComplete: () => void }) {
         .intro-reduced .intro-brand,
         .intro-reduced .intro-subtitle,
         .intro-reduced .intro-step,
-        .intro-reduced .intro-stat {
+        .intro-reduced .intro-stat,
+        .intro-reduced .intro-inscription,
+        .intro-reduced .intro-seal,
+        .intro-reduced .intro-paper-edge {
           opacity: 1 !important;
           transform: none !important;
           animation: none !important;
@@ -244,12 +394,8 @@ export function VideoIntro({ onComplete }: { onComplete: () => void }) {
           opacity: 0;
           animation: intro-fade-in 0.5s cubic-bezier(0.22, 1, 0.36, 1) forwards;
         }
-        .intro-layer-left {
-          animation-name: intro-fade-in;
-        }
-        .intro-layer-right {
-          animation-name: intro-fade-in;
-        }
+        .intro-layer-left  { animation-name: intro-fade-in; }
+        .intro-layer-right { animation-name: intro-fade-in; }
 
         .intro-stroke {
           stroke-dasharray: 1000;
@@ -283,22 +429,70 @@ export function VideoIntro({ onComplete }: { onComplete: () => void }) {
         .intro-stat-1 { animation-delay: 2.12s; }
         .intro-stat-2 { animation-delay: 2.24s; }
         .intro-stat-3 { animation-delay: 2.36s; }
+
+        /* 题跋线(中央品牌区下方,朱砂细线):2.0s 从中心扩展 */
+        .intro-inscription {
+          opacity: 0;
+          animation:
+            intro-fade-in 0.4s ease 1.3s forwards,
+            intro-inscription-draw 0.8s cubic-bezier(0.22, 1, 0.36, 1) 1.3s forwards;
+          transform-origin: center center;
+        }
+        /* 朱砂方印(品牌区右侧):2.0s 弹跳出现 */
+        .intro-seal {
+          opacity: 0;
+          transform-origin: center center;
+          animation: intro-seal-pop 0.6s cubic-bezier(0.22, 1, 0.36, 1) 2.0s forwards;
+        }
+        /* 卷首/卷尾水波晕染(背景装饰):从 0 开始,1.2s 后一直呼吸 */
+        .intro-paper-edge {
+          opacity: 0;
+          animation:
+            intro-fade-in 1.2s ease 0.2s forwards,
+            intro-paper-breathe 6s ease-in-out 1.4s infinite;
+        }
       `}</style>
 
       <div
         className={`fixed inset-0 z-[90] overflow-hidden bg-paper-100 intro-overlay ${reducedClass} ${exiting ? 'intro-exit' : ''}`}
         aria-hidden="true"
       >
-        {/* 背景:水墨宣纸基调 */}
+        {/* 背景:宣纸基调 + 金/石色径向晕染(更克制) */}
         <div
           className="absolute inset-0 z-0"
           style={{
             background:
-              'radial-gradient(circle at 22% 28%, rgba(201,169,97,0.14) 0%, transparent 45%), radial-gradient(circle at 78% 70%, rgba(46,92,110,0.10) 0%, transparent 45%)',
+              'radial-gradient(circle at 18% 22%, rgba(201,169,97,0.10) 0%, transparent 42%), radial-gradient(circle at 82% 78%, rgba(46,92,110,0.08) 0%, transparent 42%), radial-gradient(ellipse at 50% 50%, rgba(250,248,243,0.4) 0%, transparent 70%)',
           }}
         />
 
-        {/* 光标感应名作层 */}
+        {/* 卷首晕染(左上) + 卷尾晕染(右下):极淡的呼吸光晕 */}
+        <div
+          className="intro-paper-edge absolute z-0 pointer-events-none"
+          style={{
+            left: '-8%',
+            top: '-10%',
+            width: '40%',
+            height: '40%',
+            background:
+              'radial-gradient(ellipse at center, rgba(201,169,97,0.18) 0%, transparent 65%)',
+            filter: 'blur(40px)',
+          }}
+        />
+        <div
+          className="intro-paper-edge absolute z-0 pointer-events-none"
+          style={{
+            right: '-8%',
+            bottom: '-10%',
+            width: '40%',
+            height: '40%',
+            background:
+              'radial-gradient(ellipse at center, rgba(46,92,110,0.14) 0%, transparent 65%)',
+            filter: 'blur(40px)',
+          }}
+        />
+
+        {/* 光标感应名作层(S 形两岸排布) */}
         <IntroPaintings active={!prefersReduced} />
 
         {/* 顶部状态条 */}
@@ -318,7 +512,7 @@ export function VideoIntro({ onComplete }: { onComplete: () => void }) {
           </div>
         </div>
 
-        {/* 中部主体 */}
+        {/* 中部主体:笔触 + 品牌 + 副标 + 题跋线 + 朱砂方印 */}
         <div className="absolute inset-0 z-[3] flex flex-col items-center justify-center px-4">
           <div className="relative w-[70vw] max-w-[800px]">
             <svg
@@ -329,11 +523,11 @@ export function VideoIntro({ onComplete }: { onComplete: () => void }) {
             >
               <defs>
                 <linearGradient id="brushGradient" x1="0" y1="0" x2="1" y2="0">
-                  <stop offset="0%" stopColor="#1a1a1a" stopOpacity="0" />
-                  <stop offset="6%" stopColor="#1a1a1a" stopOpacity="0.5" />
-                  <stop offset="20%" stopColor="#1a1a1a" stopOpacity="0.95" />
-                  <stop offset="80%" stopColor="#1a1a1a" stopOpacity="0.95" />
-                  <stop offset="94%" stopColor="#1a1a1a" stopOpacity="0.5" />
+                  <stop offset="0%"   stopColor="#1a1a1a" stopOpacity="0" />
+                  <stop offset="6%"   stopColor="#1a1a1a" stopOpacity="0.5" />
+                  <stop offset="20%"  stopColor="#1a1a1a" stopOpacity="0.95" />
+                  <stop offset="80%"  stopColor="#1a1a1a" stopOpacity="0.95" />
+                  <stop offset="94%"  stopColor="#1a1a1a" stopOpacity="0.5" />
                   <stop offset="100%" stopColor="#1a1a1a" stopOpacity="0" />
                 </linearGradient>
               </defs>
@@ -355,16 +549,50 @@ export function VideoIntro({ onComplete }: { onComplete: () => void }) {
           <p className="intro-subtitle mt-4 text-sm sm:text-base tracking-[0.2em] text-ink-700/80">
             AI 助你看见作品的每一笔墨
           </p>
+
+          {/* 题跋行:朱砂细线 + 方印(品牌区下方) */}
+          <div className="mt-5 flex items-center gap-3">
+            <div
+              className="intro-inscription h-px w-24 sm:w-32"
+              style={{
+                background:
+                  'linear-gradient(90deg, transparent 0%, rgba(200,57,46,0.65) 30%, rgba(200,57,46,0.85) 50%, rgba(200,57,46,0.65) 70%, transparent 100%)',
+              }}
+              aria-hidden="true"
+            />
+            <div
+              className="intro-seal inline-flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded-[3px] text-[10px] sm:text-[11px] font-bold text-paper-50"
+              style={{
+                background:
+                  'linear-gradient(135deg, #d85f50 0%, #c8392e 60%, #a82a20 100%)',
+                boxShadow:
+                  '0 1px 0 rgba(255,255,255,0.2) inset, 0 2px 6px rgba(200,57,46,0.32)',
+                fontFamily: 'serif',
+                letterSpacing: '0',
+              }}
+              aria-hidden="true"
+            >
+              丹青
+            </div>
+            <div
+              className="intro-inscription h-px w-24 sm:w-32"
+              style={{
+                background:
+                  'linear-gradient(90deg, transparent 0%, rgba(200,57,46,0.65) 30%, rgba(200,57,46,0.85) 50%, rgba(200,57,46,0.65) 70%, transparent 100%)',
+              }}
+              aria-hidden="true"
+            />
+          </div>
         </div>
 
         {/* 底部信息层 */}
         <div className="absolute bottom-0 left-0 right-0 z-[3] px-6 sm:px-10 pb-6 sm:pb-8 flex flex-col items-center gap-4 sm:gap-5">
           <div className="flex items-center gap-4 sm:gap-7 text-[10px] sm:text-[11px] font-mono tracking-[0.18em] text-ink-700/85">
             {[
-              { no: '01', en: 'upload', zh: '上传' },
-              { no: '02', en: 'analyze', zh: '诊断' },
-              { no: '03', en: 'feedback', zh: '建议' },
-              { no: '04', en: 'archive', zh: '沉淀' },
+              { no: '01', en: 'upload',    zh: '上传' },
+              { no: '02', en: 'analyze',   zh: '诊断' },
+              { no: '03', en: 'feedback',  zh: '建议' },
+              { no: '04', en: 'archive',   zh: '沉淀' },
             ].map((s, i) => (
               <div key={s.no} className={`intro-step intro-step-${i} flex items-center gap-1.5`}>
                 <span className="text-ink-900 font-semibold">{s.no}</span>
@@ -378,9 +606,9 @@ export function VideoIntro({ onComplete }: { onComplete: () => void }) {
 
           <div className="flex flex-wrap items-center justify-center gap-x-5 sm:gap-x-8 gap-y-1.5 text-[11px] sm:text-xs text-ink-700/85">
             {[
-              { num: '4', label: '创意形式' },
-              { num: '12', label: '评估维度' },
-              { num: '3s', label: '诊断响应' },
+              { num: '4',    label: '创意形式' },
+              { num: '12',   label: '评估维度' },
+              { num: '3s',   label: '诊断响应' },
               { num: '128+', label: '风格预设' },
             ].map((d, i) => (
               <div key={d.label} className={`intro-stat intro-stat-${i} flex items-baseline gap-1.5`}>
