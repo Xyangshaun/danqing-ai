@@ -7,6 +7,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import winston from 'winston';
+import Transport from 'winston-transport';
 import { env } from '../config/env.js';
 
 /**
@@ -137,6 +138,53 @@ const consoleFormat = winston.format.combine(
 );
 
 let loggerInstance: winston.Logger | null = null;
+
+/**
+ * 邮件告警 Transport
+ * 对 warn/error 级别的日志自动发送邮件,但跳过自身产生的日志(skipAlert=true)
+ */
+class AlertTransport extends Transport {
+  constructor() {
+    super({ level: 'warn' });
+  }
+
+  log(info: Record<string, unknown>, callback: () => void): void {
+    setImmediate(() => this.emit('logged', info));
+
+    if (info.skipAlert === true) {
+      callback();
+      return;
+    }
+
+    // 动态导入避免循环依赖:logger -> alert.service -> logger
+    import('../services/alert.service.js')
+      .then(({ sendAlert }) => {
+        const level = String(info.level ?? 'warn');
+        const message = String(info.message ?? '');
+        const component = String((info.service as string) ?? 'server');
+        const traceId = info.traceId ? String(info.traceId) : undefined;
+        const stack = info.stack ? String(info.stack) : undefined;
+
+        // 提取上下文(排除内部字段)
+        const { level: _l, message: _m, service: _s, timestamp: _t, skipAlert: _sa, ...context } = info;
+
+        void sendAlert({
+          level: level as 'error' | 'warn',
+          component,
+          title: message,
+          message,
+          traceId,
+          stack,
+          context: Object.keys(context).length > 0 ? context : undefined,
+        });
+      })
+      .catch(() => {
+        // 告警服务加载失败时静默,避免影响主日志
+      });
+
+    callback();
+  }
+}
 
 /**
  * 获取 Winston logger 单例

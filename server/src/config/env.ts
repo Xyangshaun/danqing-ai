@@ -121,6 +121,28 @@ export interface EnvConfig {
   // 任务包 C:部署日志同步
   /** 部署同步共享密钥(部署脚本通过 X-Deploy-Secret 上报;空则禁用部署日志接收端点) */
   deploySyncSecret: string;
+
+  // 监控告警
+  /** 邮件告警总开关 */
+  alertEnabled: boolean;
+  /** 告警 SMTP 服务器 */
+  alertSmtpHost: string;
+  /** 告警 SMTP 端口 */
+  alertSmtpPort: number;
+  /** 是否使用 TLS(465 端口通常为 true) */
+  alertSmtpSecure: boolean;
+  /** 告警发件账号 */
+  alertSmtpUser: string;
+  /** 告警 SMTP 授权码 */
+  alertSmtpPass: string;
+  /** 告警收件人 */
+  alertTo: string;
+  /** 告警发件人 */
+  alertFrom: string;
+  /** 邮件发送最大重试次数 */
+  alertMaxRetries: number;
+  /** 同一组件同级别告警最小间隔(毫秒),防止邮件轰炸 */
+  alertMinIntervalMs: number;
 }
 
 function parseBoolean(value: string | undefined, defaultValue: boolean): boolean {
@@ -405,6 +427,18 @@ export function loadEnv(): EnvConfig {
 
     // 任务包 C:部署日志同步(空则禁用部署日志接收端点)
     deploySyncSecret: env.DEPLOY_SYNC_SECRET ?? '',
+
+    // 监控告警
+    alertEnabled: parseBoolean(env.ALERT_ENABLED, false),
+    alertSmtpHost: env.ALERT_SMTP_HOST ?? 'smtp.qq.com',
+    alertSmtpPort: parseInteger(env.ALERT_SMTP_PORT, 465),
+    alertSmtpSecure: parseBoolean(env.ALERT_SMTP_SECURE, true),
+    alertSmtpUser: env.ALERT_SMTP_USER ?? '2692963779@qq.com',
+    alertSmtpPass: env.ALERT_SMTP_PASS ?? '',
+    alertTo: env.ALERT_TO ?? '2692963779@qq.com',
+    alertFrom: env.ALERT_FROM ?? '2692963779@qq.com',
+    alertMaxRetries: parseInteger(env.ALERT_MAX_RETRIES, 3),
+    alertMinIntervalMs: parseInteger(env.ALERT_MIN_INTERVAL_MS, 300000),
   };
 }
 
