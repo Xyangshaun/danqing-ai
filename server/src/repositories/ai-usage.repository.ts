@@ -433,7 +433,7 @@ export class AiUsageRepository {
         COUNT(*)::int AS total_count,
         COUNT(*) FILTER (WHERE duration_ms <= ${threshold})::int AS compliant_count
       FROM ai_usage_logs
-      WHERE created_at >= (CURRENT_DATE - (${days} - 1))
+      WHERE created_at >= (CURRENT_DATE - ((${days} - 1)::int || ' days')::interval)
       ${opts.tenantId ? Prisma.sql`AND tenant_id = ${opts.tenantId}` : Prisma.empty}
       ${opts.usageType && opts.usageType !== 'all' ? Prisma.sql`AND usage_type = ${opts.usageType}` : Prisma.empty}
       GROUP BY DATE(created_at)
