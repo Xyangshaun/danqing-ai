@@ -5,7 +5,7 @@ import {
   Layers, Wand2, MapPin, Zap, Shuffle, Settings2, ChevronRight, Check,
   Grid3X3, ImageIcon, Info, ArrowRight, Bookmark, TrendingUp, Target,
   Lightbulb, ChevronDown, ChevronUp, RefreshCw, Save, Scan, Gem, Hourglass,
-  Scale, Trash2,
+  Scale, Trash2, Columns2,
 } from 'lucide-react';
 import {
   fuseStyles, fuseMethods, fuseIntensities, fusePresets,
@@ -24,6 +24,7 @@ import { useToast } from '../components/ToastProvider';
 import { saveSavedMaterial } from '../services/data-service';
 import EmptyState from '../components/EmptyState';
 import GenerationLoading from '../components/GenerationLoading';
+import ResultWorkshop, { type WorkshopItem } from '../components/ResultWorkshop';
 
 const methodIconMap: Record<string, typeof Layout> = {
   composition: Layout,
@@ -71,6 +72,7 @@ export default function FusePage() {
   const [showPresets, setShowPresets] = useState(true);
   const [showAnalysis, setShowAnalysis] = useState(true);
   const [resultVariations, setResultVariations] = useState(1);
+  const [workshopOpen, setWorkshopOpen] = useState(false);
 
   /* 用户自主搭配预设 */
   const [userPresets, setUserPresets] = useState<FuseUserPreset[]>([]);
@@ -157,6 +159,27 @@ export default function FusePage() {
       console.error('保存到素材库失败:', err);
       toast.error('保存失败', '请稍后重试');
     }
+  };
+
+  /* ---------- 结果工作台:条目归一化 ---------- */
+  const workshopItems: WorkshopItem[] = useMemo(
+    () =>
+      results.map((r, i) => ({
+        id: r.id,
+        url: r.url,
+        title: `方案 ${i + 1}`,
+        subtitle: `${r.style.name} · ${r.method.name} · ${r.intensity.name}`,
+        shareText: `【丹青有AI】我用「${r.style.name} × ${r.method.name}」把两张作品融合成了新创意 → ${window.location.origin}/app/#/fuse`,
+      })),
+    [results],
+  );
+
+  const handleSaveWorkshopItem = async (item: WorkshopItem) => {
+    await saveSavedMaterial({
+      imageUrl: item.url,
+      title: `嫁接作品-${item.title}-${new Date().toLocaleDateString('zh-CN')}`,
+      source: 'fuse',
+    });
   };
 
   const handleFileSelect = useCallback((file: File, slot: 1 | 2) => {
@@ -888,7 +911,7 @@ export default function FusePage() {
             选择两件作品，设定融合标准，AI 将提取各自创意元素进行嫁接
             <br />
             <span className="text-sm text-ink-500">
-              8种嫁接风格 · 6种融合方法 · 4级融合强度 · 240种创意组合
+              12种嫁接风格 · 9种融合方法 · 4级融合强度 · 作品配比可调 · 432种创意组合
             </span>
           </p>
         </div>
@@ -1041,6 +1064,15 @@ export default function FusePage() {
                   {results[selectedResultIndex].intensity.name}
                 </span>
                 <button
+                  onClick={() => setWorkshopOpen(true)}
+                  aria-label="打开结果工作台"
+                  className="flex items-center gap-2 px-4 py-2 bg-ink-900 text-rice-100 rounded-lg hover:bg-cinnabar transition-all"
+                  title="对比 · 收藏 · 分享 · 微调重生成"
+                >
+                  <Columns2 className="w-4 h-4" />
+                  <span className="text-sm font-medium">结果工作台</span>
+                </button>
+                <button
                   onClick={handleDownload}
                   aria-label="下载"
                   className="flex items-center gap-2 px-4 py-2 bg-ink-900 text-rice-100 rounded-lg hover:bg-cinnabar transition-all ml-2"
@@ -1142,6 +1174,59 @@ export default function FusePage() {
             />
           </div>
         )}
+
+        {/* 结果工作台:对比 / 收藏 / 分享 / 微调重生成 */}
+        <ResultWorkshop
+          open={workshopOpen}
+          onClose={() => setWorkshopOpen(false)}
+          items={workshopItems}
+          initialIndex={selectedResultIndex}
+          accentColor={selectedStyle.color}
+          onSave={handleSaveWorkshopItem}
+          onRegenerate={handleFuse}
+          tweakPanel={
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="bg-rice-100 rounded-xl p-4">
+                <div className="flex justify-between mb-2 text-sm">
+                  <span className="font-medium text-cinnabar">作品A {Math.round(fusionRatio * 100)}%</span>
+                  <span className="font-medium text-ink-600">作品B {100 - Math.round(fusionRatio * 100)}%</span>
+                </div>
+                <input
+                  type="range"
+                  min="10"
+                  max="90"
+                  step="5"
+                  value={Math.round(fusionRatio * 100)}
+                  onChange={(e) => setFusionRatio(parseInt(e.target.value, 10) / 100)}
+                  aria-label="微调作品配比"
+                  className="w-full h-2 rounded-full appearance-none cursor-pointer"
+                  style={{
+                    background: `linear-gradient(to right, #c53030 0%, #c53030 ${fusionRatio * 100}%, #8a8f98 ${fusionRatio * 100}%, #8a8f98 100%)`,
+                  }}
+                />
+              </div>
+              <div className="bg-rice-100 rounded-xl p-4">
+                <p className="text-sm font-medium text-ink-700 mb-2">融合强度</p>
+                <div className="flex gap-2">
+                  {fuseIntensities.map((it) => (
+                    <button
+                      key={it.id}
+                      onClick={() => setSelectedIntensity(it)}
+                      aria-label={it.name}
+                      className={`flex-1 px-2 py-1.5 text-xs rounded-lg border-2 transition-all ${
+                        selectedIntensity.id === it.id
+                          ? 'border-cinnabar bg-cinnabar/5 text-cinnabar font-medium'
+                          : 'border-transparent bg-rice-50 text-ink-600 hover:bg-rice-200'
+                      }`}
+                    >
+                      {it.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          }
+        />
 
         {/* Artwork Picker Modal */}
         {showArtworkPicker && (

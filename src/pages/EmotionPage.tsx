@@ -5,6 +5,7 @@ import {
   RefreshCw, Brush, Moon, Wind, Droplets, Flame, Waves,
   Mountain, Cloud, CloudFog, TreePine, Flower, Flower2, Sunrise, Leaf,
   Feather, CloudRain, Circle, Zap, MountainSnow, Save, Bookmark, Trash2, X,
+  Columns2,
 } from 'lucide-react';
 import { generateEmotionCanvas } from '../services/imageService';
 import {
@@ -23,7 +24,7 @@ import {
   removeEmotionPreset,
   type EmotionPreset,
 } from '../services/emotionPresetStore';
-import { saveEmotionPalette } from '../services/data-service';
+import { saveEmotionPalette, saveSavedMaterial } from '../services/data-service';
 import { useToast } from '../components/ToastProvider';
 import EmptyState from '../components/EmptyState';
 import EmotionBrushCanvas from '../components/EmotionBrushCanvas';
@@ -31,6 +32,7 @@ import GenerationLoading from '../components/GenerationLoading';
 import EmotionMixer from '../components/emotion/EmotionMixer';
 import EditablePalette from '../components/emotion/EditablePalette';
 import GenerationParamsPanel from '../components/emotion/GenerationParamsPanel';
+import ResultWorkshop, { type WorkshopItem } from '../components/ResultWorkshop';
 
 /* 情绪名 → 图标映射(图标依赖保留在页面层,情绪库保持纯净) */
 const EMOTION_ICONS: Record<string, typeof Heart> = {
@@ -83,6 +85,9 @@ export default function EmotionPage() {
   /* ---------- 生成结果 ---------- */
   const [generating, setGenerating] = useState(false);
   const [results, setResults] = useState<string[]>([]);
+
+  /* ---------- 结果工作台 ---------- */
+  const [workshopOpen, setWorkshopOpen] = useState(false);
 
   /* ---------- 预设 ---------- */
   const [presets, setPresets] = useState<EmotionPreset[]>([]);
@@ -202,6 +207,38 @@ export default function EmotionPage() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  /* ---------- 结果工作台:条目归一化 + 分享文案 ---------- */
+  const emotionExpr = selectedEmotion + (secondaryEmotion ? ` × ${secondaryEmotion}` : '');
+  const workshopItems: WorkshopItem[] = useMemo(
+    () =>
+      results.map((url, i) => ({
+        id: `emotion-${Date.now()}-${i}`,
+        url,
+        title: `${emotionExpr} · ${i + 1}`,
+        subtitle: `浓度 ${Math.round(intensity * 100)}% · ${genParams.aspect === 'square' ? '斗方' : genParams.aspect === 'landscape' ? '横卷' : '立轴'}`,
+        shareText: `【丹青有AI】我把「${emotionExpr}」的情绪画成了画(浓度 ${Math.round(intensity * 100)}%) → ${window.location.origin}/app/#/emotion`,
+      })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [results, emotionExpr, intensity, genParams.aspect],
+  );
+
+  const handleShareCard = (index: number) => {
+    const item = workshopItems[index];
+    if (!item) return;
+    navigator.clipboard?.writeText(item.shareText).then(
+      () => toast.success('分享文案已复制', '粘贴即可分享给好友'),
+      () => toast.error('复制失败', '请检查浏览器剪贴板权限'),
+    );
+  };
+
+  const handleSaveWorkshopItem = async (item: WorkshopItem) => {
+    await saveSavedMaterial({
+      imageUrl: item.url,
+      title: `情绪画布-${emotionExpr}-${new Date().toLocaleDateString('zh-CN')}`,
+      source: 'emotion',
+    });
   };
 
   // 渐变色
@@ -679,6 +716,15 @@ export default function EmotionPage() {
               </h2>
               <div className="flex items-center gap-3">
                 <button
+                  onClick={() => setWorkshopOpen(true)}
+                  aria-label="打开结果工作台"
+                  className="flex items-center gap-2 px-3 py-1.5 text-sm bg-ink-900 text-rice-100 rounded-lg transition-all hover:bg-cinnabar"
+                  title="对比 · 收藏 · 分享 · 微调重生成"
+                >
+                  <Columns2 className="w-4 h-4" />
+                  结果工作台
+                </button>
+                <button
                   onClick={handleApplyToStyles}
                   aria-label="应用到风格调色板"
                   className="flex items-center gap-2 px-3 py-1.5 text-sm border-2 rounded-lg transition-all hover:bg-cinnabar hover:text-white hover:border-cinnabar"
@@ -735,6 +781,7 @@ export default function EmotionPage() {
                         <Download className="w-4 h-4" />
                       </button>
                       <button
+                        onClick={() => handleShareCard(index)}
                         aria-label="分享"
                         className="p-2 bg-ink-900/5 text-ink-700 rounded-lg hover:bg-ink-900 hover:text-rice-100 transition-all"
                         title="分享"
@@ -759,6 +806,64 @@ export default function EmotionPage() {
             />
           </div>
         )}
+
+        {/* 结果工作台:对比 / 收藏 / 分享 / 微调重生成 */}
+        <ResultWorkshop
+          open={workshopOpen}
+          onClose={() => setWorkshopOpen(false)}
+          items={workshopItems}
+          accentColor={themeColor}
+          onSave={handleSaveWorkshopItem}
+          onRegenerate={handleGenerate}
+          tweakPanel={
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="bg-rice-100 rounded-xl p-4">
+                <div className="flex justify-between mb-2 text-sm">
+                  <span className="font-medium text-ink-700">情绪浓度</span>
+                  <span className="text-ink-500">{Math.round(intensity * 100)}%</span>
+                </div>
+                <input
+                  type="range"
+                  min="0.2"
+                  max="1"
+                  step="0.05"
+                  value={intensity}
+                  onChange={(e) => setIntensity(parseFloat(e.target.value))}
+                  aria-label="微调情绪浓度"
+                  className="w-full h-2 rounded-full appearance-none cursor-pointer"
+                  style={{
+                    background: `linear-gradient(to right, ${displayPalette[5]} 0%, ${displayPalette[2]} 50%, ${displayPalette[0]} 100%)`,
+                  }}
+                />
+              </div>
+              {secondaryEmotionData && (
+                <div className="bg-rice-100 rounded-xl p-4">
+                  <div className="flex justify-between mb-2 text-sm">
+                    <span className="font-medium" style={{ color: currentEmotion.colorPalette[1] }}>
+                      {selectedEmotion} {Math.round(ratio * 100)}%
+                    </span>
+                    <span className="font-medium" style={{ color: secondaryEmotionData.colorPalette[1] }}>
+                      {secondaryEmotion} {100 - Math.round(ratio * 100)}%
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0.5"
+                    max="0.9"
+                    step="0.05"
+                    value={ratio}
+                    onChange={(e) => setRatio(parseFloat(e.target.value))}
+                    aria-label="微调双情绪配比"
+                    className="w-full h-2 rounded-full appearance-none cursor-pointer"
+                    style={{
+                      background: `linear-gradient(to right, ${currentEmotion.colorPalette[1]} 0%, ${currentEmotion.colorPalette[1]} ${ratio * 100}%, ${secondaryEmotionData.colorPalette[1]} ${ratio * 100}%, ${secondaryEmotionData.colorPalette[1]} 100%)`,
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+          }
+        />
       </div>
     </div>
   );
