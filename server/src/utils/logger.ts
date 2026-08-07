@@ -204,25 +204,33 @@ export function initLogger(): winston.Logger {
     // 忽略:目录已存在或无权限,File transport 会自行处理错误
   }
 
+  const transports: winston.transport[] = [
+    // stdout/stderr(PM2 捕获,当前环境因非 TTY socket 导致 Console transport 不落地)
+    new winston.transports.Console({
+      format: consoleFormat,
+    }),
+    // 文件兜底:直接写 ./logs/app.log,绕过 stdout/stderr 链路
+    // 解决 PM2 fork + Node 20 ESM + 非 TTY 环境下 Console transport 日志丢失问题
+    new winston.transports.File({
+      filename: path.join(logDir, 'app.log'),
+      format: consoleFormat,
+      level: cfg.logLevel,
+      maxsize: 10 * 1024 * 1024, // 10MB 单文件上限
+      maxFiles: 5, // 最多保留 5 个轮转文件(app.log, app.log.1, ... app.log.5)
+    }),
+  ];
+
+  // 邮件告警 Transport(仅告警开关开启时挂载,避免无 SMTP 配置时每次 warn/error 都尝试发信)
+  // 对应 M3 可观测性规划 §5(告警通道)
+  if (cfg.alertEnabled) {
+    transports.push(new AlertTransport());
+  }
+
   loggerInstance = winston.createLogger({
     level: cfg.logLevel,
     format: logFormat,
     defaultMeta: { service: 'danqing-ai-server' },
-    transports: [
-      // stdout/stderr(PM2 捕获,当前环境因非 TTY socket 导致 Console transport 不落地)
-      new winston.transports.Console({
-        format: consoleFormat,
-      }),
-      // 文件兜底:直接写 ./logs/app.log,绕过 stdout/stderr 链路
-      // 解决 PM2 fork + Node 20 ESM + 非 TTY 环境下 Console transport 日志丢失问题
-      new winston.transports.File({
-        filename: path.join(logDir, 'app.log'),
-        format: consoleFormat,
-        level: cfg.logLevel,
-        maxsize: 10 * 1024 * 1024, // 10MB 单文件上限
-        maxFiles: 5, // 最多保留 5 个轮转文件(app.log, app.log.1, ... app.log.5)
-      }),
-    ],
+    transports,
     exitOnError: false,
   });
   return loggerInstance;

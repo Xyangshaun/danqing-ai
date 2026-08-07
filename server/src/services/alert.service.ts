@@ -181,8 +181,13 @@ async function sendViaCommand(config: AlertConfig, subject: string, text: string
         resolve();
       },
     );
-    proc.stdin.write(text);
-    proc.stdin.end();
+    // 若 stdin 为 null(极端情况),立即 reject 交由上层降级处理
+    if (proc.stdin) {
+      proc.stdin.write(text);
+      proc.stdin.end();
+    } else {
+      reject(new Error('mail command stdin unavailable'));
+    }
   });
 }
 

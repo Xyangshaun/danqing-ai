@@ -74,7 +74,13 @@ async function startServer(): Promise<void> {
   // 4a. AI 图像生成 Worker 启动(M2-T6)
   // 仅在"生成功能开启"时启动(默认关闭,经 /api/v1/config/features/:featureId 灰度开启);
   // worker 仅后台轮询队列,不阻塞主 HTTP 服务;Redis 不可用时自动跳过
+  //
+  // 竞态修复(M2-T6):isGenerationEnabled() 为同步判定,基于内存 flags Map;
+  // 若启动时未先从 Redis hydration,则读到的是默认 disabled。
+  // 故在判定前显式触发一次 hydration(经 getFeature 内部 ensureHydrated),
+  // 确保读取到 Redis 中的灰度覆盖(如生产已 enabled)后再决定是否启动 worker。
   try {
+    await configFeatureService.getFeature('generation');
     if (configFeatureService.isGenerationEnabled()) {
       const started = await generationWorker.start();
       if (started) {
