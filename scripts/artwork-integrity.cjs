@@ -110,8 +110,38 @@ async function sendMailViaCommand(config, subject, text) {
   });
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function retryWithLog(operation, options) {
+  const maxRetries = options.maxRetries ?? 3;
+  const baseDelay = options.baseDelay ?? 2000;
+  const label = options.label ?? '操作';
+
+  let lastError;
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      console.log(`[告警] ${label} 第 ${attempt}/${maxRetries} 次尝试...`);
+      const result = await operation();
+      console.log(`[告警] ${label} 第 ${attempt} 次尝试成功`);
+      return result;
+    } catch (err) {
+      lastError = err;
+      console.error(`[告警] ${label} 第 ${attempt}/${maxRetries} 次尝试失败: ${err.message}`);
+      if (attempt < maxRetries) {
+        const delay = baseDelay * 2 ** (attempt - 1);
+        console.log(`[告警] ${delay}ms 后重试...`);
+        await sleep(delay);
+      }
+    }
+  }
+  throw lastError;
+}
+
 async function sendAlert(differences) {
   const config = loadAlertConfig();
+  const maxRetries = parseInt(process.env.ALERT_MAX_RETRIES || '3', 10);
 
   if (!config.pass && config.host === 'smtp.qq.com') {
     console.warn('[告警] 未配置 ALERT_SMTP_PASS(QQ 邮箱 SMTP 授权码),跳过邮件发送');
@@ -124,21 +154,27 @@ async function sendAlert(differences) {
 
   try {
     try {
-      await sendMailViaNodemailer(config, subject, text);
+      await retryWithLog(
+        () => sendMailViaNodemailer(config, subject, text),
+        { maxRetries, baseDelay: 2000, label: 'nodemailer 邮件发送' },
+      );
       console.log('[告警] 邮件已通过 nodemailer 发送');
       return;
     } catch (nodemailerErr) {
       if (nodemailerErr.code === 'MODULE_NOT_FOUND') {
         console.warn('[告警] 未安装 nodemailer,尝试系统 mail 命令');
       } else {
-        throw nodemailerErr;
+        console.error(`[告警] nodemailer 在 ${maxRetries} 次尝试后均失败`);
       }
     }
 
-    await sendMailViaCommand(config, subject, text);
+    await retryWithLog(
+      () => sendMailViaCommand(config, subject, text),
+      { maxRetries: 1, baseDelay: 1000, label: '系统 mail 命令发送' },
+    );
     console.log('[告警] 邮件已通过系统 mail 命令发送');
   } catch (err) {
-    console.error('[告警] 邮件发送失败:', err.message);
+    console.error('[告警] 邮件发送最终失败:', err.message);
     console.error('[告警] 请检查 ALERT_SMTP_PASS 和 SMTP 配置');
   }
 }
@@ -297,6 +333,7 @@ function printUsage() {
   ALERT_SMTP_PASS    SMTP 授权码(QQ 邮箱不是登录密码)
   ALERT_TO           收件人,默认 2692963779@qq.com
   ALERT_FROM         发件人,默认 2692963779@qq.com
+  ALERT_MAX_RETRIES  邮件发送最大重试次数,默认 3
 
 示例:
   生成基准清单:
