@@ -52,6 +52,10 @@ export interface EnvConfig {
   rateLimitRefreshPerMin: number;
   rateLimitApiPerMin: number;
 
+  // Redis 监控(对应 redis-brpop-fix-2026-08-07.md §7)
+  rateLimitRedisTimeoutMs: number; // rate-limit Redis 操作硬超时(默认 200ms)
+  redisMetricsLogIntervalMs: number; // Redis 指标日志输出间隔(默认 30000ms)
+
   // 租户
   tenantDefaultPlan: 'free' | 'standard' | 'enterprise';
   tenantDefaultType: 'school' | 'college' | 'class' | 'individual';
@@ -354,6 +358,10 @@ export function loadEnv(): EnvConfig {
     rateLimitCallbackPerMin: parseInteger(env.RATE_LIMIT_CALLBACK_PER_MIN, 5),
     rateLimitRefreshPerMin: parseInteger(env.RATE_LIMIT_REFRESH_PER_MIN, 20),
     rateLimitApiPerMin: parseInteger(env.RATE_LIMIT_API_PER_MIN, 60),
+
+    // Redis 监控参数(可从环境变量配置,便于 Docker 部署固化)
+    rateLimitRedisTimeoutMs: parseInteger(env.RATE_LIMIT_REDIS_TIMEOUT_MS, 200),
+    redisMetricsLogIntervalMs: parseInteger(env.REDIS_METRICS_LOG_INTERVAL_MS, 30000),
 
     tenantDefaultPlan: parseTenantPlan(env.TENANT_DEFAULT_PLAN),
     tenantDefaultType: parseTenantType(env.TENANT_DEFAULT_TYPE),
