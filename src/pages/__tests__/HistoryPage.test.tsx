@@ -20,6 +20,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
+import { ToastProvider } from '../../components/ToastProvider';
 import HistoryPage from '../HistoryPage';
 import type { HistoryRecord, AnalysisResult, PaintingAnalysis } from '../../types';
 
@@ -27,9 +28,11 @@ import type { HistoryRecord, AnalysisResult, PaintingAnalysis } from '../../type
 
 const getAnalysisHistoryMock = vi.fn<(...args: unknown[]) => Promise<HistoryRecord[]>>();
 const getAnalysisDetailMock = vi.fn<(...args: unknown[]) => Promise<AnalysisResult | null>>();
+const batchDeleteAnalysesMock = vi.fn<(...args: unknown[]) => Promise<{ total: number; deleted: number; failedCount: number; items: { id: string; deleted: boolean; error?: string }[] }>>();
 vi.mock('../../services/data-service', () => ({
   getAnalysisHistory: (...args: unknown[]) => getAnalysisHistoryMock(...args),
   getAnalysisDetail: (...args: unknown[]) => getAnalysisDetailMock(...args),
+  batchDeleteAnalyses: (...args: unknown[]) => batchDeleteAnalysesMock(...args),
 }));
 
 /* mock useLazyImage:始终返回 loaded 状态,避免 IntersectionObserver 依赖 */
@@ -112,7 +115,9 @@ function makePaintingDetail(overrides: Partial<AnalysisResult> = {}): AnalysisRe
 function renderHistory(initialPath = '/history') {
   return render(
     <MemoryRouter initialEntries={[initialPath]}>
-      <HistoryPage />
+      <ToastProvider>
+        <HistoryPage />
+      </ToastProvider>
     </MemoryRouter>,
   );
 }
@@ -120,9 +125,11 @@ function renderHistory(initialPath = '/history') {
 beforeEach(() => {
   getAnalysisHistoryMock.mockReset();
   getAnalysisDetailMock.mockReset();
+  batchDeleteAnalysesMock.mockReset();
   // 默认空数据
   getAnalysisHistoryMock.mockResolvedValue([]);
   getAnalysisDetailMock.mockResolvedValue(null);
+  batchDeleteAnalysesMock.mockResolvedValue({ total: 0, deleted: 0, failedCount: 0, items: [] });
 });
 
 /* ============================================================
@@ -478,5 +485,92 @@ describe('HistoryPage 清除筛选', () => {
       expect(screen.getByText('90')).toBeInTheDocument();
     });
     expect(screen.queryByText('清除筛选')).not.toBeInTheDocument();
+  });
+});
+
+/* ============================================================
+ * 7. 批量删除(P-06 跨端批删一致性)
+ * ============================================================ */
+describe('HistoryPage 批量删除', () => {
+  it('点击"批量删除"进入选择模式,未选时"确认删除"禁用', async () => {
+    getAnalysisHistoryMock.mockResolvedValue([makeRecord({ id: 'a' })]);
+    renderHistory();
+    await waitFor(() => {
+      expect(screen.getByText('批量删除')).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText('批量删除'));
+    // 选择操作栏出现(文本被 <b> 拆分为多个节点,用 /已选/ 匹配)
+    await waitFor(() => {
+      expect(screen.getByText(/已选/)).toBeInTheDocument();
+    });
+    // 未勾选时计数为 0
+    expect(screen.getByText('0')).toBeInTheDocument();
+    // 未勾选时确认删除按钮禁用
+    const confirmBtn = screen.getByText('确认删除').closest('button');
+    expect(confirmBtn).toBeDisabled();
+  });
+
+  it('勾选后确认删除:乐观更新移除记录并调用批删接口', async () => {
+    getAnalysisHistoryMock.mockResolvedValueOnce([
+      makeRecord({ id: 'a', overallScore: 90 }),
+      makeRecord({ id: 'b', overallScore: 70 }),
+    ]);
+    // 删除后重新拉取(invalidateQueries(['analyses']) 等价)返回空
+    getAnalysisHistoryMock.mockResolvedValueOnce([]);
+    batchDeleteAnalysesMock.mockResolvedValue({
+      total: 2,
+      deleted: 2,
+      failedCount: 0,
+      items: [
+        { id: 'a', deleted: true },
+        { id: 'b', deleted: true },
+      ],
+    });
+    renderHistory();
+    await waitFor(() => {
+      expect(screen.getByText('90')).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText('批量删除'));
+    const boxes = screen.getAllByLabelText('选中该项');
+    expect(boxes.length).toBe(2);
+    fireEvent.click(boxes[0]);
+    fireEvent.click(boxes[1]);
+    // 计数更新为 2(文本被 <b> 拆分,计数单独匹配)
+    await waitFor(() => {
+      expect(screen.getByText('2')).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText('确认删除'));
+    await waitFor(() => {
+      expect(batchDeleteAnalysesMock).toHaveBeenCalledWith(['a', 'b']);
+    });
+    // 删除成功后列表为空(重新拉取)
+    await waitFor(() => {
+      expect(screen.getByText('还没有分析记录')).toBeInTheDocument();
+    });
+  });
+
+  it('批删失败时回滚恢复原列表', async () => {
+    getAnalysisHistoryMock.mockResolvedValue([
+      makeRecord({ id: 'a', overallScore: 90 }),
+      makeRecord({ id: 'b', overallScore: 70 }),
+    ]);
+    batchDeleteAnalysesMock.mockRejectedValue(new Error('网络错误'));
+    renderHistory();
+    await waitFor(() => {
+      expect(screen.getByText('90')).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText('批量删除'));
+    const boxes = screen.getAllByLabelText('选中该项');
+    fireEvent.click(boxes[0]);
+    fireEvent.click(boxes[1]);
+    fireEvent.click(screen.getByText('确认删除'));
+    await waitFor(() => {
+      expect(batchDeleteAnalysesMock).toHaveBeenCalled();
+    });
+    // 回滚后两条记录都恢复
+    await waitFor(() => {
+      expect(screen.getByText('90')).toBeInTheDocument();
+      expect(screen.getByText('70')).toBeInTheDocument();
+    });
   });
 });

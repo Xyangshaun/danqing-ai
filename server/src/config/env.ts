@@ -88,6 +88,22 @@ export interface EnvConfig {
   /** TRAE 模型名 */
   traeApiModel: string;
 
+  // AI 图像生成(M-2 追加,独立于诊断链路,对应 m2-generation-plan §2.4)
+  /** 图像生成主提供商标识(trae=主 / glm=备,默认 trae) */
+  aiImageProvider: 'trae' | 'glm';
+  /** 图像生成 API Key(主提供商;TRAE 图像配置缺失时降级复用诊断 GLM 凭据) */
+  aiImageApiKey: string;
+  /** 图像生成端点 URL(OpenAI 兼容格式) */
+  aiImageApiUrl: string;
+  /** 图像生成模型名 */
+  aiImageApiModel: string;
+  /** 图像生成请求超时(毫秒,默认 30000,独立于诊断 2500) */
+  aiImageTimeout: number;
+  /** 生成接口单用户分钟限流(次/分钟,默认 5) */
+  generationRateLimitPerMin: number;
+  /** 单任务最大生成张数(默认 4,对应契约 count 上限) */
+  generationMaxCount: number;
+
   // 开发模式(Phase 2 追加)
   /** 开发模式跳过认证(true 时 auth 中间件注入 dev 用户,仅 NODE_ENV=development 生效) */
   devSkipAuth: boolean;
@@ -161,6 +177,18 @@ function parseAiProvider(value: string | undefined): 'glm' | 'trae' {
   const v = (value ?? 'glm').toLowerCase();
   if (v !== 'glm' && v !== 'trae') {
     throw new Error(`AI_PROVIDER must be one of glm|trae, got "${value}"`);
+  }
+  return v;
+}
+
+/**
+ * 解析图像生成主提供商(默认 trae)
+ * 与诊断 AI_PROVIDER 解耦,图像生成主提供商独立配置
+ */
+function parseAiImageProvider(value: string | undefined): 'trae' | 'glm' {
+  const v = (value ?? 'trae').toLowerCase();
+  if (v !== 'trae' && v !== 'glm') {
+    throw new Error(`AI_IMAGE_PROVIDER must be one of trae|glm, got "${value}"`);
   }
   return v;
 }
@@ -350,6 +378,15 @@ export function loadEnv(): EnvConfig {
     traeApiKey: env.TRAE_API_KEY ?? '',
     traeApiUrl: env.TRAE_API_URL ?? '',
     traeApiModel: env.TRAE_API_MODEL ?? '',
+
+    // AI 图像生成(M-2,独立配置,对应 §2.4;API Key 严禁硬编码)
+    aiImageProvider: parseAiImageProvider(env.AI_IMAGE_PROVIDER),
+    aiImageApiKey: env.AI_IMAGE_API_KEY ?? '',
+    aiImageApiUrl: env.AI_IMAGE_API_URL ?? '',
+    aiImageApiModel: env.AI_IMAGE_API_MODEL ?? '',
+    aiImageTimeout: parseInteger(env.AI_IMAGE_TIMEOUT, 30000),
+    generationRateLimitPerMin: parseInteger(env.GENERATION_RATE_LIMIT_PER_MIN, 5),
+    generationMaxCount: parseInteger(env.GENERATION_MAX_COUNT, 4),
 
     // 开发模式
     devSkipAuth,

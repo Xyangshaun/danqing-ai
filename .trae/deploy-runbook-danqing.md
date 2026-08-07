@@ -4,6 +4,7 @@
 > 服务器: 43.128.25.202 (腾讯云 VPS)  
 > 域名: www.danqing.site  
 > 部署日期: 2026-08-02  
+> 最近更新: 2026-08-07 (v5 动画改版)  
 > 维护人: ubuntu (SSH 密钥认证)
 
 ---
@@ -404,6 +405,11 @@ sudo docker system prune -f
 | AI_API_KEY | GLM API Key | fb5c...IPLTb (已配置) |
 | AI_API_URL | AI API 端点 | https://open.bigmodel.cn/api/paas/v4/chat/completions |
 | AI_API_MODEL | AI 模型 | glm-4.6v-flash |
+| AI_IMAGE_PROVIDER | 图像生成主提供商 | glm |
+| AI_IMAGE_API_KEY | 图像生成 API Key | 复用 GLM Key |
+| AI_IMAGE_API_URL | 图像生成端点 | https://open.bigmodel.cn/api/paas/v4/images/generations |
+| AI_IMAGE_API_MODEL | 图像生成模型 | cogview-3 |
+| AI_IMAGE_TIMEOUT | 图像生成超时 | 30000 |
 | COOKIE_SECURE | Cookie Secure | true |
 | COOKIE_DOMAIN | Cookie 域名 | .danqing.site |
 | CORS_ORIGINS | CORS 白名单 | https://www.danqing.site |
@@ -489,6 +495,30 @@ curl -s https://www.danqing.site/health
 
 **结果**: 返回正常健康响应，服务运行稳定。
 
+### 10.3 2026-08-07 灵感嫁接 / 情绪画布真实 AI 生成对接
+
+| 项 | 内容 |
+|----|------|
+| 变更人 | TRAE 部署助手 |
+| 变更范围 | AI 图像生成链路(FusePage / EmotionPage → imageService → /api/v1/generation → generation.service → image-generation.service) |
+| 相关文件 | `server/src/controllers/generation.controller.ts`、`server/src/services/generation.service.ts`、`server/src/services/config-feature.service.ts`、`server/src/types/api-contract.ts`、`src/services/imageService.ts`、`src/pages/FusePage.tsx`、`src/types/api-contract.ts` |
+| 备份点 | `server/dist.bak-20260807-generation`、`server/.env.bak-20260807-generation`、`/var/www/danqing-ai/dist.bak-20260807-generation` |
+| 回滚章节 | [5.4 代码与配置回滚](#54-代码与配置回滚) |
+
+**变更摘要**:
+1. `generation.controller.ts` 在 `CreateGenerationRequest` 中新增 `sync` 可选布尔字段,支持同步生成模式。
+2. `generation.service.ts` 在 `createGeneration` 中优先处理 `sync=true`,直接调用 `processGenerationJob` 并返回最终结果,不入队列。
+3. `config-feature.service.ts` 将 `generation` 功能开关默认值从 `disabled` 调整为 `enabled`,真实 AI 生成默认上线。
+4. `imageService.ts` 将 `generateImage` 改为调用后端 `/api/v1/generation` 接口(`sync: true`),失败时回退到本地 SVG 占位图。
+5. `FusePage.tsx` 在 `handleFuse` 中改为 `await generateImage(...)` 顺序生成,移除模拟延迟。
+6. 前后端 `api-contract.ts` 补充 `CreateGenerationResponse` / `GenerationStatus` / `GeneratedImage` / `ReviewStatus` 类型,保持类型一致。
+7. `server/.env` 新增 AI 图像生成配置:`AI_IMAGE_PROVIDER=glm`、`AI_IMAGE_API_KEY` 复用 GLM Key、`AI_IMAGE_API_URL=https://open.bigmodel.cn/api/paas/v4/images/generations`、`AI_IMAGE_API_MODEL=cogview-3`、`AI_IMAGE_TIMEOUT=30000`。
+
+**验证结果**:
+- 本地直接调用 `image-generation.service.ts` 生成水墨山水画,成功返回图片 URL,模型 `cogview-3`,耗时约 6.7s。
+- 前后端类型检查通过;相关单元测试(config-feature.service、generation.service、ai-vision.service、imageService)全部通过。
+- 生产部署后通过前端「灵感嫁接」页面点击「开始灵感嫁接」,成功返回真实 AI 生成图(待部署后验证)。
+
 ## 11. 联系方式
 
 | 角色 | 联系方式 |
@@ -498,3 +528,40 @@ curl -s https://www.danqing.site/health
 | SSH | ubuntu@43.128.25.202 (密钥: danqing.pem) |
 | 1Panel | http://43.128.25.202:20410 |
 | GitHub | https://github.com/Xyangshaun/danqing-ai |
+
+---
+
+## 12. v5 开场动画改版 (2026-08-07)
+
+### 改版内容
+- 取消旧的中国山水画开屏视频(opening.mp4)
+- 取消 dq-video 整个脚本生成目录
+- VideoIntro 组件重写为纯 Framer Motion 实现:
+  - 0.0~0.9s: 毛笔笔触 SVG 从左向右扫出(渐变墨色 + pathLength)
+  - 0.6~1.2s: 品牌名
+  - 1.0~1.5s: 副标题
+  - 2.0~2.2s: 自动完成,Hero 接管
+- 减弱动效偏好下动画时长归零,直接呈现终态(仍等 2.2s)
+- 新增调试参数: URL ?slow=N 放慢 N 倍(只影响 setTimeout,不影响 framer-motion transition duration)
+
+### 文件变更
+- 新增: 无(纯重写)
+- 修改: \website/components/home/VideoIntro.tsx\, \website/components/home/VideoIntro.test.tsx\, \website/components/ui/InkLoader.tsx\`n- 删除: \website/assets/videos/opening.mp4\, 整个 \dq-video/\ 目录
+- 备份: \website/components/home/VideoIntro.tsx.bak-video-version\`n
+### 部署参数(本次)
+- index.html md5: 备份 684794a1da84fd6282cbef5d19bce266 → 新 e622739a699118cef27cdd3b8c9cc9fc
+- 新 page chunk: \page-61dd35b7e4f120d3.js\ (含 brushGradient + pathLength)
+- 旧 page chunk: \page-c343376ef5a32f23.js\ (已 404,无引用残留)
+- 部署包: \out-v5-animation.zip\ (2.16MB)
+- 备份: \/var/www/danqing-ai/website/index.html.bak.20260807_pre_animation\, \/var/www/danqing-ai/website/_next.bak.20260807_pre_animation/\`n- nginx: \sudo systemctl reload nginx\ (零中断)
+- 部署日志: 401(本地测试密钥与生产不符,符合预期,主部署已成功)
+
+### 回滚方案(若需回退到旧版视频)
+1. 旧版备份: \/var/www/danqing-ai/website/index.html.bak.20260807_pre_animation\`n2. 旧版 chunks: \/var/www/danqing-ai/website/_next.bak.20260807_pre_animation/\`n3. 旧版组件: \website/components/home/VideoIntro.tsx.bak-video-version\`n4. 命令: \cp /var/www/danqing-ai/website/index.html.bak.20260807_pre_animation /var/www/danqing-ai/website/index.html && rm -rf /var/www/danqing-ai/website/_next && mv /var/www/danqing-ai/website/_next.bak.20260807_pre_animation /var/www/danqing-ai/website/_next && sudo systemctl reload nginx\`n5. 注意: 旧版依赖 \opening.mp4\,需先确认 \/var/www/danqing-ai/website/_next/static/media/opening.*.mp4\ 存在(bak 目录应保留)
+
+### 在线验证(部署后)
+- 首页: https://www.danqing.site/ → 200, 180356 B
+- 关键 chunk: \/_next/static/chunks/app/page-61dd35b7e4f120d3.js\ → 200, 17425 B
+- CSS: \/_next/static/css/12a899b3a9e49081.css\ → 200, 54803 B
+- 动画可见性: 浏览器打开页面应先看到米色 paper-100 全屏覆盖层,2.2s 后 Hero 内容淡入
+

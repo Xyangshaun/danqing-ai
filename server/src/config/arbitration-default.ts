@@ -5,7 +5,7 @@
 // 系统级全局默认配置;v2 支持租户级覆盖(setTenantArbitrationOverride + 深度合并)
 // ============================================================
 
-import type { ArbitrationConfig } from '../types/arbitration.js';
+import type { ArbitrationConfig, DeepPartial } from '../types/arbitration.js';
 
 /**
  * 系统默认仲裁配置
@@ -67,10 +67,14 @@ export const DEFAULT_ARBITRATION_CONFIG: ArbitrationConfig = {
  *  - 仅对普通对象递归合并,基本类型/数组直接覆盖
  *  - 不修改入参(返回新对象),避免污染 DEFAULT_ARBITRATION_CONFIG
  *  - override 中 undefined 的字段不覆盖 default(保留默认值)
+ *
+ * 导出供租户仲裁配置服务(tenant-arbitration.service.ts)复用:
+ *  - 合并 DB 持久化覆盖片段 → 生效配置
+ *  - 合并内存覆盖 → 生效配置
  */
-function deepMergeArbitrationConfig(
+export function deepMergeArbitrationConfig(
   base: ArbitrationConfig,
-  override: Partial<ArbitrationConfig>,
+  override: DeepPartial<ArbitrationConfig>,
 ): ArbitrationConfig {
   const isPlainObject = (v: unknown): v is Record<string, unknown> =>
     typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -104,7 +108,7 @@ function deepMergeArbitrationConfig(
  *    clearTenantArbitrationOverride 清除,
  *    clearAllTenantArbitrationOverrides 清空全部(测试用)
  */
-const tenantArbitrationOverrides = new Map<string, Partial<ArbitrationConfig>>();
+const tenantArbitrationOverrides = new Map<string, DeepPartial<ArbitrationConfig>>();
 
 /**
  * 设置租户级仲裁配置覆盖(深度合并到系统默认)
@@ -113,7 +117,7 @@ const tenantArbitrationOverrides = new Map<string, Partial<ArbitrationConfig>>()
  */
 export function setTenantArbitrationOverride(
   tenantId: string,
-  override: Partial<ArbitrationConfig>,
+  override: DeepPartial<ArbitrationConfig>,
 ): void {
   if (!tenantId) return;
   tenantArbitrationOverrides.set(tenantId, override);

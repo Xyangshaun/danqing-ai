@@ -35,6 +35,8 @@ import {
 
 beforeEach(() => {
   localStorage.clear();
+  // 单元测试关闭外部 API,使用占位图,避免调用真实后端
+  setUseExternalApi(false);
 });
 
 afterEach(() => {
@@ -93,28 +95,28 @@ describe('setApiKey / getApiKey', () => {
  * 3. generateImage
  * ============================================================ */
 describe('generateImage', () => {
-  it('返回字符串(SVG data URL)', () => {
-    const url = generateImage('test prompt');
+  it('返回字符串(SVG data URL)', async () => {
+    const url = await generateImage('test prompt');
     expect(typeof url).toBe('string');
     expect(url.length).toBeGreaterThan(0);
   });
 
-  it('默认 size 参数为 square', () => {
-    const url = generateImage('test');
+  it('默认 size 参数为 square', async () => {
+    const url = await generateImage('test');
     expect(url).toBeTruthy();
   });
 
-  it('不同 size 参数都能生成图片', () => {
+  it('不同 size 参数都能生成图片', async () => {
     const sizes = ['square', 'portrait_4_3', 'landscape_4_3', 'portrait_16_9', 'landscape_16_9'];
-    sizes.forEach((size) => {
-      const url = generateImage('test', size);
+    for (const size of sizes) {
+      const url = await generateImage('test', size);
       expect(url).toBeTruthy();
-    });
+    }
   });
 
-  it('不同 prompt 生成不同图片', () => {
-    const a = generateImage('prompt-a');
-    const b = generateImage('prompt-b');
+  it('不同 prompt 生成不同图片', async () => {
+    const a = await generateImage('prompt-a');
+    const b = await generateImage('prompt-b');
     // 由于 prompt 不同,生成的 SVG data URL 应不同
     expect(a).not.toBe(b);
   });
@@ -277,21 +279,21 @@ describe('scenePresets', () => {
  * 9. getStyleDemoImage
  * ============================================================ */
 describe('getStyleDemoImage', () => {
-  it('对已知 styleId 返回 demo 图片 URL', () => {
-    const url = getStyleDemoImage('ink');
+  it('对已知 styleId 返回 demo 图片 URL', async () => {
+    const url = await getStyleDemoImage('ink');
     expect(typeof url).toBe('string');
     expect(url.length).toBeGreaterThan(0);
   });
 
-  it('对每个 stylePreset 都能获取 demo', () => {
+  it('对每个 stylePreset 都能获取 demo', async () => {
     for (const preset of stylePresets) {
-      const url = getStyleDemoImage(preset.id);
+      const url = await getStyleDemoImage(preset.id);
       expect(url).toBeTruthy();
     }
   });
 
-  it('对未知 styleId 回退到默认 painting prompt', () => {
-    const url = getStyleDemoImage('unknown');
+  it('对未知 styleId 回退到默认 painting prompt', async () => {
+    const url = await getStyleDemoImage('unknown');
     expect(url).toBeTruthy();
   });
 });

@@ -21,6 +21,8 @@ import express, { Router, type Express } from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { env } from './config/env.js';
 import { logger } from './utils/logger.js';
@@ -31,6 +33,8 @@ import { authRouter } from './routes/auth.routes.js';
 import { userRouter } from './routes/user.routes.js';
 import { tenantRouter } from './routes/tenant.routes.js';
 import { analysisRouter } from './routes/analysis.routes.js';
+// M-2 AI 图像生成路由(POST /generation + GET /generation/:id)
+import { generationRouter } from './routes/generation.routes.js';
 import { artworkRouter } from './routes/artwork.routes.js';
 import { growthRouter } from './routes/growth.routes.js';
 import { subscriptionRouter } from './routes/subscription.routes.js';
@@ -40,6 +44,8 @@ import { knowledgeRouter } from './routes/knowledge.routes.js';
 import { modulesRouter } from './routes/modules.routes.js';
 import { uiConfigRouter } from './routes/ui-config.routes.js';
 import { configRouter } from './routes/config.routes.js';
+// 实时图片搜索路由(P0 落地实现,详见 docs/realtime-image-search-solution.md)
+import { imageSearchRouter } from './routes/image-search.routes.js';
 // Phase 5 业务路由(评分预设 + 争议仲裁,已落地实现)
 import { presetRouter } from './routes/preset.routes.js';
 import { disputeRouter } from './routes/dispute.routes.js';
@@ -162,12 +168,27 @@ export function createApp(): Express {
   app.get('/health', healthHandler);
   app.get('/api/v1/health', healthHandler);
 
+  // ---------- 静态资源(种子作品图等,无需鉴权)----------
+  // /uploads/* 由 express.static 直接服务,供前端 <img> 引用种子原画作
+  // 路径解析:__dirname = server/src,静态目录 = server/public/uploads
+  // 长缓存(immutable):种子图内容不变,7 天缓存降低重复请求
+  const __dirname = path.dirname(fileURLToPath(import.meta.url));
+  app.use(
+    '/uploads',
+    express.static(path.resolve(__dirname, '../public/uploads'), {
+      maxAge: '7d',
+      immutable: true,
+    }),
+  );
+
   // ---------- 业务路由(统一挂载在 /api/v1 下,与 API 契约一致)----------
   const apiV1 = Router();
   apiV1.use('/auth', authRouter);
   apiV1.use('/users', userRouter);
   apiV1.use('/tenants', tenantRouter);
   apiV1.use('/analyses', analysisRouter);
+  // M-2 AI 图像生成(POST /generation + GET /generation/:id,契约 §3.17)
+  apiV1.use('/generation', generationRouter);
   apiV1.use('/artworks', artworkRouter);
   apiV1.use('/growth', growthRouter);
   apiV1.use('/subscriptions', subscriptionRouter);
@@ -183,6 +204,8 @@ export function createApp(): Express {
   apiV1.use('/modules', modulesRouter);
   apiV1.use('/ui', uiConfigRouter);
   apiV1.use('/config', configRouter);
+  // 实时图片搜索(P0 落地实现:内存倒排索引 + 字段加权 + 多租户隔离)
+  apiV1.use('/images', imageSearchRouter);
   app.use('/api/v1', apiV1);
 
   // ---------- 管理后台路由(独立命名空间 /api/admin,供 admin-dashboard 调用)----------

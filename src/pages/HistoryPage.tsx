@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo, useCallback, memo } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { History, Calendar, Eye, ArrowRight, X, Brush, PenTool, Box, Layers, Palette, Sparkles, Type, Gem, Settings, Move, RefreshCw, ImageOff } from 'lucide-react';
-import { getAnalysisHistory, getAnalysisDetail } from '../services/data-service';
+import { getAnalysisHistory, getAnalysisDetail, batchDeleteAnalyses } from '../services/data-service';
+import { useToast } from '../components/ToastProvider';
 import type { HistoryRecord, AnalysisResult, PaintingAnalysis, DesignAnalysis, ProductAnalysis, SculptureAnalysis, ArtType } from '../types';
 import HeatmapCanvas from '../components/HeatmapCanvas';
 import { ListSkeleton, SkeletonBox } from '../components/PageSkeleton';
@@ -351,6 +352,12 @@ interface HistoryCardProps {
   index: number;
   onViewDetail: (record: HistoryRecord) => void;
   onRediagnose: (artType: string) => void;
+  /** 是否为批量选择模式(P-06 批删) */
+  selectionMode: boolean;
+  /** 当前记录是否被选中 */
+  checked: boolean;
+  /** 切换选中状态 */
+  onToggleSelect: (id: string) => void;
 }
 
 const HistoryCard = memo(function HistoryCard({
@@ -358,6 +365,9 @@ const HistoryCard = memo(function HistoryCard({
   index,
   onViewDetail,
   onRediagnose,
+  selectionMode,
+  checked,
+  onToggleSelect,
 }: HistoryCardProps) {
   const artConfig = artTypeConfig[record.artType] || artTypeConfig.painting;
   const Icon = artConfig.icon;
@@ -368,7 +378,24 @@ const HistoryCard = memo(function HistoryCard({
       <div className={`absolute left-4 top-6 w-5 h-5 ${getScoreBg(record.overallScore)} rounded-full border-4 border-rice-200 z-10`} />
 
       <div className="bg-rice-50 rounded-2xl p-6 shadow-card hover:shadow-card-hover transition-all duration-300 transform hover:-translate-y-1 relative">
-        {/* 卡片 hover 时显示的快捷操作 */}
+        {/* 批量选择模式:顶部左侧显示勾选框,替代 hover 快捷操作 */}
+        {selectionMode ? (
+          <button
+            type="button"
+            onClick={() => onToggleSelect(record.id)}
+            aria-label={checked ? '取消选中' : '选中该项'}
+            className={`absolute top-3 left-3 w-8 h-8 rounded-md flex items-center justify-center border transition-colors ${
+              checked
+                ? 'bg-cinnabar border-cinnabar text-white'
+                : 'bg-white/95 border-ink-900/15 text-transparent hover:border-cinnabar hover:text-cinnabar/40'
+            }`}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+              <path d="M20 6L9 17l-5-5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        ) : (
+        /* 卡片 hover 时显示的快捷操作 */
         <div className="absolute top-3 right-3 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
           <button
             onClick={() => onViewDetail(record)}
@@ -387,6 +414,7 @@ const HistoryCard = memo(function HistoryCard({
             <RefreshCw className="w-4 h-4" />
           </button>
         </div>
+        )}
 
         <div className="flex flex-col md:flex-row md:items-center gap-4">
           <div className="flex-shrink-0 relative">
@@ -477,6 +505,81 @@ export default function HistoryPage() {
   const [history, setHistory] = useState<HistoryRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedRecord, setSelectedRecord] = useState<AnalysisResult | null>(null);
+
+  /* ---------- 批量选择 & 批删(P-06 跨端批删一致性) ---------- */
+  const toast = useToast();
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
+  const [deleting, setDeleting] = useState(false);
+
+  /** 进入批量选择模式(清空历史选中) */
+  const enterSelectionMode = useCallback(() => {
+    setSelectionMode(true);
+    setSelectedIds(new Set());
+  }, []);
+
+  /** 退出选择模式(清空选中项) */
+  const exitSelectionMode = useCallback(() => {
+    setSelectionMode(false);
+    setSelectedIds(new Set());
+  }, []);
+
+  /** 切换某项选中状态 */
+  const toggleSelect = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  /**
+   * 批量删除(乐观更新 + 回滚):
+   *  1. 快照当前 history,先本地剔除选中项(乐观更新,立即反馈)
+   *  2. 调用服务端 POST /analyses/batch-delete
+   *  3. 成功:逐条 toast 失败原因 + 重新拉取以服务端为准(等价 invalidateQueries(['analyses']))
+   *  4. 失败(网络/超时/业务错误):回滚恢复快照
+   */
+  const handleBatchDelete = useCallback(async () => {
+    if (selectedIds.size === 0) {
+      toast.warning('请先选择要删除的记录');
+      return;
+    }
+    const ids = Array.from(selectedIds);
+    const snapshot = history;
+    // 乐观更新:先本地剔除选中项
+    setHistory((prev) => prev.filter((r) => !ids.includes(r.id)));
+    setDeleting(true);
+    try {
+      const resp = await batchDeleteAnalyses(ids);
+      // 任一 deleted=false:逐条展示对应 error
+      const failed = resp.items.filter((i) => !i.deleted);
+      if (failed.length > 0) {
+        toast.warning(
+          `部分删除失败(${failed.length} 条)`,
+          failed.map((i) => `${i.id.slice(0, 8)}… ${i.error ?? '未知原因'}`).join('；'),
+        );
+      }
+      if (resp.deleted > 0) {
+        toast.success(`已删除 ${resp.deleted} 条记录`);
+      }
+      // 成功后重新拉取,以服务端为准(等价 invalidateQueries(['analyses']))
+      try {
+        const records = await getAnalysisHistory();
+        setHistory(records);
+      } catch {
+        /* 重新拉取失败,保留本地乐观结果 */
+      }
+      exitSelectionMode();
+    } catch (err) {
+      // 请求失败:回滚恢复快照
+      setHistory(snapshot);
+      toast.error('删除失败', err instanceof Error ? err.message : '请稍后重试');
+    } finally {
+      setDeleting(false);
+    }
+  }, [selectedIds, history, toast, exitSelectionMode]);
 
   // 初始化筛选状态：从 URL 参数读取
   const typeParam = searchParams.get('type') as ArtTypeFilter | null;
@@ -686,8 +789,41 @@ export default function HistoryPage() {
                     </FilterButton>
                   ))}
                 </FilterGroup>
+                {/* 批量删除入口(P-06):进入选择模式 */}
+                <button
+                  onClick={enterSelectionMode}
+                  aria-label="批量删除"
+                  className="ml-auto h-8 px-3 text-xs font-medium rounded-md text-cinnabar border border-cinnabar/30 hover:bg-cinnabar/10 transition-colors"
+                >
+                  批量删除
+                </button>
               </div>
             </div>
+
+            {/* 批量选择操作栏(P-06):选择模式下的删除/取消 */}
+            {selectionMode && (
+              <div className="sticky top-20 z-20 bg-rice-50/95 backdrop-blur rounded-lg border border-cinnabar/30 mb-6 px-4 py-3 flex items-center gap-3 shadow-card">
+                <span className="text-sm text-ink-700">
+                  已选 <b className="text-cinnabar">{selectedIds.size}</b> 项
+                </span>
+                <div className="ml-auto flex items-center gap-2">
+                  <button
+                    onClick={exitSelectionMode}
+                    disabled={deleting}
+                    className="h-8 px-3 text-xs font-medium rounded-md text-ink-600 hover:bg-ink-900/5 transition-colors disabled:opacity-50"
+                  >
+                    取消
+                  </button>
+                  <button
+                    onClick={handleBatchDelete}
+                    disabled={deleting || selectedIds.size === 0}
+                    className="inline-flex items-center gap-1.5 h-8 px-4 text-xs font-medium rounded-md bg-cinnabar text-white hover:bg-cinnabar-dark transition-colors disabled:opacity-50"
+                  >
+                    {deleting ? '删除中…' : '确认删除'}
+                  </button>
+                </div>
+              </div>
+            )}
 
             {filteredHistory.length === 0 ? (
               <div className="text-center py-16">
@@ -734,6 +870,9 @@ export default function HistoryPage() {
                           index={index}
                           onViewDetail={handleViewDetail}
                           onRediagnose={handleRediagnose}
+                          selectionMode={selectionMode}
+                          checked={selectedIds.has(item.id)}
+                          onToggleSelect={toggleSelect}
                         />
                       </div>
                     ))}
@@ -751,6 +890,9 @@ export default function HistoryPage() {
                         index={index}
                         onViewDetail={handleViewDetail}
                         onRediagnose={handleRediagnose}
+                        selectionMode={selectionMode}
+                        checked={selectedIds.has(record.id)}
+                        onToggleSelect={toggleSelect}
                       />
                     ))}
                   </div>

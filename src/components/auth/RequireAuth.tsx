@@ -17,8 +17,11 @@ export default function RequireAuth({ children }: RequireAuthProps) {
   const { isAuthenticated, isLoading } = useAuth();
   const location = useLocation();
 
+  // 临时演示模式：通过 ?demo=1 绕过登录，用于本地 UI 验证
+  const demo = new URLSearchParams(location.search).get('demo') === '1';
+
   // 应用启动时恢复登录态,期间显示全屏 loading
-  if (isLoading) {
+  if (isLoading && !demo) {
     return (
       <div className="h-screen flex flex-col items-center justify-center bg-rice-200 ink-texture gap-4">
         <div className="relative">
@@ -36,7 +39,7 @@ export default function RequireAuth({ children }: RequireAuthProps) {
   }
 
   // 未登录:跳转登录页,记录来源路径(登录后可回跳)
-  if (!isAuthenticated) {
+  if (!isAuthenticated && !demo) {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   }
 

@@ -48,6 +48,21 @@ export function error(
 }
 
 /**
+ * 创建成功响应(HTTP 201)
+ * 用于资源创建类接口(POST),如生成任务 POST /generation
+ * 响应体格式与 success 完全一致,仅 HTTP 状态码为 201
+ */
+export function created<T>(res: Response, data: T, message = 'created'): void {
+  const body: ApiResponse<T> = {
+    code: 0,
+    message,
+    data,
+    traceId: res.req.traceId,
+  };
+  res.status(201).json(body);
+}
+
+/**
  * 分页响应快捷方法
  */
 export function paginated<T>(

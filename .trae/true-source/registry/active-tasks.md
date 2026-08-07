@@ -3,9 +3,9 @@
 > 本文件是当前所有活动任务的「单一信息源」。每次状态或进度变更必须同步更新本表。
 > 字段不可省略,无值填 `—`。
 
-**最后更新**:2026-08-07 00:55(G9 优化任务全面审查)
+**最后更新**:2026-08-07 17:30(G12 deploy-run.sh 权限修复与 CSS 验证完成)
 **活动任务数**:0
-**整体进度**:14 / 14 步骤完成(100%)
+**整体进度**:20 / 20 步骤完成(100%)
 **当前阶段**:复赛冲刺(08-04 ~ 08-09)
 
 ---
@@ -17,6 +17,12 @@
 | TASK-0001 | VPS 部署架构落地 | ✅ COMPLETED | P0 | devops-qa | 6/6 (100%) | 2026-08-04 | 2026-08-06 | — | 生产 VPS(X) |
 | TASK-0002 | 飞书 OAuth 回调 URL 更新 | ✅ COMPLETED | P0 | auth-oauth | 3/3 (100%) | 2026-08-04 | 2026-08-06 | TASK-0001 | 飞书开放平台(W) |
 | TASK-0003 | QA 最终报告创建 | ✅ COMPLETED | P1 | devops-qa | 5/5 (100%) | 2026-08-05 | 2026-08-07 | — | src/*(R), server/*(R) |
+| TASK-0004 | PM2 日志系统修复(G7) | ✅ COMPLETED | P0 | devops-qa | 4/4 (100%) | 2026-08-06 | 2026-08-07 | — | server/src/utils/logger.ts(W) |
+| TASK-0005 | SIGINT 来源排查(G8) | ✅ COMPLETED | P1 | devops-qa | 3/3 (100%) | 2026-08-07 | 2026-08-07 | TASK-0004 | ~/.pm2/pm2.log(R) |
+| TASK-0006 | 优化任务全面审查(G9) | ✅ COMPLETED | P1 | devops-qa | 5/5 (100%) | 2026-08-07 | 2026-08-07 | TASK-0005 | active-tasks.md(W) |
+| TASK-0007 | 部署日志同步修复(G10) | ✅ COMPLETED | P1 | devops-qa | 3/3 (100%) | 2026-08-07 | 2026-08-07 | — | deploy-ssh.sh(W), deploy-run.sh(W) |
+| TASK-0008 | 系统清理与状态恢复(G11) | ✅ COMPLETED | P1 | devops-qa | 3/3 (100%) | 2026-08-07 | 2026-08-07 | TASK-0007 | /tmp/*.sh(X), dist.bak.*(X) |
+| TASK-0009 | deploy-run.sh 权限修复与 CSS 验证(G12) | ✅ COMPLETED | P0 | devops-qa | 3/3 (100%) | 2026-08-07 | 2026-08-07 | TASK-0008 | deploy-run.sh(W) |
 
 ## 二、按状态分组
 
@@ -40,6 +46,54 @@
   - OWASP Top 10:10 项中 9 项 PASS,1 项低风险反模式 S-001(`buildDateWhereClause` 走 `Prisma.raw` 字符串拼接,Date 类型不可注入,非阻断)
   - 历史缺陷回归:D-001 / P-001 / Bug#1 / Bug#2 全部确认修复
   - 结论:满足生产部署质量门禁,建议放行
+
+- **TASK-0004** — PM2 日志系统修复(G7) | 负责人:devops-qa | 完成于 2026-08-07 00:04
+  - 完成内容:修复 `server/src/utils/logger.ts` 的 `redactFormat` 丢失 Symbol 元数据导致 winston transport 静默丢弃日志的致命 bug
+  - 根因:`Object.entries()` 返回全新对象,丢失 `Symbol.for('level')` / `Symbol.for('message')` / `Symbol.for('splat')`,transport 静默吞掉条目
+  - 修复:`redact()` 改为原地递归 mutate,`redactFormat` 改为 `redact(info); return info;` 保留 Symbol
+  - 验证:app.log 788 字节 / out.log 956 字节双路写入,error.log 0 字节,健康检查 200
+  - 详见下方「第七节 G7 修复」+「维护参考:日志配置方案速查」
+
+- **TASK-0005** — SIGINT 来源排查(G8) | 负责人:devops-qa | 完成于 2026-08-07 00:45
+  - 完成内容:排查 error.log 为空但 app.log 有 2 次 SIGINT 优雅重启的来源
+  - 结论:2 次 SIGINT(00:24:25 / 00:27:35)均为手动 `pm2 restart` 触发,伴随 `.env` 修改(新增 `DEPLOY_SYNC_SECRET`),来源为 1panel 面板或部署同步工具
+  - 发现历史静默崩溃:23:56 有 4 次 exit code 1 的 uncaughtException,因 G7 bug 未留日志(已被 G7 修复)
+  - 详见下方「第八节 G8 排查报告」(含运维脚本清单 + 后续监控建议)
+
+- **TASK-0006** — 优化任务全面审查(G9) | 负责人:devops-qa | 完成于 2026-08-07 00:55
+  - 完成内容:验证 G7/G8 部署状态,全面盘点代码与运维脚本中的未完成优化
+  - 已部署验证:G7 logger.ts 修复 ✅ / G7 双路日志 ✅ / G7 dist.bak.* 清理 ✅
+  - 未完成优化清单:10 项(P0×2 / P1×3 / P2×2 / P3×3),含优先级矩阵 + 依赖约束 + 推荐执行顺序
+  - 关键发现:health-check.sh 防雪崩机制未实施,alerts.log 显示 2026-08-03 曾连续 10 次自动重启(雪崩场景)
+  - 详见下方「第九节 G9 审查报告」
+
+- **TASK-0007** — 部署日志同步修复(G10) | 负责人:devops-qa | 完成于 2026-08-07 07:05
+  - 完成内容:修复 deploy-ssh.sh / deploy-run.sh 无法读取 `.env` 中 `DEPLOY_SYNC_SECRET` 导致 deployment_logs 表始终为空的问题
+  - 根因:`DEPLOY_SYNC_SECRET="${DEPLOY_SYNC_SECRET:-}"` 默认为空,脚本不读取 `.env`,仅依赖环境变量 → 每次部署跳过上报
+  - 修复:deploy-ssh.sh L20 后插入 .env 回退读取;deploy-run.sh 新增 [5/5] 上报段(内联逻辑与 deploy-ssh.sh 一致)
+  - 验证:手动上报测试 HTTP 200 ×2,deployment_logs 表写入 2 条测试记录,bash 语法检查通过
+  - 详见下方「第十节 G10 修复」
+
+- **TASK-0008** — 系统清理与状态恢复(G11) | 负责人:devops-qa | 完成于 2026-08-07 16:45
+  - 完成内容:核查后台进程 + 清理临时文件 + 确认系统恢复稳定状态
+  - 后台进程核查:本地 47 个 node 进程均为 IDE/系统/插件相关;服务器仅 PM2 danqing-api(正常服务),无遗留后台任务
+  - 临时文件清理:/tmp 删除 6 个本次任务相关脚本(deploy-check.sh / deploy-run.sh / check-deployment-logs.sh 等);dist.bak 冗余备份 5 个 → 1 个(释放 ~5 MB,保留 dist.bak.deploy.20260807_000330)
+  - 发现历史崩溃:08-07 09:25-09:27 因 AI_PROVIDER=aliyun 启动失败,触发 3 次连续重启(雪崩重现),10:07 手动恢复 .env 为 glm 后稳定
+  - 当前状态:.env AI_PROVIDER=glm ✓ / 健康检查 200 ✓ / PM2 online uptime 8.5h / 磁盘 13% 已用
+  - 保留项:error.log(53130 字节,审计) / deployment_logs 2 条记录(部署历史) / dist.bak.deploy.20260807_000330(回滚点)
+  - 详见下方「第十一节 G11 系统清理」
+
+- **TASK-0009** — deploy-run.sh 权限修复与 CSS 验证(G12) | 负责人:devops-qa | 完成于 2026-08-07 17:30
+  - 完成内容:在 deploy-run.sh 中新增 [3/6] dist 权限修复步骤 + [5/6] CSS 可访问性验证步骤,防止 Vite 构建产生的 700 权限导致 Nginx 403 白屏
+  - 根因:Vite 构建默认创建 dist/assets/ 目录权限 700(drwx------),Nginx worker(www-data)无法访问,导致前端 CSS/JS 403,页面白屏
+  - 修复:[3/6] 新增 `find dist -type d -exec chmod 755 {} +` + `find dist -type f -exec chmod 644 {} +` + `chown -R www-data:www-data dist/`
+  - 验证:[5/6] 新增 CSS 可访问性检查,通过 Nginx HTTPS(443) + `-sk` 跳过证书验证 + `Host: www.danqing.site` 头访问 CSS 文件,验证返回 HTTP/2 200
+  - 脚本演进:3 个版本迭代
+    - v1:CSS 验证访问 API 端口 3000 → 404(API 不提供静态文件)
+    - v2:CSS 验证访问 Nginx HTTP 端口 80 → 301(HTTP→HTTPS 重定向)
+    - v3(最终):CSS 验证访问 Nginx HTTPS 端口 443 + `-sk` + `Host` 头 → 200 ✓
+  - 验证结果:deploy-run.sh 全 6 步执行通过(迁移 ✓ / 备份 ✓ / 权限修复 ✓ / PM2 重启 ✓ / CSS OK HTTP/2 200 ✓ / 部署日志上报 ✓)
+  - 详见下方「第十二节 G12 deploy-run.sh 权限修复」
 
 ### 🔵 进行中(IN_PROGRESS)
 
@@ -516,13 +570,248 @@ tail -20 /home/ubuntu/scripts/alerts.log
 - **#2 + #3 形成依赖链**,需先完成阿里云短信接入才能解锁 admin 飞书验证码。
 - **#4 支付接入复杂度最高**,涉及合规、对账、回调验签,建议单独排期。
 
-### dist.bak.* 备份清理
+### 部署日志同步修复(2026-08-07 G10)
 
-**清理前**:14 个 dist.bak.* 备份目录,每个 1.1-1.2M,共约 16M
-**清理后**:仅保留 `dist.bak.20260806_194349`(1.2M,最新可用回滚点)
+**触发**:核查项目部署日志时发现 deployment_logs 表存在但**完全为空**(0 条记录),deploy-ssh.sh 上报逻辑已实现但从未实际写入。
+
+#### 根因
+
+`deploy-ssh.sh` L20 的 `DEPLOY_SYNC_SECRET="${DEPLOY_SYNC_SECRET:-}"` 默认为空字符串,且**脚本不读取 `.env` 文件**,仅依赖环境变量。部署执行时未通过 `export DEPLOY_SYNC_SECRET=...` 传入 → 每次部署都跳过上报(L45-47 `[sync] WARN: DEPLOY_SYNC_SECRET 未配置,跳过部署日志同步`)。
+
+#### 修复内容
+
+**1. deploy-ssh.sh**(服务器已修复,L20 后插入):
+```bash
+# 若环境变量未提供 DEPLOY_SYNC_SECRET,从 server/.env 回退读取
+if [ -z "$DEPLOY_SYNC_SECRET" ] && [ -f /var/www/danqing-ai/server/.env ]; then
+  DEPLOY_SYNC_SECRET=$(grep -E "^DEPLOY_SYNC_SECRET=" /var/www/danqing-ai/server/.env | cut -d= -f2- | tr -d "\"'" || true)
+fi
+```
+
+**2. deploy-run.sh**(本地 + 服务器已同步,L41-71 新增 [5/5] 段):
+- 内联上报逻辑(与 deploy-ssh.sh 同步机制一致,含相同 .env 回退读取)
+- 部署流程从 4 步扩展为 5 步:数据库迁移 → dist 备份 → PM2 重启 → 验证 → **上报部署日志**
+- 默认 deployer 标识为 `deploy-run.sh`(可通过 `DEPLOY_DEPLOYER` 环境变量覆盖)
+
+#### 验证结果
+
+| 测试 | 结果 |
+|------|------|
+| deploy-ssh.sh .env 回退逻辑 | ✅ 成功读取 DEPLOY_SYNC_SECRET(前6字符 9293aa...) |
+| 手动上报测试(deploy-ssh.sh 逻辑) | ✅ HTTP 200,写入 id=5f06de9c... |
+| deploy-run.sh 上报逻辑测试 | ✅ HTTP 200,写入 id=95644d3d... |
+| deployment_logs 表现有记录 | ✅ 2 条测试记录(test-manual + test-deploy-run) |
+| bash 语法检查(deploy-ssh.sh / deploy-run.sh) | ✅ 均通过 |
+
+#### 文件变更
+
+- **服务器** `/var/www/danqing-ai/deploy-ssh.sh` — L20 后插入 .env 回退读取(备份 deploy-ssh.sh.bak.20260807_065748)
+- **本地 + 服务器** `.trae/deploy-run.sh` → `/var/www/danqing-ai/deploy-run.sh` — 新增 [5/5] 上报段,语法检查通过
+
+#### 后续部署行为
+
+下次执行 `bash deploy-run.sh` 或 `bash deploy-ssh.sh` 时,将自动:
+1. 从 `.env` 读取 `DEPLOY_SYNC_SECRET`
+2. 部署完成后上报 success/failed 到 `POST /api/v1/deployments/log`
+3. 写入 `deployment_logs` 表,可通过 `GET /api/v1/deployments/latest` 查询
+
+#### 注意事项
+
+- `.env` 中的 `DEPLOY_SYNC_SECRET` 必须与服务端 `env.ts` 读取的一致(已验证匹配)
+- 上报失败不阻断部署主流程(curl 失败仅输出 WARN)
+- 若需跳过上报,可在部署前 `export DEPLOY_SYNC_SECRET=""` 强制置空
+
+### 第十一节 G11 系统清理与状态恢复(2026-08-07)
+
+**触发**:用户要求检查后台进程与监控任务,确保系统恢复初始稳定状态。
+
+#### 一、后台进程核查
+
+| 位置 | 后台进程 | 状态 |
+|------|---------|------|
+| 本地 | 47 个 node 进程 + 端口 3000/3001/5173/8080 | 均为 IDE/系统/插件相关,非本次任务启动 ✓ |
+| 服务器 | PM2 danqing-api (PID 2637108) | 正常服务,uptime 8.5h,3 次健康检查 200 ✓ |
+| 服务器 | 非 PM2 后台 node 进程 | 无 ✓ |
+| crontab | health-check.sh(每分钟) / backup-db.sh(每日 3:00) / disk-check.sh(每小时) | 正常运行 ✓ |
+
+**结论**:无遗留后台进程需要停止。
+
+#### 二、临时文件清理
+
+**1. /tmp 本次任务相关脚本**(删除 6 个):
+- `/tmp/deploy-check.sh`
+- `/tmp/deploy-run.sh`
+- `/tmp/check-deployment-logs.sh`
+- `/tmp/check-deploy-logs.sh`
+- `/tmp/configure-deploy-secret.sh`
+- `/tmp/_server_manifest.sh`
+
+清理前 /tmp 共 47 个 .sh 脚本,清理后 41 个(保留系统脚本 + 其他任务遗留)。
+
+**2. dist.bak 冗余备份**(5 个 → 1 个,释放 ~5 MB):
+
+| 备份目录 | 大小 | 操作 |
+|----------|------|------|
+| `dist.bak.`(空名,含特殊字符) | 2.5M | ✓ 删除(inode 方式) |
+| `dist.bak.20260806_194349` | 1.2M | ✓ 删除 |
+| `dist.bak.20260806_234638` | 1.2M | ✓ 删除 |
+| `dist.bak.deploy.`(末尾含反斜杠) | 1.4M | ✓ 删除(inode 方式) |
+| `dist.bak.deploy.20260807_000330` | 2.3M | ✅ **保留**(最新回滚点) |
+
+**删除技巧**:
+- 普通目录:`sudo rm -rf "dist.bak.20260806_194349"`
+- 含特殊字符目录:`sudo find . -maxdepth 1 -inum <inode> -exec rm -rf {} +`(通过 inode 精确删除)
+
+#### 三、历史崩溃事件分析
+
+**error.log 不再为空**(53130 字节),记录了 08-07 09:25-09:27 的崩溃:
+
+```
+Error: AI_PROVIDER must be one of glm|trae, got "aliyun"
+  at parseAiProvider (server/src/config/env.ts:163:11)
+```
+
+**事件链**(从 alerts.log + app.log + error.log 还原):
+1. **09:25** 有人把 `.env` 的 `AI_PROVIDER` 改成 `aliyun`(测试阿里云接入,对应 /tmp/_test_aliyun*.sh)
+2. **09:25:01** health-check.sh 检测 HTTP 000 → PM2 restart
+3. **09:26:01** 启动失败(AI_PROVIDER 验证不通过)→ 健康检查再失败 → 再重启
+4. **09:27:01** 再次失败 → 再重启(**雪崩场景重现**,因 G9 #1 防雪崩机制未实施)
+5. **10:07:32** 收到 SIGINT(手动恢复 .env 为 `AI_PROVIDER=glm`)→ 启动成功
+6. **10:07:33** 至今稳定运行
+
+**当前状态**:`.env` 已恢复 `AI_PROVIDER=glm`(10:07 修改),系统稳定 ✓
+
+#### 四、最终系统状态
+
+| 检查项 | 结果 |
+|--------|------|
+| 健康检查 | ✅ HTTP 200 `{"status":"up"}` |
+| PM2 状态 | ✅ online,uptime 8.5h,unstable restarts 0 |
+| .env AI_PROVIDER | ✅ `glm`(已恢复) |
+| 磁盘空间 | ✅ 69G 总量,8.1G 已用(13%),58G 可用 |
+| /tmp 临时脚本 | ✅ 本次任务相关已清理(41 个保留) |
+| dist.bak 备份 | ✅ 仅保留 1 个最新回滚点 |
+
+#### 五、保留项(不清理)
+
+| 保留项 | 原因 |
+|--------|------|
+| error.log(53130 字节) | 历史错误日志,审计用途 |
+| deployment_logs 表 2 条记录 | 部署历史,1 条测试 + 1 条 G10 修复验证 |
+| dist.bak.deploy.20260807_000330 | 最新 dist 备份,可作为回滚点 |
+| PM2 重启计数 88 次 | 历史累积,pm2 reset 会影响运行中进程,不重置 |
+| 其他 /tmp 脚本(41 个) | 系统脚本 + 其他任务遗留,不在本次清理范围 |
+
+#### 六、待办提醒
+
+- **G9 #1 health-check.sh 防雪崩机制仍未实施**(P0 优先级),今天 09:25-09:27 的 3 次连续重启就是雪崩重现,建议尽快实施
+- **AI_PROVIDER=aliyun 测试失败**:代码 `parseAiProvider` 仅支持 `glm|trae`,若需支持阿里云需扩展枚举(G9 #2 阿里云短信接入的关联项)
+
+### 第十二节 G12 deploy-run.sh 权限修复与 CSS 验证(2026-08-07)
+
+**触发**:用户报告网站无法打开,排查发现 `dist/assets/` 目录权限 700 导致 Nginx 403,前端白屏。
+
+#### 一、事件根因
+
+**现象**:用户访问 https://www.danqing.site 白屏,Nginx error.log 显示:
+```
+[error] open() "/var/www/danqing-ai/dist/assets/index-BXD3UMxk.css" failed (13: Permission denied)
+```
+
+**根因**:Vite 构建工具默认创建 `dist/assets/` 目录权限为 `drwx------`(700),仅 owner 可访问。虽然 owner 是 www-data,Nginx worker 也以 www-data 运行,但权限设置异常导致 Nginx 无法访问静态资源,返回 403/404。
+
+**影响**:前端 CSS/JS 全部 403,页面白屏,但 API(/health)正常。
+
+#### 二、修复内容
+
+在 [deploy-run.sh](file:///c:/Users/26929/AppData/Roaming/TRAE+SOLO+CN/ModularData/ai-agent/work-mode-projects/6a4f01878de2462eddd4b61e/.trae/deploy-run.sh) 中新增两个步骤,部署流程从 5 步扩展为 6 步:
+
+```
+[1/6] 数据库迁移
+[2/6] 备份当前 dist(回滚点)
+[3/6] 修复 dist 权限(新增 — 防止 Nginx 403)
+[4/6] PM2 重启 danqing-api
+[5/6] 验证(增强 — 新增 CSS 可访问性检查)
+[6/6] 上报部署日志
+```
+
+**[3/6] 权限修复段**:
+```bash
+# Vite 构建默认创建 assets/ 目录权限 700,Nginx(www-data) 无法访问导致前端白屏
+# 修复:目录 755,文件 644,owner 统一为 www-data
+sudo chown -R www-data:www-data dist/
+sudo find dist -type d -exec chmod 755 {} +   # 目录需要 x 权限才能进入
+sudo find dist -type f -exec chmod 644 {} +   # 文件只需 r 权限
+```
+
+**[5/6] CSS 可访问性验证段**:
+```bash
+# 通过本地 Nginx HTTPS(443)访问 CSS 文件,验证前端资源可访问
+CSS_FILE=$(ls /var/www/danqing-ai/dist/assets/*.css | head -1 | xargs basename)
+css_status=$(curl -skI -m 5 "https://127.0.0.1/app/assets/$CSS_FILE" -H "Host: www.danqing.site" | head -1)
+if echo "$css_status" | grep -q "200"; then
+  echo "CSS OK: $css_status"
+else
+  echo "CSS_CHECK_FAIL: $css_status"
+fi
+```
+
+#### 三、脚本演进(3 个版本迭代)
+
+| 版本 | CSS 验证方式 | 结果 | 问题 |
+|------|-------------|------|------|
+| v1 | `curl http://127.0.0.1:3000/app/assets/*.css` | 404 | API(端口 3000)不提供静态文件,只有 Nginx 代理 |
+| v2 | `curl http://127.0.0.1/app/assets/*.css` | 301 | Nginx HTTP→HTTPS 自动重定向 |
+| **v3(最终)** | `curl -skI https://127.0.0.1/app/assets/*.css -H "Host: www.danqing.site"` | **HTTP/2 200 ✓** | `-sk` 跳过证书验证(localhost 不匹配域名),`Host` 头让 Nginx 匹配 server_name |
+
+**关键技术点**:
+- `-s`:静默模式,不显示进度
+- `-k`:跳过 TLS 证书验证(127.0.0.1 不匹配证书域名 www.danqing.site)
+- `-I`:只取响应头(HEAD 请求,不下载文件体)
+- `-H "Host: www.danqing.site"`:让 Nginx 匹配正确的 server_name 块,否则默认 server 可能不代理 /app/ 路径
+
+#### 四、验证结果
+
+**deploy-run.sh 全 6 步执行通过**:
+
+| 步骤 | 内容 | 结果 |
+|------|------|------|
+| [1/6] | 数据库迁移 | ✅ No pending migrations |
+| [2/6] | 备份 dist | ✅ `dist.bak.deploy.20260807_172557` |
+| [3/6] | 修复 dist 权限 | ✅ 目录 755 / 文件 644 / owner www-data:www-data |
+| [4/6] | PM2 重启 | ✅ online,PID 2766301 |
+| [5/6] | 验证 | ✅ 健康检查 200 + **CSS OK HTTP/2 200** + 部署日志端点正常 |
+| [6/6] | 上报部署日志 | ✅ `version=c2ef2e3` 已同步到 deployment_logs 表 |
+
+**权限修复前后对比**:
+
+| 路径 | 修复前 | 修复后 |
+|------|--------|--------|
+| `dist/` | drwxr-xr-x 755 | drwxr-xr-x 755 ✓ |
+| `dist/assets/` | **drwx------ 700** | **drwxr-xr-x 755** ✓ |
+| `dist/index.html` | -rw-r--r-- 644 | -rw-r--r-- 644 ✓ |
+
+#### 五、维护参考
+
+**何时需要手动执行权限修复**:
+- 若前端突然白屏 + Nginx error.log 显示 `Permission denied` → 执行 `sudo find /var/www/danqing-ai/dist -type d -exec chmod 755 {} +; sudo find /var/www/danqing-ai/dist -type f -exec chmod 644 {} +`
+- 若 deploy-run.sh 执行后仍白屏 → 检查 [5/6] CSS 验证段输出,若 `CSS_CHECK_FAIL` 需排查 Nginx 配置
+
+**deploy-run.sh 部署后自动防护**:
+- 每次部署自动修复 dist 权限([3/6])
+- 每次部署自动验证 CSS 可访问性([5/6])
+- 若 CSS 验证失败会输出 `CSS_CHECK_FAIL` 但不阻断部署(非 `set -e` 退出点)
+- 部署日志自动上报([6/6]),可在 deployment_logs 表追溯
+
+### dist.bak.* 备份清理(历史记录,已被 G11 更新)
+
+**初版清理(08-06)**:14 个 dist.bak.* 备份目录,每个 1.1-1.2M,共约 16M → 仅保留 `dist.bak.20260806_194349`(1.2M)
+**G11 更新(08-07 16:45)**:5 个 → 1 个,仅保留 `dist.bak.deploy.20260807_000330`(2.3M,最新回滚点)
 **注意事项**:
 - `dist.bak.whitescreen.`(目录名带尾点)被误删 — 因 if 检查 `[ "$d" != "dist.bak.whitescreen" ]` 未匹配带尾点的实际目录名。whitescreen 早期问题已解决,不影响。
 - 部分 dist.bak.* 内文件 root 所有(可能 nginx/sudo 部署留下),需 `sudo rm -rf` 才能删除。
+- 含特殊字符(末尾点/反斜杠)的目录名需用 inode 方式删除:`sudo find . -maxdepth 1 -inum <inode> -exec rm -rf {} +`
+- 详见上方「第十一节 G11 系统清理」
 
 ### SSH 调用模板(重要 — 避免重复踩坑)
 

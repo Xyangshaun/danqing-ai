@@ -33,8 +33,8 @@ export function InkLoader() {
   const pathname = usePathname();
 
   useEffect(() => {
-    // 首页由 VideoIntro 开场视频承担全屏入场动画,
-    // 此处跳过 Canvas 加载动画,避免与视频开场叠加为"双层开场"。
+    // 首页由 VideoIntro 开场动画(笔触划出 + 品牌)承担全屏入场,
+    // 此处跳过 Canvas 加载动画,避免与开场叠加为"双层开场"。
     if (pathname === '/' || prefersReduced) {
       setPhase('done');
       return;

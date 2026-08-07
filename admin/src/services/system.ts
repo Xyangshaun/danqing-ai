@@ -3,7 +3,7 @@
 // 对应后端:/api/admin/system/*
 // ============================================================
 
-import { get, post, patch, del } from './request';
+import { get, post, patch, del, put } from './request';
 import type {
   ListAdminTenantsQuery,
   ListAdminTenantsResponse,
@@ -25,6 +25,8 @@ import type {
   ListAdminInvitationsResponse,
   BatchImportStudentsRequest,
   BatchImportStudentsResponse,
+  GetTenantArbitrationConfigResponse,
+  UpdateTenantArbitrationConfigRequest,
 } from './types';
 
 /** 租户列表 */
@@ -96,6 +98,31 @@ export function batchImportStudents(
   return post<BatchImportStudentsResponse>(`/api/admin/tenants/${tenantId}/students/batch`, data);
 }
 
+// ============================================================
+// 租户仲裁配置覆盖(P-04 / M-1)
+// 对应后端:/api/admin/tenants/:id/arbitration-config
+// ============================================================
+
+/** 获取租户仲裁配置(生效配置 + isDefault 状态) */
+export function getTenantArbitrationConfig(
+  tenantId: string,
+): Promise<GetTenantArbitrationConfigResponse> {
+  return get<GetTenantArbitrationConfigResponse>(
+    `/api/admin/tenants/${tenantId}/arbitration-config`,
+  );
+}
+
+/** 更新租户仲裁配置(部分覆盖,深合并;写操作由请求层自动携带 X-CSRF-Token) */
+export function updateTenantArbitrationConfig(
+  tenantId: string,
+  data: UpdateTenantArbitrationConfigRequest,
+): Promise<GetTenantArbitrationConfigResponse> {
+  return put<GetTenantArbitrationConfigResponse>(
+    `/api/admin/tenants/${tenantId}/arbitration-config`,
+    data,
+  );
+}
+
 export type {
   AdminInvitationInfo,
   CreateAdminInvitationRequest,
@@ -103,4 +130,6 @@ export type {
   ListAdminInvitationsResponse,
   BatchImportStudentsRequest,
   BatchImportStudentsResponse,
+  GetTenantArbitrationConfigResponse,
+  UpdateTenantArbitrationConfigRequest,
 };

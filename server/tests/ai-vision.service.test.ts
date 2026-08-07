@@ -758,7 +758,7 @@ describe('ai-vision.service', () => {
         expect(body.model).toBe('glm-4v-plus');
         expect(body.messages).toHaveLength(2);
         expect(body.temperature).toBe(0.3);
-        expect(body.max_tokens).toBe(1500);
+        expect(body.max_tokens).toBe(1024);
 
         const config = callArgs[2] as { headers: Record<string, string>; timeout: number };
         expect(config.headers['Authorization']).toBe('Bearer my-api-key-456');

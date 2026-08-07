@@ -22,11 +22,14 @@
 // ============================================================
 
 import type { RequestHandler } from 'express';
-import { error } from '../utils/response.js';
+import { z } from 'zod';
+import { error, success } from '../utils/response.js';
 import { ErrorCode } from '../types/api-contract.js';
+import { configFeatureService } from '../services/config-feature.service.js';
 
 /**
  * 预留接口统一响应:返回 501 Not Implemented
+ * (系统参数/工作流子模块仍为预留,功能开关子模块已激活,M2-T6)
  */
 const notImplemented: RequestHandler = (_req, res) => {
   return error(
@@ -38,18 +41,93 @@ const notImplemented: RequestHandler = (_req, res) => {
 };
 
 /**
+ * GET /config/features 查询参数 schema(对齐契约 ListFeatureFlagsQuery)
+ *   - status:按状态筛选
+ *   - q:关键词搜索
+ */
+const listFeatureFlagsQuerySchema = z.object({
+  status: z.enum(['enabled', 'disabled', 'gradual']).optional(),
+  q: z.string().trim().max(100).optional(),
+});
+
+/**
+ * PATCH /config/features/:featureId 路径参数 schema
+ */
+const featureIdParamSchema = z.object({
+  featureId: z.string().trim().min(1, '缺少必填参数:featureId'),
+});
+
+/**
+ * PATCH /config/features/:featureId 请求体 schema(对齐契约 UpdateFeatureFlagRequest)
+ *   - status:enabled/disabled/gradual
+ *   - value:boolean / number(0-100) / string[](租户列表)
+ *   - targetUserIds / targetTenantIds:灰度目标列表
+ */
+const updateFeatureFlagBodySchema = z
+  .object({
+    status: z.enum(['enabled', 'disabled', 'gradual']).optional(),
+    value: z.union([z.boolean(), z.number().int().min(0).max(100), z.array(z.string())]).optional(),
+    targetUserIds: z.array(z.string()).optional(),
+    targetTenantIds: z.array(z.string()).optional(),
+  })
+  .refine((d) => Object.keys(d).length > 0, { message: '至少需提供一项更新字段' });
+
+/**
  * GET /config/features
  * 功能开关列表(feature flags)
  * - 权限:config:features:read(所有角色)
+ * - 复用现有 config feature 机制(configFeatureService,内存默认 + Redis 覆盖)
  */
-export const listFeatureFlags: RequestHandler = notImplemented;
+export const listFeatureFlags: RequestHandler = async (req, res, next) => {
+  try {
+    const parsed = listFeatureFlagsQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      const first = parsed.error.issues[0];
+      const msg = `参数错误:${first?.path.join('.') ?? 'unknown'} ${first?.message ?? 'invalid'}`;
+      return error(res, ErrorCode.PARAM_INVALID, msg, 400);
+    }
+    const features = await configFeatureService.listFeatures({
+      status: parsed.data.status,
+      q: parsed.data.q,
+    });
+    return success(res, features, 'success');
+  } catch (err) {
+    return next(err);
+  }
+};
 
 /**
  * PATCH /config/features/:featureId
  * 更新功能开关
  * - 权限:config:features:write(仅 ADMIN/OWNER)
+ * - 复用现有 config feature 机制,更新后立即生效(灰度发布)
  */
-export const updateFeatureFlag: RequestHandler = notImplemented;
+export const updateFeatureFlag: RequestHandler = async (req, res, next) => {
+  try {
+    const paramParsed = featureIdParamSchema.safeParse(req.params);
+    if (!paramParsed.success) {
+      const first = paramParsed.error.issues[0];
+      const msg = `参数错误:${first?.path.join('.') ?? 'unknown'} ${first?.message ?? 'invalid'}`;
+      return error(res, ErrorCode.PARAM_INVALID, msg, 400);
+    }
+
+    const bodyParsed = updateFeatureFlagBodySchema.safeParse(req.body);
+    if (!bodyParsed.success) {
+      const first = bodyParsed.error.issues[0];
+      const msg = `参数错误:${first?.path.join('.') ?? 'unknown'} ${first?.message ?? 'invalid'}`;
+      return error(res, ErrorCode.PARAM_INVALID, msg, 400);
+    }
+
+    const feature = await configFeatureService.updateFeature(
+      paramParsed.data.featureId,
+      bodyParsed.data,
+      req.userId ?? 'system',
+    );
+    return success(res, feature, '功能开关已更新');
+  } catch (err) {
+    return next(err);
+  }
+};
 
 /**
  * GET /config/params

@@ -862,3 +862,22 @@ Ant Design Pro 后台,16 页面骨架:
 ---
 
 **文档结束**。本文档完整记录了丹青有AI 项目从立项到 P3 阶段的开发全过程,涵盖代码提交、问题修复、功能实现、关键决策与研究过程,可供后续开发与复盘追溯。
+
+---
+
+## 十二、2026-08-07 追加 · 官网开场视频 v3 → v4 重制与生产部署
+
+> 完整任务日志:[context-log-2026-08-07.md](context-log-2026-08-07.md)
+
+**核心改动**
+- 官网 8s 开场视频由 v3(脚本重制版)升级到 v4(参考视频重制版,对照桌面《黄宾虹风格水墨动画》)
+- 视频文件: `website/assets/videos/opening.mp4` · 2,147,659 字节 · 1920×1080 · H.264
+- 视频 hash: `_next/static/media/opening.24d55bf457a9fdd7.mp4`
+- Remotion 源: `dq-video/src/Composition.tsx`(历史 `Composition.tsx.bak4/5`)
+
+**生产部署**(`43.128.25.202:/var/www/danqing-ai/website/`)
+- S1-S5 五阶段全通过,HTTPS 200/视频可独立播放
+- 备份链: `backup-20260807-video/`(原 v3 mp4 + RUNBOOK.md)
+- 回滚命令: 30 秒内可恢复 v3
+- 6 条关键记忆已写入 project_memory.md(部署命令链 / 视频 hash 替换 / Next.js 哈希重命名 / PEM 收权 / 远程命令链)
+

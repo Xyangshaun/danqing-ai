@@ -29,6 +29,9 @@ import { initLogger, logger } from './utils/logger.js';
 import { initPrisma, closePrisma } from './config/prisma.js';
 import { initRedis, closeRedis } from './config/redis.js';
 import app from './app.js';
+// M2-T6:AI 图像生成后台 Worker + 功能开关(生成功能默认关闭,经 /config 灰度开启)
+import { generationWorker } from './services/generation-worker.service.js';
+import { configFeatureService } from './services/config-feature.service.js';
 
 /**
  * 启动服务器(主入口)
@@ -65,6 +68,26 @@ async function startServer(): Promise<void> {
     logger.error({ err: msg }, '[startup] redis init failed');
     // Redis 是认证与限流的核心依赖,不可降级,直接退出
     process.exit(1);
+  }
+
+  // 4a. AI 图像生成 Worker 启动(M2-T6)
+  // 仅在"生成功能开启"时启动(默认关闭,经 /api/v1/config/features/:featureId 灰度开启);
+  // worker 仅后台轮询队列,不阻塞主 HTTP 服务;Redis 不可用时自动跳过
+  try {
+    if (configFeatureService.isGenerationEnabled()) {
+      const started = await generationWorker.start();
+      if (started) {
+        logger.info('[startup] generation worker started');
+      } else {
+        logger.warn('[startup] generation worker not started (redis unavailable)');
+      }
+    } else {
+      logger.info('[startup] generation feature disabled, worker not started');
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    // Worker 启动失败不阻断主服务(生成功能退化为仅同步降级模式)
+    logger.warn({ err: msg }, '[startup] generation worker start skipped');
   }
 
   // 5. HTTP 服务(由 app.ts 已构建)
@@ -108,6 +131,10 @@ async function startServer(): Promise<void> {
         logger.info('[shutdown] http server closed');
       }
     });
+
+    // 6a-1. 停止 AI 图像生成 Worker(M2-T6)
+    // 置停止标志并清空 pending timer;处理中的任务让其自然完成,随后再关 Redis
+    generationWorker.stop();
 
     // 6b. 关闭 Redis(给 in-flight 请求 5s 缓冲)
     try {

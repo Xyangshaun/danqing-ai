@@ -30,7 +30,10 @@ import type {
   GetAnalysisResponse,
 } from '../types/api-contract';
 import { hasAccessToken } from './token-store';
-import { get, post, del } from './api';
+import { get, post, del, batchDeleteAnalyses as apiBatchDeleteAnalyses } from './api';
+import type {
+  BatchDeleteAnalysesResponse,
+} from './api';
 import {
   saveToHistory as lsSaveToHistory,
   getHistory as lsGetHistory,
@@ -133,6 +136,13 @@ export interface IDataService {
   getAnalysisDetail(id: string): Promise<AnalysisResult | null>;
   /** 清空分析历史 */
   clearAnalysisHistory(): Promise<void>;
+  /**
+   * 批量删除分析记录(跨端批删一致性 P-06)
+   * 调用服务端 POST /analyses/batch-delete(已登录)或本地 LocalStorage(未登录)
+   * @param ids 待删除 ID 列表(最多 100 条)
+   * @returns 服务端逐条结果;失败时抛出 ApiError,由调用方在页面层做回滚
+   */
+  batchDeleteAnalyses(ids: string[]): Promise<BatchDeleteAnalysesResponse>;
 
   /* ---------- 成长数据 ---------- */
   /** 获取成长曲线数据(由历史聚合) */
@@ -207,6 +217,33 @@ class LocalDataService implements IDataService {
     } catch {
       /* localStorage 不可用(隐私模式),忽略 */
     }
+  }
+
+  async batchDeleteAnalyses(ids: string[]): Promise<BatchDeleteAnalysesResponse> {
+    // 未登录模式:直接从 LocalStorage 剔除选中记录
+    const list = await lsGetHistory();
+    const idSet = new Set(ids);
+    const kept = list.filter((r) => r.id && !idSet.has(r.id));
+    // 计算实际删除数(仅存在于本地的 id 才算删除成功)
+    const presentIds = list.map((r) => r.id);
+    const presentSet = new Set(presentIds);
+    try {
+      localStorage.setItem(LS_KEYS.history, JSON.stringify(kept));
+    } catch {
+      /* localStorage 写入失败,忽略(仅保留内存态由页面层处理) */
+    }
+    // 逐条返回结果:存在的 id 删除成功;不存在的返回失败原因
+    const items = ids.map((id) =>
+      presentSet.has(id)
+        ? { id, deleted: true }
+        : { id, deleted: false, error: '记录不存在' }
+    );
+    return {
+      total: ids.length,
+      deleted: items.filter((i) => i.deleted).length,
+      failedCount: items.filter((i) => !i.deleted).length,
+      items,
+    };
   }
 
   /* ---------- 成长数据 ---------- */
@@ -438,6 +475,16 @@ class ApiDataService implements IDataService {
     }
   }
 
+  async batchDeleteAnalyses(ids: string[]): Promise<BatchDeleteAnalysesResponse> {
+    // 已登录:调用服务端批删接口 POST /analyses/batch-delete
+    //  - 乐观更新 + 回滚由页面层(HistoryPage)负责:先本地剔除选中项,
+    //    请求抛错(网络/超时/业务错误)则回滚恢复
+    //  - 任一 deleted=false 时,由调用方依据 items 逐条 toast error
+    //  - 成功后由调用方重新拉取(getAnalysisHistory)以服务端为准,
+    //    等价于契约要求的 invalidateQueries(['analyses'])
+    return apiBatchDeleteAnalyses(ids);
+  }
+
   /* ---------- 成长数据 ---------- */
   async getGrowthData(): Promise<GrowthData[]> {
     // 后端无独立成长数据接口,前端基于历史聚合
@@ -613,6 +660,11 @@ export const getAnalysisDetail = (id: string): Promise<AnalysisResult | null> =>
 /** 清空分析历史 */
 export const clearAnalysisHistory = (): Promise<void> =>
   getDataService().clearAnalysisHistory();
+
+/** 批量删除分析记录(P-06 跨端批删一致性)
+ * 乐观更新 + 回滚由页面层实现:先本地剔除选中项,失败则回滚恢复 */
+export const batchDeleteAnalyses = (ids: string[]): Promise<BatchDeleteAnalysesResponse> =>
+  getDataService().batchDeleteAnalyses(ids);
 
 /** 获取成长数据 */
 export const getGrowthData = (): Promise<GrowthData[]> =>

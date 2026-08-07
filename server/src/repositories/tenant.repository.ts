@@ -6,11 +6,24 @@
 
 import type { Prisma, Tenant, TenantMember, User } from '@prisma/client';
 import { prisma } from '../config/prisma.js';
+import type { ArbitrationConfig, DeepPartial } from '../types/arbitration.js';
 
 /**
  * 角色类型(从 Prisma 生成)
  */
 type TenantMemberRole = 'admin' | 'teacher' | 'student' | 'owner';
+
+/**
+ * 租户仲裁配置持久化记录(存入 Tenant.arbitration_config JSONB)
+ * - config:租户级覆盖片段(部分覆盖,未覆盖字段继承系统默认)
+ * - updatedBy:上次更新人(用于 GET 响应 updatedBy 字段)
+ * - updatedAt:上次更新时间(ISO 字符串,用于 GET 响应 updatedAt 字段)
+ */
+export interface TenantArbitrationRecord {
+  config: DeepPartial<ArbitrationConfig>;
+  updatedBy: string;
+  updatedAt: string;
+}
 
 /**
  * 成员列表项(含用户基础信息)
@@ -129,6 +142,35 @@ export class TenantRepository {
    */
   async withTransaction<T>(fn: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
     return prisma().$transaction(fn);
+  }
+
+  /**
+   * 读取租户仲裁配置持久化记录(未配置为 null)
+   * 对应 M-1 DOC-2026-08-003/005:DB 为唯一持久化真源
+   */
+  async getArbitrationRecord(tenantId: string): Promise<TenantArbitrationRecord | null> {
+    const tenant = await prisma().tenant.findUnique({
+      where: { id: tenantId },
+      select: { arbitrationConfig: true },
+    });
+    if (!tenant || tenant.arbitrationConfig == null) return null;
+    return tenant.arbitrationConfig as unknown as TenantArbitrationRecord;
+  }
+
+  /**
+   * 写入租户仲裁配置持久化记录(整体覆盖)
+   * 幂等:调用方先构造完整 TenantArbitrationRecord 再整体写入
+   */
+  async setArbitrationRecord(
+    tenantId: string,
+    record: TenantArbitrationRecord,
+  ): Promise<void> {
+    await prisma().tenant.update({
+      where: { id: tenantId },
+      data: {
+        arbitrationConfig: record as unknown as Prisma.InputJsonValue,
+      },
+    });
   }
 }
 

@@ -20,8 +20,9 @@
 // ============================================================
 
 import {
-  artworksDatabase,
+  loadBuiltinArtworks,
   searchArtworks,
+  resolveArtworkImageUrl,
   type ArtworkItem,
 } from './artworksDatabase';
 import {
@@ -127,7 +128,7 @@ function artworkToUnified(item: ArtworkItem): UnifiedMaterial {
     id: item.id,
     title: item.title,
     subtitle: `${item.artist} · ${item.era}`,
-    imageUrl: item.imageUrl,
+    imageUrl: resolveArtworkImageUrl(item).imageUrl,
     source: 'builtin',
     category: item.category,
     style: item.style,
@@ -156,12 +157,15 @@ function savedToUnified(item: SavedMaterial): UnifiedMaterial {
  * ============================================================ */
 
 /**
- * 同步查询内置艺术作品库
+ * 异步查询内置艺术作品库
  *
- * 用于页面 useMemo / useEffect 中无需异步等待的场景。
- * 内部委托 searchArtworks,保持过滤逻辑单一真相源。
+ * 先确保 /data/artworks.json 已加载,再委托 searchArtworks 过滤。
+ * 页面应在 useEffect 中调用并设置状态,避免在 render 阶段直接 await。
  */
-export function searchBuiltinMaterials(query: Omit<MaterialQuery, 'sources' | 'limit'> = {}): UnifiedMaterial[] {
+export async function searchBuiltinMaterials(
+  query: Omit<MaterialQuery, 'sources' | 'limit'> = {}
+): Promise<UnifiedMaterial[]> {
+  await loadBuiltinArtworks();
   const artworks = searchArtworks({
     keyword: query.keyword,
     category: query.category,
@@ -173,20 +177,22 @@ export function searchBuiltinMaterials(query: Omit<MaterialQuery, 'sources' | 'l
   return artworks.map(artworkToUnified);
 }
 
-/** 获取全部内置素材(同步拷贝) */
-export function getAllBuiltinMaterials(): UnifiedMaterial[] {
-  return artworksDatabase.map(artworkToUnified);
+/** 异步获取全部内置素材(拷贝) */
+export async function getAllBuiltinMaterials(): Promise<UnifiedMaterial[]> {
+  const artworks = await loadBuiltinArtworks();
+  return artworks.map(artworkToUnified);
 }
 
 /**
- * 获取内置艺术作品库原始数据
+ * 异步获取内置艺术作品库原始数据
  *
  * 供 fuse / 风格库等仍需 ArtworkItem 完整字段的场景使用。
  * 通过本函数调用即可纳入统一素材查找机制,底层 artworksDatabase
  * 不再被页面直接引用。
  */
-export function getBuiltinArtworkItems(): ArtworkItem[] {
-  return [...artworksDatabase];
+export async function getBuiltinArtworkItems(): Promise<ArtworkItem[]> {
+  const artworks = await loadBuiltinArtworks();
+  return [...artworks];
 }
 
 /**
@@ -206,7 +212,7 @@ export async function searchMaterials(query: MaterialQuery = {}): Promise<Unifie
 
   /* ---------- 内置艺术库 ---------- */
   if (sources.includes('builtin')) {
-    const artworks = searchArtworks({
+    const artworks = await searchBuiltinMaterials({
       keyword: query.keyword,
       category: query.category,
       style: query.style,
@@ -214,7 +220,7 @@ export async function searchMaterials(query: MaterialQuery = {}): Promise<Unifie
       region: query.region,
       tags: query.tags,
     });
-    results.push(...artworks.map(artworkToUnified));
+    results.push(...artworks);
   }
 
   /* ---------- 用户保存素材 ---------- */
@@ -239,10 +245,11 @@ export async function searchMaterials(query: MaterialQuery = {}): Promise<Unifie
 
 /**
  * 按 ID 精确查找单个素材
- * 先查内置库,再查用户保存;找不到返回 null
+ * 先异步加载内置库,再查用户保存;找不到返回 null
  */
 export async function getMaterialById(id: string): Promise<UnifiedMaterial | null> {
-  const builtin = artworksDatabase.find((a) => a.id === id);
+  const artworks = await loadBuiltinArtworks();
+  const builtin = artworks.find((a) => a.id === id);
   if (builtin) return artworkToUnified(builtin);
   try {
     const saved = await getSavedMaterials();
@@ -260,9 +267,9 @@ export async function getMaterialById(id: string): Promise<UnifiedMaterial | nul
  */
 export async function getFavoriteMaterials(): Promise<UnifiedMaterial[]> {
   try {
-    const favIds = await getFavorites();
+    const [artworks, favIds] = await Promise.all([loadBuiltinArtworks(), getFavorites()]);
     const set = new Set(favIds);
-    return artworksDatabase.filter((a) => set.has(a.id)).map(artworkToUnified);
+    return artworks.filter((a) => set.has(a.id)).map(artworkToUnified);
   } catch {
     return [];
   }

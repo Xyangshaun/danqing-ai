@@ -29,6 +29,8 @@ interface SortedSetEntry {
 class RedisMock {
   private readonly store = new Map<string, RedisEntry>();
   private readonly sortedSets = new Map<string, SortedSetEntry>();
+  /** List 结构(对应 Redis List,用于异步队列:lpush/brpop/rpop/llen) */
+  private readonly lists = new Map<string, string[]>();
   /** Lua 脚本缓存:sha1 → 脚本源码(对应 Redis SCRIPT LOAD) */
   private readonly scriptCache = new Map<string, string>();
 
@@ -349,6 +351,94 @@ class RedisMock {
   }
 
   // ============================================================
+  // List 操作(对应 Redis List,用于异步队列 LPUSH/BRPOP)
+  // 支持 ioredis 调用形式:
+  //   lpush(key, value) / brpop(...keys, timeout) / rpop(key) / llen(key)
+  //   pipeline():链式 set + exec(用于 markSuccess 批量写状态+结果)
+  //   ping():连通性检查
+  // ============================================================
+
+  async lpush(key: string, ...values: (string | number)[]): Promise<number> {
+    this.refresh(key);
+    const list = this.lists.get(key) ?? [];
+    // LPUSH 依次将值插入头部(后插入者更靠前,与 Redis 语义一致)
+    for (const v of values) {
+      list.unshift(String(v));
+    }
+    this.lists.set(key, list);
+    return list.length;
+  }
+
+  async rpop(key: string): Promise<string | null> {
+    this.refresh(key);
+    const list = this.lists.get(key);
+    if (!list || list.length === 0) return null;
+    return list.pop() ?? null;
+  }
+
+  async llen(key: string): Promise<number> {
+    this.refresh(key);
+    return this.lists.get(key)?.length ?? 0;
+  }
+
+  /**
+   * BRPOP key [key ...] timeout
+   * 从多个 key 的尾部弹出(FIFO);最后一个参数为阻塞超时(秒)
+   * mock 不真实阻塞:优先返回第一个非空 key 的尾部元素,全部为空时返回 null
+   * @returns [key, value] 或 null
+   */
+  async brpop(...args: (string | number)[]): Promise<[string, string] | null> {
+    if (args.length < 2) return null;
+    const keys = args.slice(0, -1).map(String);
+    // const timeout = args[args.length - 1]; // 阻塞超时,mock 忽略
+    for (const key of keys) {
+      this.refresh(key);
+      const list = this.lists.get(key);
+      if (list && list.length > 0) {
+        const value = list.pop() ?? null;
+        if (value !== null) return [key, value];
+      }
+    }
+    return null;
+  }
+
+  async ping(): Promise<string> {
+    return 'PONG';
+  }
+
+  /**
+   * pipeline:支持链式 set + exec(对应 ioredis pipeline)
+   * 当前仅实现 set(缓存/限流/队列完成写入场景),返回链式对象
+   */
+  pipeline(): {
+    set: (key: string, value: string, mode?: string, ttl?: number) => unknown;
+    exec: () => Promise<Array<[Error | null, string | undefined]>>;
+  } {
+    const redis = this;
+    const commands: Array<() => Promise<string>> = [];
+    const pipelineObj = {
+      set(key: string, value: string, mode?: string, ttl?: number): unknown {
+        commands.push(() => redis.set(key, value, mode, ttl));
+        return pipelineObj;
+      },
+      exec: async () => {
+        const results: Array<[Error | null, string | undefined]> = [];
+        for (const cmd of commands) {
+          try {
+            await cmd();
+            results.push([null, 'OK']);
+          } catch (err) {
+            results.push([err as Error, undefined]);
+          }
+        }
+        commands.length = 0;
+        return results;
+      },
+    };
+    return pipelineObj;
+  }
+
+  // ============================================================
   // 测试辅助方法(仅供测试调用,不对应 Redis 真实命令)
   // ============================================================
 
@@ -356,6 +446,7 @@ class RedisMock {
   __clear(): void {
     this.store.clear();
     this.sortedSets.clear();
+    this.lists.clear();
     this.scriptCache.clear();
   }
 
@@ -369,7 +460,11 @@ class RedisMock {
 
   /** 返回当前所有 key(用于断言黑名单写入) */
   __keys(): string[] {
-    return [...Array.from(this.store.keys()), ...Array.from(this.sortedSets.keys())];
+    return [
+      ...Array.from(this.store.keys()),
+      ...Array.from(this.sortedSets.keys()),
+      ...Array.from(this.lists.keys()),
+    ];
   }
 
   /** 直接设置 key(带可选 TTL),用于预置测试数据 */

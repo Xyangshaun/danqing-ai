@@ -733,3 +733,99 @@ export interface BatchImportStudentsResponse {
   failed: { name: string; reason: string }[];
   invitationCodes: { name: string; code: string }[];
 }
+
+// ============ 仲裁配置(Phase 5 / M-1 租户仲裁配置覆盖)============
+
+/**
+ * 仲裁配置(镜像 server/src/types/arbitration.ts 的 ArbitrationConfig)
+ * 四组结构:triggers 触发阈值 / judgeWeights 评委权重 / rules 裁定规则 / edgeCases 边界处理
+ */
+export interface ArbitrationConfig {
+  /** 争议触发阈值 */
+  triggers: {
+    /** 一致:总分极差阈值 */
+    consistentTotalRange: number;
+    /** 一致:维度差阈值 */
+    consistentDimDiff: number;
+    /** 一般争议:总分极差阈值 */
+    generalDisputeTotalRange: number;
+    /** 一般争议:维度差阈值 */
+    generalDisputeDimDiff: number;
+    /** 高争议:总分极差阈值 */
+    highDisputeTotalRange: number;
+    /** 高争议:维度差超阈值的维度数 */
+    highDisputeDimCount: number;
+    /** 高争议:跨档数阈值 */
+    gradeCrossTierHigh: number;
+    /** 否决触发:低分阈值 */
+    vetoLowGrade: number;
+    /** 否决触发:高分阈值 */
+    vetoHighGrade: number;
+  };
+  /** 评委权重(按模式;每模式权重和须=1) */
+  judgeWeights: {
+    /** 常规双评委模式 */
+    regular: { professor: number; lecturer: number; ai: number };
+    /** 教授+AI 双人模式 */
+    professorAi: { professor: number; ai: number };
+    /** 委员会复议模式 */
+    committee: { professorEach: number; ai: number };
+  };
+  /** 最终裁定规则 */
+  rules: {
+    /** 默认裁定规则 */
+    final: 'weighted' | 'majority' | 'unanimous';
+    /** 边界容差:加权分落边界±此值内「就低」定档 */
+    boundaryTolerance: number;
+  };
+  /** 边界情况处理 */
+  edgeCases: {
+    /** 离群分差阈值 */
+    outlierDiff: number;
+    /** 离群评分权重折半系数 */
+    outlierWeightFactor: number;
+    /** AI 权重降级阈值(置信度<此值) */
+    aiLowConfidence: number;
+    /** AI 降级后权重 */
+    aiLowConfidenceWeight: number;
+    /** AI 仅作参考不计入阈值(置信度<此值) */
+    aiVeryLowConfidence: number;
+    /** AI 与全员人工极端分歧阈值 */
+    aiHumanExtremeDiff: number;
+    /** 缺失维度超此数则评分作废 */
+    maxMissingDimsToInvalidate: number;
+  };
+}
+
+/** 深度部分类型(嵌套字段全部可选,用于部分覆盖入参) */
+export type DeepPartial<T> = {
+  [K in keyof T]?: T[K] extends object ? DeepPartial<T[K]> : T[K];
+};
+
+/** GET /api/admin/tenants/:id/arbitration-config 响应(P-04 冻结契约) */
+export interface GetTenantArbitrationConfigResponse {
+  tenantId: string;
+  /** 已生效的仲裁配置(合并结果;未覆盖字段取系统默认) */
+  effectiveConfig: ArbitrationConfig;
+  /** 是否为纯系统默认(租户未配置任何覆盖) */
+  isDefault: boolean;
+  /** 上次更新时间(从未配置为 null) */
+  updatedAt: ISODateString | null;
+  /** 上次更新人(从未配置为 null) */
+  updatedBy: string | null;
+}
+
+/** PUT /api/admin/tenants/:id/arbitration-config 请求体(部分覆盖,深合并,P-04 冻结契约) */
+export interface UpdateTenantArbitrationConfigRequest {
+  /** 争议触发阈值覆盖(不传则继承默认) */
+  triggers?: Partial<ArbitrationConfig['triggers']>;
+  /** 评委权重覆盖(不传则继承默认) */
+  judgeWeights?: Partial<ArbitrationConfig['judgeWeights']>;
+  /** 最终裁定规则覆盖(不传则继承默认) */
+  rules?: Partial<ArbitrationConfig['rules']>;
+  /** 边界情况处理覆盖(不传则继承默认) */
+  edgeCases?: Partial<ArbitrationConfig['edgeCases']>;
+}
+
+/** PUT /api/admin/tenants/:id/arbitration-config 响应 */
+export type UpdateTenantArbitrationConfigResponse = GetTenantArbitrationConfigResponse;

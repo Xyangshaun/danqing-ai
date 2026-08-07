@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, memo, useCallback } from 'react';
 import {
   Eye, BookOpen, Wand2, Heart, History, TrendingUp,
   Settings, ChevronLeft, ChevronRight, Sparkles, Plus,
-  Brush, PenTool, Box, Layers, Clock, type LucideIcon,
+  Brush, PenTool, Box, Layers, Clock, Search, type LucideIcon,
 } from 'lucide-react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { usePrefetch } from '../hooks/usePrefetch';
@@ -40,6 +40,7 @@ const navGroups: NavGroup[] = [
     items: [
       { path: '/history', label: '历史记录', icon: History, shortcut: '6' },
       { path: '/growth', label: '成长曲线', icon: TrendingUp, shortcut: '7' },
+      { path: '/images', label: '图片搜索', icon: Search, shortcut: '8' },
     ],
   },
   {

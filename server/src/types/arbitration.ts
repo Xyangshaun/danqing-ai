@@ -29,6 +29,15 @@ export type AuthType = 'feishu' | 'phone' | 'invitation' | 'password';
 /** 等级档位(五档制,A≥90 / B 80-89 / C 70-79 / D 60-69 / E<60) */
 export type GradeTier = 'A' | 'B' | 'C' | 'D' | 'E';
 
+/**
+ * 深度部分类型(递归可选化嵌套字段)
+ * 用于仲裁配置"部分覆盖"(租户级覆盖片段 / 深合并入参)
+ * 例:DeepPartial<ArbitrationConfig> 允许任意叶子字段单独覆盖
+ */
+export type DeepPartial<T> = {
+  [K in keyof T]?: T[K] extends object ? DeepPartial<T[K]> : T[K];
+};
+
 /** 建议级别(对应维度评分四档描述) */
 export type SuggestionLevel = 'excellent' | 'good' | 'qualified' | 'needs_improvement';
 

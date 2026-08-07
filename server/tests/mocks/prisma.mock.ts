@@ -29,6 +29,8 @@ export interface MockUser {
   phone: string | null;
   role: string;
   status: string; // 'active' | 'locked' | 'deleted'(Phase 4 扩展)
+  authType: string; // 'feishu' | 'phone' | 'password'(Phase 5 扩展)
+  passwordHash: string | null; // Phase 5 扩展(高危操作 confirmPassword 校验)
   lockedAt: Date | null; // Phase 4 扩展
   lockedBy: string | null; // Phase 4 扩展
   createdAt: Date;
@@ -177,6 +179,57 @@ export interface MockInvoice {
 }
 
 // ============================================================
+// M-2 新增 Mock 数据模型:AI 图像生成任务
+// 对应 prisma/schema.prisma GenerationTask(M-2 计划 §3.2)
+// 对应 api-contract.ts §3.17(契约已冻结)
+// ============================================================
+
+export interface MockGenerationTask {
+  id: string;
+  tenantId: string; // 多租户隔离核心字段
+  userId: string;
+  inputType: string; // 'text' | 'sketch'
+  prompt: string | null;
+  sketchImageUrl: string | null;
+  artType: string; // 'painting' | 'design' | 'product' | 'sculpture'
+  aspect: string | null; // 'portrait' | 'landscape' | 'square'
+  count: number; // 1-4
+  status: string; // 'pending' | 'processing' | 'success' | 'failed'
+  images: unknown; // GeneratedImage[] 数组(含 reviewStatus),Json 类型
+  failureReason: string | null;
+  usedFallback: boolean;
+  provider: string | null;
+  model: string | null;
+  createdAt: Date;
+  completedAt: Date | null;
+}
+
+// ============================================================
+// M-2 新增 Mock 数据模型:AI 用量日志
+// 对应 prisma/schema.prisma AiUsageLog(M-2 追加 usageType/generationId)
+// ============================================================
+
+export interface MockAiUsageLog {
+  id: string;
+  tenantId: string;
+  userId: string;
+  analysisId: string | null;
+  provider: string;
+  model: string;
+  apiUrl: string;
+  success: boolean;
+  durationMs: number;
+  promptTokens: number | null;
+  completionTokens: number | null;
+  totalTokens: number | null;
+  costYuan: unknown; // Decimal | null
+  failureReason: string | null;
+  usageType: string; // 'diagnose' | 'generate'
+  generationId: string | null;
+  createdAt: Date;
+}
+
+// ============================================================
 // Where 条件简化匹配
 // 支持等值匹配 + 复合唯一键(userId_tenantId)+ 范围(gte/lte/in)
 // ============================================================
@@ -281,6 +334,31 @@ function pickId(args: DelegateArgs): string | undefined {
 }
 
 /**
+ * 归一化 JSON 特殊值:Prisma.DbNull / Prisma.JsonNull → null
+ * 真实 Prisma 中,JSON 字段赋 DbNull 会写入 SQL NULL;
+ * mock 需同样把该哨兵值展开为 null,使仓储层行为与真实一致。
+ */
+function normalizeJsonNull(value: unknown): unknown {
+  if (value === Prisma.DbNull || value === Prisma.JsonNull) return null;
+  return value;
+}
+
+/**
+ * 对 data 中的所有字段做归一化:
+ *   1. DbNull/JsonNull → null
+ *   2. undefined → 跳过(对齐真实 Prisma 语义:undefined 视为"未提供"字段,
+ *      update 时不清空已有值,create 时由 fieldDefaults 补默认)
+ */
+function normalizeDataNulls(data: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(data)) {
+    if (value === undefined) continue;
+    out[key] = normalizeJsonNull(value);
+  }
+  return out;
+}
+
+/**
  * include 关系解析器:为记录附加关联模型数据
  * 用于支持 tenantMember.findMany({ include: { user/tenant } }) 等场景
  */
@@ -290,6 +368,7 @@ function createModelDelegate<T extends Record<string, unknown> & { id: string }>
   store: Map<string, T>,
   uniqueFields: string[] = [],
   includeResolver?: IncludeResolver<T>,
+  fieldDefaults: Record<string, unknown> = {},
 ) {
   function applyInclude(record: T, include: unknown): T {
     if (!include || typeof include !== 'object' || !includeResolver) return record;
@@ -389,7 +468,9 @@ function createModelDelegate<T extends Record<string, unknown> & { id: string }>
         id,
         createdAt: now,
         updatedAt: now,
-        ...flatData,
+        // 字段默认值:补全省略的可空/有默认字段(对齐真实 schema 默认),data 显式值覆盖
+        ...fieldDefaults,
+        ...normalizeDataNulls(flatData),
         // 覆盖:若 data 显式提供了 createdAt/updatedAt 则保留
         ...(data['createdAt'] !== undefined ? { createdAt: data['createdAt'] } : {}),
         ...(data['updatedAt'] !== undefined ? { updatedAt: data['updatedAt'] } : {}),
@@ -403,7 +484,7 @@ function createModelDelegate<T extends Record<string, unknown> & { id: string }>
       if (!id) throw new Error('mock update: missing where.id');
       const existing = store.get(id);
       if (!existing) throw new Error(`mock update: record ${id} not found`);
-      const data = (args.data ?? {}) as Record<string, unknown>;
+      const data = normalizeDataNulls((args.data ?? {}) as Record<string, unknown>);
       const updated = { ...existing, ...data, updatedAt: new Date() } as T;
       store.set(id, updated);
       return updated;
@@ -515,6 +596,10 @@ class PrismaMock {
   readonly creativeTemplateStore = new Map<string, MockCreativeTemplate>();
   readonly subscriptionStore = new Map<string, MockSubscription>();
   readonly invoiceStore = new Map<string, MockInvoice>();
+  // M-2 新增 store:AI 图像生成任务
+  readonly generationTaskStore = new Map<string, MockGenerationTask>();
+  // M-2 新增 store:AI 用量日志(支撑 M2-T4 用量日志测试)
+  readonly aiUsageLogStore = new Map<string, MockAiUsageLog>();
 
   // 各模型委托(唯一字段对应 schema.prisma 中的 @unique)
   // tenantMember 委托:支持 include user / include tenant 关系解析
@@ -749,9 +834,50 @@ class PrismaMock {
     },
   );
 
+  // M-2 新增:GenerationTask 委托(AI 图像生成任务,无关系 include)
+  // fieldDefaults:对齐 schema.prisma GenerationTask 模型默认值(可空字段→null,枚举→默认值)
+  readonly generationTask = createModelDelegate<MockGenerationTask>(
+    this.generationTaskStore,
+    [],
+    undefined,
+    {
+      inputType: 'text',
+      prompt: null,
+      sketchImageUrl: null,
+      artType: 'painting',
+      aspect: null,
+      count: 1,
+      status: 'pending',
+      images: null,
+      failureReason: null,
+      usedFallback: false,
+      provider: null,
+      model: null,
+      completedAt: null,
+    },
+  );
+
   readonly auditLog = createModelDelegate<MockAuditLog>(this.auditLogStore, []);
   readonly apiKey = createModelDelegate<MockApiKey>(this.apiKeyStore, ['keyPrefix', 'keyHash']);
   readonly creativeTemplate = createModelDelegate<MockCreativeTemplate>(this.creativeTemplateStore, []);
+
+  // M-2 新增:AiUsageLog 委托(AI 用量日志,含 usageType/generationId)
+  // fieldDefaults:对齐 schema.prisma AiUsageLog 模型默认值
+  readonly aiUsageLog = createModelDelegate<MockAiUsageLog>(
+    this.aiUsageLogStore,
+    [],
+    undefined,
+    {
+      analysisId: null,
+      promptTokens: null,
+      completionTokens: null,
+      totalTokens: null,
+      costYuan: null,
+      failureReason: null,
+      usageType: 'diagnose',
+      generationId: null,
+    },
+  );
 
   /**
    * 事务:直接在 mock 自身上执行回调(无真实隔离,但保证顺序)
@@ -781,6 +907,9 @@ class PrismaMock {
     this.creativeTemplateStore.clear();
     this.subscriptionStore.clear();
     this.invoiceStore.clear();
+    // M-2 新增 store
+    this.generationTaskStore.clear();
+    this.aiUsageLogStore.clear();
   }
 
   /**
@@ -796,6 +925,8 @@ class PrismaMock {
       phone: null,
       role: 'student',
       status: 'active',
+      authType: 'feishu',
+      passwordHash: null,
       lockedAt: null,
       lockedBy: null,
       createdAt: now,
@@ -954,6 +1085,58 @@ class PrismaMock {
       ...inv,
     };
     this.invoiceStore.set(full.id, full);
+    return full;
+  }
+
+  // ============================================================
+  // M-2 新增 __insert 辅助方法:AI 图像生成任务
+  // ============================================================
+
+  __insertGenerationTask(
+    task: Partial<MockGenerationTask> & { id: string; tenantId: string; userId: string },
+  ): MockGenerationTask {
+    const now = new Date();
+    const full: MockGenerationTask = {
+      inputType: 'text',
+      prompt: null,
+      sketchImageUrl: null,
+      artType: 'painting',
+      aspect: null,
+      count: 1,
+      status: 'pending',
+      images: null,
+      failureReason: null,
+      usedFallback: false,
+      provider: null,
+      model: null,
+      createdAt: now,
+      completedAt: null,
+      ...task,
+    };
+    this.generationTaskStore.set(full.id, full);
+    return full;
+  }
+
+  // ============================================================
+  // M-2 新增 __insert 辅助方法:AI 用量日志
+  // ============================================================
+
+  __insertAiUsageLog(
+    log: Partial<MockAiUsageLog> & { id: string; tenantId: string; userId: string; provider: string; model: string; apiUrl: string; success: boolean; durationMs: number },
+  ): MockAiUsageLog {
+    const full: MockAiUsageLog = {
+      analysisId: null,
+      promptTokens: null,
+      completionTokens: null,
+      totalTokens: null,
+      costYuan: null,
+      failureReason: null,
+      usageType: 'diagnose',
+      generationId: null,
+      createdAt: new Date(),
+      ...log,
+    };
+    this.aiUsageLogStore.set(full.id, full);
     return full;
   }
 }

@@ -1,15 +1,15 @@
 // 图片生成服务
-// 支持两种模式：1. 使用内置佔位图（默认） 2. 调用外部API（需配置）
-// 可通过调用 setUseExternalApi(true) 切换为API模式
-// API key可通过 setApiKey() 配置
+// 默认调用后端 /api/v1/generation 真实 AI 图像生成(sync 模式),
+// 当后端不可用或用户显式关闭时回退到本地 SVG 占位图。
 //
 // 注:历史上 generateImage 返回 `trae-api-cn.mchost.guru` IDE 内部 URL,
 // 该 URL 仅在 Trae IDE 沙箱内可用,部署到生产后无法访问。
-// 现统一改用本地 SVG 占位图(placeholderImage),零外部依赖。
 
 import { placeholderImage } from './placeholderImage';
+import { request } from './api';
+import type { CreateGenerationResponse } from '../types/api-contract';
 
-let useExternalApi = false;
+let useExternalApi = true;
 let apiKey = '';
 
 export function setUseExternalApi(value: boolean) {
@@ -52,7 +52,7 @@ export interface StylePreset {
   features: string[];
 }
 
-function getStyleDemoImage(styleId: string): string {
+async function getStyleDemoImage(styleId: string): Promise<string> {
   const prompts: Record<string, string> = {
     ink: 'chinese ink wash painting mountain landscape misty clouds traditional brushwork',
     qinglv: 'chinese qinglv shanshui painting blue green mountains golden river traditional mineral pigments',
@@ -160,18 +160,59 @@ export async function generateClassMaterial(
 
   // 生成4张参考素材
   for (let i = 0; i < 4; i++) {
-    results.push(generateImage(`${prompt} variant ${i + 1}`, 'landscape_4_3'));
+    results.push(await generateImage(`${prompt} variant ${i + 1}`, 'landscape_4_3'));
   }
 
   return results;
 }
 
-export function generateImage(prompt: string, size: string = 'square'): string {
-  // 不再使用外部 IDE 沙箱 URL,改用本地内联 SVG 占位图(零外部依赖)
-  return placeholderImage(prompt, {
-    size: size as Parameters<typeof placeholderImage>[1] extends { size?: infer S } ? S : never,
-    title: prompt.slice(0, 12),
-  });
+/**
+ * 将前端 size 标识映射为后端 aspect 枚举
+ */
+function mapSizeToAspect(size: string): 'portrait' | 'landscape' | 'square' {
+  if (size === 'portrait' || size === 'portrait_4_3') return 'portrait';
+  if (size === 'landscape' || size === 'landscape_4_3') return 'landscape';
+  return 'square';
+}
+
+/**
+ * 调用后端真实 AI 图像生成(sync 模式,立即返回结果)
+ * 失败时回退到本地 SVG 占位图,保证页面不白屏
+ */
+export async function generateImage(prompt: string, size: string = 'square'): Promise<string> {
+  // 用户显式关闭外部 API 时回退占位图
+  if (!useExternalApi) {
+    return placeholderImage(prompt, {
+      size: size as Parameters<typeof placeholderImage>[1] extends { size?: infer S } ? S : never,
+      title: prompt.slice(0, 12),
+    });
+  }
+
+  try {
+    const res = await request<CreateGenerationResponse>('/generation', {
+      method: 'POST',
+      body: {
+        inputType: 'text',
+        prompt,
+        artType: 'painting',
+        aspect: mapSizeToAspect(size),
+        count: 1,
+        sync: true,
+      },
+    });
+
+    if (res.images && res.images.length > 0 && res.images[0].imageUrl) {
+      return res.images[0].imageUrl;
+    }
+
+    throw new Error('后端未返回生成图片 URL');
+  } catch (err) {
+    console.warn('[imageService] 真实 AI 生成失败,回退到占位图:', err);
+    return placeholderImage(prompt, {
+      size: size as Parameters<typeof placeholderImage>[1] extends { size?: infer S } ? S : never,
+      title: prompt.slice(0, 12),
+    });
+  }
 }
 
 export async function applyStyle(imageUrl: string, styleId: string): Promise<string> {
@@ -193,7 +234,7 @@ export async function generateEmotionCanvas(emotion: string): Promise<string[]> 
 
   const results: string[] = [];
   for (let i = 0; i < 3; i++) {
-    results.push(generateImage(prompt + ` version ${i + 1}`, 'square'));
+    results.push(await generateImage(prompt + ` version ${i + 1}`, 'square'));
   }
   return results;
 }

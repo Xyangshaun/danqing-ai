@@ -9,6 +9,7 @@
 
 import { Prisma } from '@prisma/client';
 import { prisma } from '../config/prisma.js';
+import type { AiUsageType } from '../types/api-contract.js';
 
 /**
  * 创建 AI 用量日志的输入参数
@@ -28,6 +29,13 @@ export interface CreateAiUsageLogInput {
   totalTokens?: number | null;
   costYuan?: Prisma.Decimal | null;
   failureReason?: string | null;
+  /**
+   * 用量类型(diagnose | generate,对齐契约 AiUsageType;DOC-2026-08-009)
+   * 缺省时由 DB 默认 'diagnose',兼容既有诊断日志
+   */
+  usageType?: AiUsageType;
+  /** generate 类型关联的生成任务 ID(诊断为 null 或不传) */
+  generationId?: string | null;
 }
 
 /**

@@ -185,17 +185,16 @@ export const getAiConfig: RequestHandler = (_req, res, next) => {
 // ============================================================
 
 /**
- * 测试用的最小图片(1x1 透明 PNG 的 base64 data URL)
- * 不依赖外部资源,确保测试可重复
+ * 测试用的示例图片(服务器上的真实图片文件路径)
+ * 避免使用 1x1 最小 PNG,部分 Provider(如智谱 GLM-4V)会返回 1210 图片解析错误
  */
-const TEST_IMAGE_DATA_URL =
-  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+const TEST_IMAGE_PATH = '/var/www/danqing-ai/website/images/gallery-hero.jpg';
 
 /**
  * 测试 AI 连通性
  *
  * 实现策略:
- *   - 使用 1x1 测试 PNG + painting 类型发送最小化 AI 请求
+ *   - 使用服务器上的真实示例图片 + painting 类型发送 AI 请求
  *   - 复用 analyzeWithAI 主流程(包含 Provider 解析、降级、超时控制)
  *   - 不计入业务统计,仅用于配置验证
  *   - 成功/失败均返回详细结果,便于排查配置问题
@@ -222,7 +221,7 @@ export const testAiConfig: RequestHandler = async (req, res, next) => {
         usedProvider: 'none',
         fallback: false,
         testedAt: new Date().toISOString(),
-        testImageSource: TEST_IMAGE_DATA_URL.slice(0, 50) + '...',
+        testImageSource: TEST_IMAGE_PATH.slice(0, 50) + '...',
         suggestionsCount: null,
       };
       return success(res, response, 'AI 未启用');
@@ -240,7 +239,7 @@ export const testAiConfig: RequestHandler = async (req, res, next) => {
         usedProvider: 'none',
         fallback: false,
         testedAt: new Date().toISOString(),
-        testImageSource: TEST_IMAGE_DATA_URL.slice(0, 50) + '...',
+        testImageSource: TEST_IMAGE_PATH.slice(0, 50) + '...',
         suggestionsCount: null,
       };
       return success(res, response, 'AI Key 未配置');
@@ -254,7 +253,7 @@ export const testAiConfig: RequestHandler = async (req, res, next) => {
 
     const testStartMs = Date.now();
     const result = await analyzeWithAI({
-      imageSource: TEST_IMAGE_DATA_URL,
+      imageSource: TEST_IMAGE_PATH,
       artType: 'painting',
       title: 'AI 连通性测试',
       remark: undefined,
@@ -277,7 +276,7 @@ export const testAiConfig: RequestHandler = async (req, res, next) => {
       usedProvider: result.success ? usedProvider : 'none',
       fallback: cfg.aiProvider === 'trae' && usedProvider === 'glm',
       testedAt: new Date().toISOString(),
-      testImageSource: TEST_IMAGE_DATA_URL.slice(0, 50) + '...',
+      testImageSource: TEST_IMAGE_PATH.slice(0, 50) + '...',
       suggestionsCount: result.success && result.result
         ? result.result.professionalSuggestions.length
         : null,

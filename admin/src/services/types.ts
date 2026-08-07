@@ -88,6 +88,12 @@ export type {
   BatchImportStudentItem,
   BatchImportStudentsRequest,
   BatchImportStudentsResponse,
+  // 仲裁配置(P-04 / M-1)
+  ArbitrationConfig,
+  DeepPartial,
+  GetTenantArbitrationConfigResponse,
+  UpdateTenantArbitrationConfigRequest,
+  UpdateTenantArbitrationConfigResponse,
 } from '@/types/api';
 
 /** GET /api/admin/users/export 查询参数(无分页) */

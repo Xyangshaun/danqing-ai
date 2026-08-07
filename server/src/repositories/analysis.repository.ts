@@ -175,6 +175,33 @@ export class AnalysisRepository {
     });
     return true;
   }
+
+  /**
+   * 批量查询分析记录(强制 tenant_id 过滤,防跨租户)
+   * 用于批删接口:先查询归属,再逐条判定越权/不存在
+   * @param tenantId 租户 ID(强制隔离)
+   * @param ids 分析记录 ID 列表
+   */
+  async findManyByIds(tenantId: string, ids: string[]): Promise<Analysis[]> {
+    return prisma().analysis.findMany({
+      where: { tenantId, id: { in: ids } },
+    });
+  }
+
+  /**
+   * 批量删除分析记录(事务批量删除)
+   * 注意:调用方必须先通过 findManyByIds 校验 ids 归属 tenantId,
+   * 此处仅按 id 删除(tenant_id 已在预检中强制过滤,防跨租户)
+   * @param ids 已通过归属校验的分析记录 ID 列表
+   * @returns 实际删除条数
+   */
+  async deleteMany(ids: string[]): Promise<number> {
+    if (ids.length === 0) return 0;
+    const result = await prisma().analysis.deleteMany({
+      where: { id: { in: ids } },
+    });
+    return result.count;
+  }
 }
 
 export const analysisRepository = new AnalysisRepository();

@@ -35,6 +35,8 @@ import {
   type AnalysisResult,
   type DeleteAnalysisResponse,
   type UserRole,
+  type BatchDeleteAnalysesResponse,
+  type BatchDeleteAnalysisItem,
 } from '../types/api-contract.js';
 import { canReadTenantWide, canDeleteTenantWide } from '../config/permissions.js';
 import { analyzeImage } from './analysis-engine.service.js';
@@ -301,8 +303,94 @@ class AnalysisServiceClass {
     };
   }
 
-  // ============================================================
-  // 内部:实际执行分析(同步模式)
+  /**
+   * 批量删除分析记录(跨端批删一致性,P-06)
+   * 对应 API:POST /analyses/batch-delete
+   * 契约:api-contract.ts BatchDeleteAnalysesRequest/Response
+   *
+   * 设计要点:
+   *   - 多租户强制:所有 ids 归属 req.tenantId,任一越权/不存在则该条记入 failed(不整体回滚误删)
+   *   - 数据范围过滤(基于 RBAC canDeleteTenantWide):
+   *       - admin/owner(canDeleteTenantWide=true):可删租户内任意记录
+   *       - teacher/student:仅可删自己创建的记录(越权记 failed)
+   *   - 逐条记录失败原因,前端可精确提示
+   *   - 条数上限(≤100)由 controller 层校验(ANALYSIS_BATCH_LIMIT_EXCEEDED)
+   *
+   * @param params 租户/操作者/角色/待删 ID 列表
+   */
+  async batchDeleteAnalyses(params: {
+    tenantId: string;
+    userId: string;
+    role: UserRole;
+    ids: string[];
+  }): Promise<BatchDeleteAnalysesResponse> {
+    const { tenantId, userId, role, ids } = params;
+
+    // 去重(保序):重复 ID 只处理一次,避免重复计数
+    const uniqueIds = [...new Set(ids)];
+
+    // 1. 查询租户内记录(强制 tenant_id 过滤,防跨租户)
+    const records = await analysisRepository.findManyByIds(tenantId, uniqueIds);
+    const recordById = new Map(records.map((r) => [r.id, r]));
+    const tenantWide = canDeleteTenantWide(role);
+
+    // 2. 逐条判定可删除性(越权/不存在 → failed,不整体回滚)
+    const toDelete: string[] = [];
+    const failedItems: BatchDeleteAnalysisItem[] = [];
+    for (const id of uniqueIds) {
+      const rec = recordById.get(id);
+      if (!rec) {
+        // 不存在或不属于当前租户(不泄露存在性,统一提示)
+        failedItems.push({ id, deleted: false, error: '分析记录不存在或不属于当前租户' });
+        continue;
+      }
+      if (!tenantWide && rec.userId !== userId) {
+        // 越权删除他人记录(teacher/student 仅能删自己)
+        failedItems.push({ id, deleted: false, error: '无权删除他人分析记录' });
+        continue;
+      }
+      toDelete.push(id);
+    }
+
+    // 3. 事务批量删除(仅删除已通过归属校验的记录)
+    let deleted = 0;
+    if (toDelete.length > 0) {
+      deleted = await analysisRepository.deleteMany(toDelete);
+    }
+
+    // 4. 构造每条结果(成功条目 + 失败条目,保序)
+    const successIds = new Set(toDelete);
+    const items: BatchDeleteAnalysisItem[] = uniqueIds.map((id) => {
+      if (successIds.has(id)) {
+        return { id, deleted: true };
+      }
+      return failedItems.find((f) => f.id === id) ?? { id, deleted: false, error: '删除失败' };
+    });
+
+    const failedCount = uniqueIds.length - deleted;
+
+    // 5. 审计日志(不记录敏感信息,仅删除元数据)
+    logger.info(
+      {
+        action: 'analysis.batchDelete',
+        tenantId,
+        operatorUserId: userId,
+        operatorRole: role,
+        requested: uniqueIds.length,
+        deleted,
+        failedCount,
+      },
+      '[audit] analyses batch deleted',
+    );
+
+    return {
+      total: uniqueIds.length,
+      deleted,
+      failedCount,
+      items,
+    };
+  }
+
   // ============================================================
 
   /**

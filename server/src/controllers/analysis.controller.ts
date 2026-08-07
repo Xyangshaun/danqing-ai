@@ -289,6 +289,62 @@ export const deleteAnalysis: RequestHandler = async (req, res, next) => {
 };
 
 /**
+ * 批删请求体 schema
+ * 契约:api-contract.ts BatchDeleteAnalysesRequest { ids: string[] }
+ * 条数上限:≤100,超限返回 ANALYSIS_BATCH_LIMIT_EXCEEDED(6006)
+ */
+const batchDeleteBodySchema = z.object({
+  ids: z
+    .array(z.string().min(1, 'id 不能为空'))
+    .min(1, 'ids 至少包含 1 个元素')
+    .max(100, 'ids 最多包含 100 个元素'),
+});
+
+/**
+ * POST /analyses/batch-delete
+ * 批量删除分析记录(跨端批删一致性,P-06)
+ * 契约:api-contract.ts BatchDeleteAnalysesRequest/Response
+ *
+ * 设计要点:
+ *   - 条数上限 ≤100(超限返回 ANALYSIS_BATCH_LIMIT_EXCEEDED=6006)
+ *   - 多租户强制:所有 ids 归属 req.tenantId,任一越权/不存在则该条记入 failed(不整体回滚)
+ *   - 数据范围过滤(基于 RBAC canDeleteTenantWide):
+ *       - admin/owner:可删租户内任意记录
+ *       - teacher/student:仅可删自己创建的记录(越权记 failed)
+ *   - 鉴权:analysis:delete:own 或 analysis:delete:tenant(路由层)
+ */
+export const batchDeleteAnalyses: RequestHandler = async (req, res, next) => {
+  try {
+    if (!req.userId || !req.tenantId || !req.role) {
+      return error(res, ErrorCode.UNAUTHORIZED, '未授权,请先登录', 401);
+    }
+
+    const parsed = batchDeleteBodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      const first = parsed.error.issues[0];
+      const msg = `参数错误:${first?.path.join('.') ?? 'unknown'} ${first?.message ?? 'invalid'}`;
+      return error(
+        res,
+        ErrorCode.ANALYSIS_BATCH_LIMIT_EXCEEDED,
+        msg,
+        400,
+      );
+    }
+
+    const result = await analysisService.batchDeleteAnalyses({
+      tenantId: req.tenantId,
+      userId: req.userId,
+      role: req.role,
+      ids: parsed.data.ids,
+    });
+
+    return success(res, result, '批量删除完成');
+  } catch (err) {
+    return next(err);
+  }
+};
+
+/**
  * 导出 VALID_ART_TYPES(供 routes 层校验使用)
  */
 export { VALID_ART_TYPES };

@@ -33,7 +33,13 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: 'http://localhost:3000',
+        // 丹青后端(default 3000 被独立官网 Next.js 占用,改用 3002)
+        target: 'http://localhost:3002',
+        changeOrigin: true,
+      },
+      // 种子图片等静态资源(后端 express.static 服务)
+      '/uploads': {
+        target: 'http://localhost:3002',
         changeOrigin: true,
       },
     },

@@ -1,8 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ArrowRight, X, ExternalLink, Heart, Globe, BookMarked, Brush, PenTool, Box, Layers, Loader2, ImageOff } from 'lucide-react';
-import { styleCategories, type ArtworkItem } from '../services/artworksDatabase';
-import { getBuiltinArtworkItems } from '../services/materialService';
-import { placeholderImage } from '../services/placeholderImage';
+import { loadBuiltinArtworks, styleCategories, resolveArtworkImageUrl, type ArtworkItem } from '../services/artworksDatabase';
+import { artworkImage } from '../services/artworkImage';
 import { SkeletonBox, SkeletonStyle } from '../components/PageSkeleton';
 import { useToast } from '../components/ToastProvider';
 
@@ -11,25 +10,25 @@ const styleConfigs = {
     name: '绘画',
     icon: Brush,
     description: '中国画与西方绘画的经典流派',
-    coverImage: placeholderImage('painting-styles-cover', { size: 'landscape_4_3', title: '绘画' }),
+    coverImage: artworkImage('painting-styles-cover', { size: 'landscape_4_3', category: 'painting', title: '绘画' }),
   },
   design: {
     name: '设计',
     icon: PenTool,
     description: '视觉传达与平面设计流派',
-    coverImage: placeholderImage('design-styles-cover', { size: 'landscape_4_3', title: '设计' }),
+    coverImage: artworkImage('design-styles-cover', { size: 'landscape_4_3', category: 'design', title: '设计' }),
   },
   product: {
     name: '产品设计',
     icon: Box,
     description: '工业设计与家具设计经典',
-    coverImage: placeholderImage('product-styles-cover', { size: 'landscape_4_3', title: '产品设计' }),
+    coverImage: artworkImage('product-styles-cover', { size: 'landscape_4_3', category: 'product', title: '产品设计' }),
   },
   sculpture: {
     name: '雕塑',
     icon: Layers,
     description: '古今中外的雕塑艺术杰作',
-    coverImage: placeholderImage('sculpture-styles-cover', { size: 'landscape_4_3', title: '雕塑' }),
+    coverImage: artworkImage('sculpture-styles-cover', { size: 'landscape_4_3', category: 'sculpture', title: '雕塑' }),
   },
 };
 
@@ -42,6 +41,27 @@ export default function StylesPage() {
   const [imageLoadStates, setImageLoadStates] = useState<Record<string, 'loading' | 'loaded' | 'error'>>({});
   /* 分类封面图加载状态：独立管理，避免与作品图状态冲突 */
   const [coverLoadStates, setCoverLoadStates] = useState<Record<string, 'loading' | 'loaded' | 'error'>>({});
+
+  /* 素材数据状态 */
+  const [artworks, setArtworks] = useState<ArtworkItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setIsLoading(true);
+    loadBuiltinArtworks()
+      .then((data) => {
+        if (!cancelled) {
+          setArtworks(data);
+          setIsLoading(false);
+        }
+      })
+      .catch((err) => {
+        console.error('加载风格库失败:', err);
+        if (!cancelled) setIsLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
 
   const handleImageLoad = (id: string) => {
     setImageLoadStates((prev) => ({ ...prev, [id]: 'loaded' }));
@@ -60,7 +80,7 @@ export default function StylesPage() {
 
   // 根据风格获取作品
   const getArtworksByStyle = (style: string): ArtworkItem[] => {
-    return getBuiltinArtworkItems().filter((a) => a.style === style);
+    return artworks.filter((a) => a.style === style);
   };
 
   /* 收藏切换：补全操作反馈，避免"无响应"体验 */
@@ -80,6 +100,14 @@ export default function StylesPage() {
 
   return (
     <div className="min-h-screen bg-rice-200 ink-texture pt-20 pb-20">
+      {isLoading && (
+        <div className="fixed inset-0 bg-rice-200/80 backdrop-blur-sm z-50 flex items-center justify-center">
+          <div className="flex flex-col items-center">
+            <Loader2 className="w-10 h-10 text-cinnabar animate-spin mb-3" />
+            <p className="text-ink-700 font-medium">正在加载风格库...</p>
+          </div>
+        </div>
+      )}
       <SkeletonStyle />
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Header */}
@@ -92,7 +120,7 @@ export default function StylesPage() {
             艺术风格 · 分类索引
           </h1>
           <p className="text-ink-600 max-w-2xl mx-auto">
-            收录{getBuiltinArtworkItems().length}+件海内外艺术作品，覆盖四大创作类型、{Object.values(styleCategories).flatMap(c => c.styles).length}+种风格流派
+            收录{artworks.length}+件海内外艺术作品，覆盖四大创作类型、{Object.values(styleCategories).flatMap(c => c.styles).length}+种风格流派
           </p>
         </div>
 
@@ -102,7 +130,7 @@ export default function StylesPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
               {Object.entries(styleConfigs).map(([key, config]) => {
                 const Icon = config.icon;
-                const count = getBuiltinArtworkItems().filter(a => a.category === key).length;
+                const count = artworks.filter(a => a.category === key).length;
                 const styleCount = styleCategories[key as keyof typeof styleCategories].styles.length;
                 
                 return (
@@ -165,7 +193,7 @@ export default function StylesPage() {
                 {Object.entries(styleCategories).map(([key, cat]) => {
                   const config = styleConfigs[key as keyof typeof styleConfigs];
                   const Icon = config.icon;
-                  const count = getBuiltinArtworkItems().filter(a => a.category === key).length;
+                  const count = artworks.filter(a => a.category === key).length;
                   return (
                     <div
                       key={key}
@@ -191,7 +219,7 @@ export default function StylesPage() {
               <div className="flex flex-wrap gap-3">
                 {Object.entries(styleCategories).flatMap(([key, cat]) =>
                   cat.styles.map((style) => {
-                    const count = getBuiltinArtworkItems().filter(a => a.style === style).length;
+                    const count = artworks.filter(a => a.style === style).length;
                     return (
                       <button
                         key={`${key}-${style}`}
@@ -255,7 +283,7 @@ export default function StylesPage() {
                     全部
                   </button>
                   {styleCategories[selectedCategory].styles.map((style) => {
-                    const count = getBuiltinArtworkItems().filter(a => a.category === selectedCategory && a.style === style).length;
+                    const count = artworks.filter(a => a.category === selectedCategory && a.style === style).length;
                     if (count === 0) return null;
                     return (
                       <button
@@ -279,8 +307,8 @@ export default function StylesPage() {
                   <div className="bg-rice-50 rounded-lg p-3">
                     <p className="text-2xl font-bold text-ink-900">
                       {selectedStyle
-                        ? getBuiltinArtworkItems().filter(a => a.style === selectedStyle).length
-                        : getBuiltinArtworkItems().filter(a => a.category === selectedCategory).length}
+                        ? artworks.filter(a => a.style === selectedStyle).length
+                        : artworks.filter(a => a.category === selectedCategory).length}
                     </p>
                     <p className="text-xs text-ink-500">件作品</p>
                   </div>
@@ -304,7 +332,7 @@ export default function StylesPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {(selectedStyle
                 ? getArtworksByStyle(selectedStyle)
-                : getBuiltinArtworkItems().filter(a => a.category === selectedCategory)
+                : artworks.filter(a => a.category === selectedCategory)
               ).map((artwork) => (
                 <div
                   key={artwork.id}
@@ -322,7 +350,7 @@ export default function StylesPage() {
                       </div>
                     ) : (
                       <img
-                        src={artwork.imageUrl}
+                        src={resolveArtworkImageUrl(artwork).imageUrl}
                         alt={artwork.title}
                         className={`w-full h-full object-cover group-hover:scale-105 transition-all duration-500 ${
                           imageLoadStates[artwork.id] === 'loaded' ? 'opacity-100' : 'opacity-0'

@@ -563,10 +563,15 @@ export interface AIVisionCallResult {
 // ============================================================
 
 /**
- * 判断 imageSource 是否为 URL(http/https)
+ * 判断 imageSource 是否为 URL(http/https) 或 base64 data URL
+ * data URL 不需要再读取本地文件,可直接传给 AI API
  */
 function isUrl(source: string): boolean {
-  return source.startsWith('http://') || source.startsWith('https://');
+  return (
+    source.startsWith('http://') ||
+    source.startsWith('https://') ||
+    source.startsWith('data:')
+  );
 }
 
 /**
@@ -640,7 +645,7 @@ function buildRequestBody(req: AIVisionRequest, model: string): VisionRequestBod
       },
     ],
     temperature: 0.3, // 低温度保证输出稳定
-    max_tokens: 1500, // 限制输出长度,加速响应
+    max_tokens: 1024, // 智谱 GLM-4V 限制范围 [1,1024];超过会返回 1210 错误
     stream: false,
   };
   return body;

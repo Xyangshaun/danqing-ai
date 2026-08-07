@@ -16,10 +16,10 @@
 //   - 边界就低:加权分落边界±1 内「就低」定档
 // ============================================================
 
-import { getArbitrationConfig } from '../config/arbitration-default.js';
 import { disputeRepository } from '../repositories/dispute.repository.js';
 import { reviewRepository } from '../repositories/review.repository.js';
 import { analysisRepository } from '../repositories/analysis.repository.js';
+import { tenantArbitrationService } from './tenant-arbitration.service.js';
 import { BusinessError } from '../middlewares/error-handler.js';
 import {
   ErrorCode,
@@ -93,8 +93,8 @@ class ArbitrationServiceClass {
       };
     }
 
-    // 2. 判定级别
-    const cfg = getArbitrationConfig(tenantId);
+    // 2. 判定级别(读取租户生效仲裁配置:DB 持久化优先,memory 二级缓存,解决 R-1)
+    const cfg = await tenantArbitrationService.getEffectiveConfig(tenantId);
     const { level, reason } = this.determineLevel(reviews, cfg);
 
     // 3. 一致(consistent):不触发争议

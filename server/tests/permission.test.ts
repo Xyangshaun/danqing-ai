@@ -371,13 +371,14 @@ describe('RBAC permissions matrix (unit)', () => {
 
     it('should_return_limited_permissions_for_student', () => {
       const perms = getPermissionsByRole('student');
-      // 学生应有 16 个权限:
+      // 学生应有 17 个权限:
       //   - Phase 3 基础 9 个(含 subscription:read)
       //   - Phase 5 预留接口追加 4 个读类权限
       //     (knowledge:read / modules:read / ui:config:read / config:features:read)
       //   - Phase 5 新功能追加 3 个读类权限
       //     (preset:read / review:read / dispute:read)
-      expect(perms.length).toBe(16);
+      //   - 实时图片搜索追加 1 个读类权限(image:read,详见 docs/realtime-image-search-solution.md)
+      expect(perms.length).toBe(17);
       expect(perms).not.toContain('analysis:read:tenant');
       expect(perms).not.toContain('analysis:delete:tenant');
       expect(perms).not.toContain('subscription:update');
@@ -398,6 +399,11 @@ describe('RBAC permissions matrix (unit)', () => {
       expect(perms).not.toContain('preset:write');
       expect(perms).not.toContain('review:write');
       expect(perms).not.toContain('dispute:resolve');
+      // 实时图片搜索:学生拥有读权限,无写/删除权限
+      expect(perms).toContain('image:read');
+      expect(perms).not.toContain('image:create');
+      expect(perms).not.toContain('image:update');
+      expect(perms).not.toContain('image:delete');
     });
   });
 

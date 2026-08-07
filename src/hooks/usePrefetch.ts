@@ -31,6 +31,7 @@ const importMap: Record<string, () => Promise<unknown>> = {
   '/emotion': () => import('../pages/EmotionPage'),
   '/history': () => import('../pages/HistoryPage'),
   '/growth': () => import('../pages/GrowthPage'),
+  '/images': () => import('../pages/ImageSearchPage'),
   '/settings': () => import('../pages/SettingsPage'),
 };
 

@@ -34,6 +34,7 @@ import {
   listAnalyses,
   getAnalysis,
   deleteAnalysis,
+  batchDeleteAnalyses,
 } from '../controllers/analysis.controller.js';
 import { authMiddleware } from '../middlewares/auth.js';
 import { tenantMiddleware } from '../middlewares/tenant.js';
@@ -247,6 +248,17 @@ analysisRouter.post('/upload', uploadMiddleware, requirePermission('analysis:cre
 // GET /analyses - 分页查询历史,需 analysis:read:own 或 analysis:read:tenant 权限
 // student 仅拥有 analysis:read:own,teacher/admin/owner 拥有两者
 analysisRouter.get('/', requireAnyPermission('analysis:read:own', 'analysis:read:tenant'), listAnalyses);
+
+// POST /analyses/batch-delete - 批量删除分析记录(P-06 跨端批删一致性)
+// 需 analysis:delete:own 或 analysis:delete:tenant 权限
+// student/teacher 拥有 analysis:delete:own(仅删自己),admin/owner 拥有两者(删任意)
+// 注意:必须注册在 /:id 路由之前,避免 POST /batch-delete 被误解析(此处为 POST,无冲突,
+// 但保持与 /upload 相同的"具体路径优先"约定,确保扩展安全)
+analysisRouter.post(
+  '/batch-delete',
+  requireAnyPermission('analysis:delete:own', 'analysis:delete:tenant'),
+  batchDeleteAnalyses,
+);
 
 // GET /analyses/:id - 查询单条详情,需 analysis:read:own 或 analysis:read:tenant 权限
 analysisRouter.get('/:id', requireAnyPermission('analysis:read:own', 'analysis:read:tenant'), getAnalysis);

@@ -535,3 +535,139 @@ export type { Notification } from '../types/api-contract';
 export function updateUserProfile(body: UpdateProfileRequest): Promise<UserProfile> {
   return patch<UserProfile>('/users/profile', body);
 }
+
+/* ============================================================
+ * 跨端批删一致性 API(P-06,DOC-2026-08-001/002,M1-T3)
+ * ------------------------------------------------------------
+ * 镜像冻结契约 server/src/types/api-contract.ts L3314 的传输层类型。
+ * 因 src/types/api-contract.ts 为只读同步副本(不含批删新增类型),
+ * 此处按冻结契约原文定义本地镜像类型,不改动只读副本。
+ * 接口:POST /api/v1/analyses/batch-delete
+ * 鉴权:已登录 + analysis:delete:own/tenant(按角色)
+ * CSRF:api.ts 的 buildHeaders 已自动注入 X-CSRF-Token(读 csrf_token Cookie)
+ * ============================================================ */
+
+/** POST /analyses/batch-delete 请求体(镜像冻结契约) */
+export interface BatchDeleteAnalysesRequest {
+  /** 待删除的分析记录 ID 列表(最多 100 条) */
+  ids: string[];
+}
+
+/** 批删单条结果(镜像冻结契约) */
+export interface BatchDeleteAnalysisItem {
+  /** 分析记录 ID */
+  id: string;
+  /** 是否删除成功 */
+  deleted: boolean;
+  /** 删除失败原因(deleted=false 时非空,如跨租户越权/不存在) */
+  error?: string;
+}
+
+/** POST /analyses/batch-delete 响应(镜像冻结契约) */
+export interface BatchDeleteAnalysesResponse {
+  /** 请求总数 */
+  total: number;
+  /** 成功删除数 */
+  deleted: number;
+  /** 失败数 */
+  failedCount: number;
+  /** 每条删除结果(供前端精确提示) */
+  items: BatchDeleteAnalysisItem[];
+}
+
+/**
+ * 批量删除分析记录
+ * @param ids 待删除 ID 列表(最多 100 条)
+ * @returns 服务端逐条结果;失败时抛出 ApiError(调用方据此回滚)
+ */
+export function batchDeleteAnalyses(ids: string[]): Promise<BatchDeleteAnalysesResponse> {
+  const body: BatchDeleteAnalysesRequest = { ids };
+  return post<BatchDeleteAnalysesResponse>('/analyses/batch-delete', body);
+}
+
+/* ============================================================
+ * Image Search API(实时图片搜索,详见 docs/realtime-image-search-solution.md)
+ * ------------------------------------------------------------
+ * 接口:
+ *   GET  /images/search   全文检索(内存倒排索引,中文二元分词 + 字段加权)
+ *   GET  /images/suggest   关键词联想补全
+ *   GET  /images/:id       图片详情
+ *   POST /images           创建条目(仅 ADMIN/OWNER)
+ *   PATCH /images/:id      更新条目(仅 ADMIN/OWNER)
+ *   DELETE /images/:id     删除条目(仅 ADMIN/OWNER)
+ *
+ * 设计:
+ *   - 搜索/联想使用 silent:true,避免高频请求触发全局 Toast 噪声
+ *   - 前端 hook 层使用 AbortController 取消竞态,此处仅做传输
+ * ============================================================ */
+
+import type {
+  ImageSearchQuery,
+  ImageSearchResponse,
+  ImageSuggestResponse,
+  GetImageResponse,
+  CreateImageRequest,
+  CreateImageResponse,
+  UpdateImageRequest,
+  UpdateImageResponse,
+  DeleteImageResponse,
+} from '../types/api-contract';
+
+/**
+ * GET /images/search - 全文检索图片
+ * @param query 查询参数(q/tags/category/artType/status + 分页)
+ */
+export function searchImages(query: ImageSearchQuery): Promise<ImageSearchResponse> {
+  // 显式构造 Record 类型,避免 interface 缺少 index signature 导致的 TS 报错
+  const params: Record<string, string | number | boolean | undefined | null> = {
+    q: query.q,
+    tags: query.tags,
+    category: query.category,
+    artType: query.artType,
+    status: query.status,
+    page: query.page,
+    pageSize: query.pageSize,
+  };
+  return get<ImageSearchResponse>('/images/search', params, { silent: true });
+}
+
+/**
+ * GET /images/suggest - 关键词联想补全
+ * @param q 前缀关键词(≥1 字符触发)
+ * @param limit 返回条数上限,默认 8,最大 20
+ */
+export function suggestImages(q: string, limit?: number): Promise<ImageSuggestResponse> {
+  return get<ImageSuggestResponse>(
+    '/images/suggest',
+    { q, limit },
+    { silent: true },
+  );
+}
+
+/**
+ * GET /images/:id - 获取图片详情
+ */
+export function getImage(id: string): Promise<GetImageResponse> {
+  return get<GetImageResponse>(`/images/${id}`);
+}
+
+/**
+ * POST /images - 创建图片条目(仅 ADMIN/OWNER)
+ */
+export function createImage(body: CreateImageRequest): Promise<CreateImageResponse> {
+  return post<CreateImageResponse>('/images', body);
+}
+
+/**
+ * PATCH /images/:id - 更新图片条目(仅 ADMIN/OWNER)
+ */
+export function updateImage(id: string, body: UpdateImageRequest): Promise<UpdateImageResponse> {
+  return patch<UpdateImageResponse>(`/images/${id}`, body);
+}
+
+/**
+ * DELETE /images/:id - 删除图片条目(仅 ADMIN/OWNER)
+ */
+export function deleteImage(id: string): Promise<DeleteImageResponse> {
+  return del<DeleteImageResponse>(`/images/${id}`);
+}

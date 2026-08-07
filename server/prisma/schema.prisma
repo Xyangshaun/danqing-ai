@@ -67,6 +67,14 @@ enum AnalysisStatus {
   failed // 失败
 }
 
+/// 生成任务状态(对齐 api-contract.ts §3.17 GenerationStatus)
+enum GenerationStatus {
+  pending // 待处理(已入队)
+  processing // 处理中(Worker 已取走)
+  success // 成功
+  failed // 失败
+}
+
 /// 订阅状态(Phase 3)
 enum SubscriptionStatus {
   active // 活跃(当前有效)
@@ -214,6 +222,8 @@ model Tenant {
   status          TenantStatus @default(active) @map("status")
   maxSeats        Int          @default(1) @map("max_seats")
   parentId        String?      @map("parent_id")
+  // 租户级仲裁配置覆盖(未配置为 null,回退系统默认;对应 M-0 DOC-2026-08-003/005)
+  arbitrationConfig Json?      @map("arbitration_config")
   createdAt       DateTime     @default(now()) @map("created_at")
   updatedAt       DateTime     @updatedAt @map("updated_at")
 
@@ -234,6 +244,8 @@ model Tenant {
   disputeCases  DisputeCase[]
   // ---- 任务包 B 新增关系:通知系统 ----
   notifications Notification[]
+  // ---- M-2 新增关系:AI 图像生成任务 ----
+  generationTasks GenerationTask[]
 
   @@index([parentId], map: "tenants_parent_id_idx")
   @@index([feishuTenantKey], map: "tenants_feishu_tenant_key_idx")
@@ -280,6 +292,8 @@ model User {
   phoneVerifications PhoneVerification[]
   // ---- 任务包 B 新增关系:通知系统(收件箱)----
   notifications      Notification[]
+  // ---- M-2 新增关系:AI 图像生成任务 ----
+  generationTasks    GenerationTask[]
 
   @@index([tenantId], map: "users_tenant_id_idx")
   @@index([feishuUnionId], map: "users_feishu_union_id_idx")
@@ -749,6 +763,10 @@ model AiUsageLog {
   costYuan         Decimal? @map("cost_yuan") @db.Decimal(10, 6)
   // 失败原因(成功时为 null)
   failureReason    String?  @map("failure_reason") @db.Text
+  // 用量类型(diagnose | generate,对齐 api-contract.ts AiUsageType;DOC-2026-08-009)
+  usageType        String   @default("diagnose") @map("usage_type") @db.VarChar(16)
+  // generate 类型关联的生成任务 ID(诊断为 null)
+  generationId     String?  @map("generation_id")
   createdAt        DateTime @default(now()) @map("created_at")
 
   @@index([tenantId, createdAt], map: "ai_usage_logs_tenant_id_created_at_idx")
@@ -759,7 +777,49 @@ model AiUsageLog {
 }
 
 // ============================================================
-// 18. 通知表(Notification,任务包 B:通知系统真实数据接入)
+// 18. AI 图像生成任务表(GenerationTask,M-2 新增)
+// 存储异步生成任务全生命周期(联盟异步任务状态跨进程持久化)
+// 对应 M-2 计划 §3.2 / api-contract.ts §3.17(契约已冻结)
+// 设计要点:
+//   - tenant_id 强制,多租户隔离
+//   - status 覆盖异步状态机 pending→processing→success/failed
+//   - images 存 GeneratedImage[] 数组(含 reviewStatus)
+//   - usedFallback 透出双提供商降级
+//   - 索引覆盖 租户内按时间倒序 / 用户在租户内 / 按状态筛选 3 个查询模式
+// ============================================================
+
+/// AI 图像生成任务表(异步,教学闭环源头)
+model GenerationTask {
+  id             String           @id @default(uuid()) @map("id")
+  tenantId       String           @map("tenant_id") // 多租户隔离核心字段
+  userId         String           @map("user_id")
+  inputType      String           @map("input_type") @db.VarChar(16) // text | sketch
+  prompt         String?          @map("prompt") @db.Text            // text 模式的提示词
+  sketchImageUrl String?          @map("sketch_image_url") @db.Text // sketch 模式的草稿图 URL
+  artType        ArtType          @map("art_type")                   // 生成后一键诊断的目标类型
+  aspect         String?          @map("aspect") @db.VarChar(16)     // portrait/landscape/square
+  count          Int              @default(1) @map("count")          // 生成数量(1-4)
+  status         GenerationStatus @default(pending) @map("status")
+  images         Json?            @map("images") // GeneratedImage[] 数组(含 reviewStatus)
+  failureReason  String?          @map("failure_reason") @db.Text
+  usedFallback   Boolean          @default(false) @map("used_fallback") // 是否经降级
+  provider       String?          @map("provider") @db.VarChar(16)  // 实际生效提供商(glm/trae)
+  model          String?          @map("model") @db.VarChar(64)     // 实际生效模型
+  createdAt      DateTime         @default(now()) @map("created_at")
+  completedAt    DateTime?        @map("completed_at")
+
+  // 关系
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@index([tenantId, createdAt], map: "generation_tasks_tenant_id_created_at_idx") // 租户内按时间倒序
+  @@index([tenantId, userId], map: "generation_tasks_tenant_id_user_id_idx")       // 用户在租户内查询
+  @@index([tenantId, status], map: "generation_tasks_tenant_id_status_idx")        // 按状态筛选
+  @@map("generation_tasks")
+}
+
+// ============================================================
+// 19. 通知表(Notification,任务包 B:通知系统真实数据接入)
 // 用户通知收件箱,多租户隔离,支持游标分页与未读过滤
 // 触发点:分析完成/失败、成长报告生成、订阅到期、邀请等
 // 3 秒 SLA:索引覆盖 (tenantId,userId,readAt) 与 (tenantId,userId,createdAt)

@@ -13,8 +13,7 @@ import {
   type FuseStyle, type FuseMethod, type FuseIntensity, type FusionAnalysis,
 } from '../services/fuseStandards';
 import { generateImage } from '../services/imageService';
-import { type ArtworkItem } from '../services/artworksDatabase';
-import { getBuiltinArtworkItems } from '../services/materialService';
+import { loadBuiltinArtworks, resolveArtworkImageUrl, type ArtworkItem } from '../services/artworksDatabase';
 import { useToast } from '../components/ToastProvider';
 import { saveSavedMaterial } from '../services/data-service';
 import EmptyState from '../components/EmptyState';
@@ -62,21 +61,55 @@ export default function FusePage() {
   const [showAnalysis, setShowAnalysis] = useState(true);
   const [resultVariations, setResultVariations] = useState(3);
 
-  const image1 = artwork1?.imageUrl || customImage1;
-  const image2 = artwork2?.imageUrl || customImage2;
+  /* 素材数据状态 */
+  const [artworks, setArtworks] = useState<ArtworkItem[]>([]);
+  const [isLoadingArtworks, setIsLoadingArtworks] = useState(true);
 
-  // 接收来自素材库的 URL 参数：?src=material&imageUrl=xxx
   useEffect(() => {
+    let cancelled = false;
+    setIsLoadingArtworks(true);
+    loadBuiltinArtworks()
+      .then((data) => {
+        if (!cancelled) {
+          setArtworks(data);
+          setIsLoadingArtworks(false);
+        }
+      })
+      .catch((err) => {
+        console.error('加载素材库失败:', err);
+        if (!cancelled) setIsLoadingArtworks(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  const image1 = artwork1 ? resolveArtworkImageUrl(artwork1).imageUrl : customImage1;
+  const image2 = artwork2 ? resolveArtworkImageUrl(artwork2).imageUrl : customImage2;
+
+  // 接收来自素材库的 URL 参数：?src=material&artworkId=xxx 或 &imageUrl=xxx
+  const hasProcessedMaterialParamRef = useRef(false);
+  useEffect(() => {
+    if (hasProcessedMaterialParamRef.current) return;
     const src = searchParams.get('src');
+    const artworkId = searchParams.get('artworkId');
     const imageUrl = searchParams.get('imageUrl');
-    if (src === 'material' && imageUrl) {
+    if (src !== 'material') return;
+    if (artworkId && artworks.length > 0) {
+      const found = artworks.find((a) => a.id === artworkId);
+      if (found) {
+        setArtwork1(found);
+        setCustomImage1('');
+        setResults([]);
+        toast.info('已从素材库载入作品1');
+        hasProcessedMaterialParamRef.current = true;
+      }
+    } else if (imageUrl) {
       setCustomImage1(imageUrl);
       setArtwork1(null);
       setResults([]);
       toast.info('已从素材库载入作品1');
+      hasProcessedMaterialParamRef.current = true;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [artworks, searchParams, toast]);
 
   // 保存当前嫁接结果到素材库（通过 data-service 异步落库）
   const handleSaveToMaterials = async () => {
@@ -182,7 +215,7 @@ export default function FusePage() {
 
       for (let i = 0; i < resultVariations; i++) {
         const variationPrompt = `${prompt} variation ${i + 1}, ${['dramatic lighting', 'soft ambient light', 'golden hour glow'][i % 3]}`;
-        const url = generateImage(variationPrompt, sizes[i % sizes.length]);
+        const url = await generateImage(variationPrompt, sizes[i % sizes.length]);
         newResults.push({
           id: `result-${Date.now()}-${i}`,
           url,
@@ -194,7 +227,6 @@ export default function FusePage() {
         });
       }
 
-      await new Promise((resolve) => setTimeout(resolve, 2500));
       setResults(newResults);
       toast.success('灵感融合完成', `生成 ${newResults.length} 张融合作品`);
     } catch (error) {
@@ -229,7 +261,7 @@ export default function FusePage() {
   };
 
   const filteredArtworks = useMemo(() => {
-    let results = getBuiltinArtworkItems();
+    let results = [...artworks];
     if (pickerCategory !== 'all') {
       results = results.filter((a) => a.category === pickerCategory);
     }
@@ -245,7 +277,7 @@ export default function FusePage() {
       );
     }
     return results.slice(0, 50);
-  }, [pickerSearch, pickerCategory]);
+  }, [artworks, pickerSearch, pickerCategory]);
 
   const renderUploadBox = (slot: 1 | 2, artwork: ArtworkItem | null, customImg: string, label: string) => {
     const inputRef = slot === 1 ? fileInput1Ref : fileInput2Ref;
@@ -999,8 +1031,18 @@ export default function FusePage() {
                 </div>
               </div>
               <div className="flex-1 overflow-y-auto p-4">
-                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3">
-                  {filteredArtworks.map((artwork) => (
+                {isLoadingArtworks ? (
+                  <div className="flex flex-col items-center justify-center py-12">
+                    <Loader2 className="w-8 h-8 text-cinnabar animate-spin mb-2" />
+                    <p className="text-sm text-ink-500">正在加载素材库...</p>
+                  </div>
+                ) : filteredArtworks.length === 0 ? (
+                  <div className="text-center py-12">
+                    <p className="text-sm text-ink-500">未找到匹配作品</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                    {filteredArtworks.map((artwork) => (
                     <button
                       key={artwork.id}
                       onClick={() => handleArtworkSelect(artwork, showArtworkPicker)}
@@ -1009,7 +1051,7 @@ export default function FusePage() {
                     >
                       <div className="aspect-[4/3] overflow-hidden bg-ink-100">
                         <img
-                          src={artwork.imageUrl}
+                          src={resolveArtworkImageUrl(artwork).imageUrl}
                           alt={artwork.title}
                           className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                           loading="lazy"
@@ -1022,7 +1064,8 @@ export default function FusePage() {
                       </div>
                     </button>
                   ))}
-                </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>

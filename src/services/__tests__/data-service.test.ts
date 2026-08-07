@@ -23,6 +23,7 @@ import {
   saveAnalysis,
   getAnalysisDetail,
   clearAnalysisHistory,
+  batchDeleteAnalyses,
   getGrowthData,
   getFavorites,
   toggleFavorite,
@@ -45,9 +46,11 @@ import type { AnalysisResult } from '../../types';
 
 const getMock = vi.fn<(...args: unknown[]) => Promise<unknown>>();
 const postMock = vi.fn<(...args: unknown[]) => Promise<unknown>>();
+const batchDeleteMock = vi.fn<(...args: unknown[]) => Promise<unknown>>();
 vi.mock('../api', () => ({
   get: (...args: unknown[]) => getMock(...args),
   post: (...args: unknown[]) => postMock(...args),
+  batchDeleteAnalyses: (...args: unknown[]) => batchDeleteMock(...args),
 }));
 
 const hasAccessTokenMock = vi.fn<(...args: unknown[]) => boolean>();
@@ -122,6 +125,7 @@ const DEFAULT_SETTINGS: UserSettings = {
 beforeEach(() => {
   getMock.mockReset();
   postMock.mockReset();
+  batchDeleteMock.mockReset();
   hasAccessTokenMock.mockReset();
   hasAccessTokenMock.mockReturnValue(false); // 默认未登录
   localStorage.clear();
@@ -171,6 +175,29 @@ describe('LocalDataService', () => {
       await clearAnalysisHistory();
       // 清空后应为 null
       expect(localStorage.getItem(LS_KEYS.history)).toBeNull();
+    });
+
+    it('batchDeleteAnalyses 从 LocalStorage 剔除选中记录并返回逐条结果', async () => {
+      await saveAnalysis(makeAnalysisResult({ id: 'rec-batch-a' }));
+      await saveAnalysis(makeAnalysisResult({ id: 'rec-batch-b' }));
+      const resp = await batchDeleteAnalyses(['rec-batch-a']);
+      expect(resp.total).toBe(1);
+      expect(resp.deleted).toBe(1);
+      expect(resp.failedCount).toBe(0);
+      // 再次读取应只剩 rec-batch-b
+      const list = await getAnalysisHistory();
+      expect(list.some((r) => r.id === 'rec-batch-a')).toBe(false);
+      expect(list.some((r) => r.id === 'rec-batch-b')).toBe(true);
+    });
+
+    it('batchDeleteAnalyses 对不存在的 id 记入 failed 并含 error', async () => {
+      await saveAnalysis(makeAnalysisResult({ id: 'rec-batch-c' }));
+      const resp = await batchDeleteAnalyses(['rec-batch-c', 'rec-missing']);
+      expect(resp.deleted).toBe(1);
+      expect(resp.failedCount).toBe(1);
+      const missing = resp.items.find((i) => i.id === 'rec-missing');
+      expect(missing?.deleted).toBe(false);
+      expect(missing?.error).toBeTruthy();
     });
   });
 
@@ -372,6 +399,31 @@ describe('LocalDataService', () => {
 describe('ApiDataService', () => {
   beforeEach(() => {
     hasAccessTokenMock.mockReturnValue(true); // 已登录
+  });
+
+  describe('批量删除(P-06 跨端批删一致性)', () => {
+    it('batchDeleteAnalyses 调用服务端批删接口并透传响应', async () => {
+      batchDeleteMock.mockResolvedValue({
+        total: 2,
+        deleted: 1,
+        failedCount: 1,
+        items: [
+          { id: 'api-a', deleted: true },
+          { id: 'api-b', deleted: false, error: '跨租户越权' },
+        ],
+      });
+      const resp = await batchDeleteAnalyses(['api-a', 'api-b']);
+      expect(batchDeleteMock).toHaveBeenCalledWith(['api-a', 'api-b']);
+      expect(resp.deleted).toBe(1);
+      expect(resp.failedCount).toBe(1);
+      const failed = resp.items.filter((i) => !i.deleted);
+      expect(failed[0].error).toBe('跨租户越权');
+    });
+
+    it('batchDeleteAnalyses 服务端失败时抛出错误(供页面层回滚)', async () => {
+      batchDeleteMock.mockRejectedValue(new Error('网络错误'));
+      await expect(batchDeleteAnalyses(['api-a'])).rejects.toThrow('网络错误');
+    });
   });
 
   describe('分析历史(API 成功)', () => {

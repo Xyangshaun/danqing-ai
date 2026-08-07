@@ -1,8 +1,7 @@
 import { useState, useMemo, useEffect, useCallback, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, Filter, X, ExternalLink, Heart, Download, Grid3X3, List, Globe, RefreshCw, Tag, ChevronDown, Check, Loader2, ImageOff, ChevronUp, Sparkles, Package, PackagePlus, Trash2 } from 'lucide-react';
-import { getFilterOptions, type ArtworkItem } from '../services/artworksDatabase';
-import { getBuiltinArtworkItems } from '../services/materialService';
+import { loadBuiltinArtworks, getFilterCounts, type ArtworkItem, type FilterCounts } from '../services/artworksDatabase';
 import { useToast } from '../components/ToastProvider';
 import { getFavorites, toggleFavorite as toggleFavoriteService } from '../services/data-service';
 import {
@@ -17,6 +16,8 @@ import {
 import { SkeletonBox } from '../components/PageSkeleton';
 import EmptyState from '../components/EmptyState';
 import { useLazyImage } from '../hooks/useLazyImage';
+import { useArtworkImage } from '../hooks/useArtworkImage';
+import { useDebounce } from '../hooks/useDebounce';
 
 const categoryNames: Record<string, string> = {
   painting: '绘画',
@@ -62,7 +63,8 @@ const ArtworkCard = memo(function ArtworkCard({
   onPickPack,
   onToggleFavorite,
 }: ArtworkCardProps) {
-  const { imgRef, loadedSrc, isLoaded, isError } = useLazyImage(artwork.imageUrl);
+  const artworkImageUrl = useArtworkImage(artwork);
+  const { imgRef, loadedSrc, isLoaded, isError } = useLazyImage(artworkImageUrl);
 
   return (
     <div
@@ -160,7 +162,8 @@ const ArtworkRow = memo(function ArtworkRow({
   onPickPack,
   onToggleFavorite,
 }: ArtworkCardProps) {
-  const { imgRef, loadedSrc, isLoaded, isError } = useLazyImage(artwork.imageUrl);
+  const artworkImageUrl = useArtworkImage(artwork);
+  const { imgRef, loadedSrc, isLoaded, isError } = useLazyImage(artworkImageUrl);
 
   return (
     <div
@@ -235,7 +238,9 @@ const ArtworkRow = memo(function ArtworkRow({
 export default function MaterialsPage() {
   const navigate = useNavigate();
   const toast = useToast();
-  const [searchQuery, setSearchQuery] = useState('');
+  const [rawSearchQuery, setRawSearchQuery] = useState('');
+  // 搜索输入防抖 300ms,降低 9999 条素材上的高频过滤计算
+  const searchQuery = useDebounce(rawSearchQuery, 300);
   const [selectedCategories, setSelectedCategories] = useState<Set<string>>(new Set());
   const [selectedStyles, setSelectedStyles] = useState<Set<string>>(new Set());
   const [selectedEras, setSelectedEras] = useState<Set<string>>(new Set());
@@ -247,6 +252,32 @@ export default function MaterialsPage() {
   const [showAllTags, setShowAllTags] = useState(false);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [groupBy, setGroupBy] = useState<'none' | 'style' | 'era' | 'region'>('none');
+
+  /* ---------- 素材数据状态 ---------- */
+  const [artworks, setArtworks] = useState<ArtworkItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  /* ---------- 分页状态 ---------- */
+  const PAGE_SIZE = 24;
+  const [page, setPage] = useState(1);
+
+  // 异步加载内置艺术作品库
+  useEffect(() => {
+    let cancelled = false;
+    setIsLoading(true);
+    loadBuiltinArtworks()
+      .then((data) => {
+        if (!cancelled) {
+          setArtworks(data);
+          setIsLoading(false);
+        }
+      })
+      .catch((err) => {
+        console.error('加载素材库失败:', err);
+        if (!cancelled) setIsLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
 
   /* ---------- 素材包状态 ---------- */
   const [packs, setPacks] = useState<MaterialPack[]>([]);
@@ -345,22 +376,48 @@ export default function MaterialsPage() {
   const handleSendToFuse = useCallback((artwork: ArtworkItem) => {
     toast.info('已选择素材，前往嫁接页面');
     navigate(
-      `/fuse?src=material&imageUrl=${encodeURIComponent(artwork.imageUrl)}&title=${encodeURIComponent(artwork.title)}`
+      `/fuse?src=material&artworkId=${encodeURIComponent(artwork.id)}&title=${encodeURIComponent(artwork.title)}`
     );
   }, [navigate, toast]);
 
-  const filterOptions = useMemo(() => getFilterOptions(), []);
+  const filterOptions = useMemo(() => {
+    const categories = new Set<string>();
+    const styles = new Set<string>();
+    const eras = new Set<string>();
+    const regions = new Set<string>();
+    const artists = new Set<string>();
+    const allTags = new Set<string>();
+    artworks.forEach((a) => {
+      categories.add(a.category);
+      styles.add(a.style);
+      eras.add(a.era);
+      regions.add(a.region);
+      artists.add(a.artist);
+      a.tags.forEach((t) => allTags.add(t));
+    });
+    return {
+      categories: Array.from(categories),
+      styles: Array.from(styles),
+      eras: Array.from(eras),
+      regions: Array.from(regions),
+      artists: Array.from(artists),
+      tags: Array.from(allTags),
+    };
+  }, [artworks]);
+
+  // 通过内存倒排索引快速获取各维度数量,避免每次渲染扫描 9999 条
+  const filterCounts: FilterCounts = useMemo(() => getFilterCounts(artworks), [artworks]);
 
   // 统计每个标签的作品数量
   const tagCounts = useMemo(() => {
     const counts: Record<string, number> = {};
-    getBuiltinArtworkItems().forEach((a) => {
+    artworks.forEach((a) => {
       a.tags.forEach((t) => {
         counts[t] = (counts[t] || 0) + 1;
       });
     });
     return counts;
-  }, []);
+  }, [artworks]);
 
   // 按作品数量排序标签
   const sortedTags = useMemo(() => {
@@ -374,7 +431,7 @@ export default function MaterialsPage() {
 
   // 过滤作品
   const filteredArtworks = useMemo(() => {
-    let results = [...getBuiltinArtworkItems()];
+    let results = [...artworks];
 
     if (searchQuery) {
       const kw = searchQuery.toLowerCase();
@@ -410,7 +467,7 @@ export default function MaterialsPage() {
     }
 
     return results;
-  }, [searchQuery, selectedCategories, selectedStyles, selectedEras, selectedRegions, selectedTags]);
+  }, [artworks, searchQuery, selectedCategories, selectedStyles, selectedEras, selectedRegions, selectedTags]);
 
   // 切换收藏：通过 data-service 异步落库,本地状态同步更新
   const toggleFavorite = useCallback(async (id: string) => {
@@ -430,12 +487,13 @@ export default function MaterialsPage() {
 
   /* 详情弹窗图片懒加载:useLazyImage 在 selectedArtwork 变化时自动加载,
      弹窗打开时图片在视口内,IntersectionObserver 立即触发加载 */
+  const selectedArtworkImageUrl = useArtworkImage(selectedArtwork);
   const {
     imgRef: detailImgRef,
     loadedSrc: detailLoadedSrc,
     isLoaded: detailIsLoaded,
     isError: detailIsError,
-  } = useLazyImage(selectedArtwork?.imageUrl);
+  } = useLazyImage(selectedArtworkImageUrl);
 
   const toggleSet = (
     value: string,
@@ -458,10 +516,23 @@ export default function MaterialsPage() {
     });
   };
 
+  // 筛选/搜索变化时重置到第一页
+  useEffect(() => {
+    setPage(1);
+  }, [searchQuery, selectedCategories, selectedStyles, selectedEras, selectedRegions, selectedTags]);
+
+  // 分页后的作品(避免一次性渲染 9999 个 DOM 节点导致浏览器卡顿)
+  const paginatedArtworks = useMemo(() => {
+    const start = (page - 1) * PAGE_SIZE;
+    return filteredArtworks.slice(start, start + PAGE_SIZE);
+  }, [filteredArtworks, page]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredArtworks.length / PAGE_SIZE));
+
   const groupedArtworks = useMemo(() => {
-    if (groupBy === 'none') return { all: filteredArtworks };
+    if (groupBy === 'none') return { all: paginatedArtworks };
     const groups: Record<string, ArtworkItem[]> = {};
-    filteredArtworks.forEach((artwork) => {
+    paginatedArtworks.forEach((artwork) => {
       const key = groupBy === 'style' ? artwork.style :
                   groupBy === 'era' ? artwork.era :
                   regionNames[artwork.region] || artwork.region;
@@ -469,10 +540,10 @@ export default function MaterialsPage() {
       groups[key].push(artwork);
     });
     return groups;
-  }, [filteredArtworks, groupBy]);
+  }, [paginatedArtworks, groupBy]);
 
   const resetFilters = () => {
-    setSearchQuery('');
+    setRawSearchQuery('');
     setSelectedCategories(new Set());
     setSelectedStyles(new Set());
     setSelectedEras(new Set());
@@ -481,6 +552,7 @@ export default function MaterialsPage() {
   };
 
   const activeFilterCount =
+    (searchQuery ? 1 : 0) +
     selectedCategories.size +
     selectedStyles.size +
     selectedEras.size +
@@ -521,6 +593,14 @@ export default function MaterialsPage() {
 
   return (
     <div className="min-h-screen bg-rice-200 ink-texture pt-20 pb-20">
+      {isLoading && (
+        <div className="fixed inset-0 bg-rice-200/80 backdrop-blur-sm z-50 flex items-center justify-center">
+          <div className="flex flex-col items-center">
+            <Loader2 className="w-10 h-10 text-cinnabar animate-spin mb-3" />
+            <p className="text-ink-700 font-medium">正在加载素材库...</p>
+          </div>
+        </div>
+      )}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Header */}
         <div className="text-center mb-12">
@@ -532,7 +612,7 @@ export default function MaterialsPage() {
             海内外名作 · 实时获取
           </h1>
           <p className="text-ink-600 max-w-2xl mx-auto">
-            整合Wikimedia Commons等公开数据源，收录{getBuiltinArtworkItems().length}+件中外艺术杰作
+            整合Wikimedia Commons等公开数据源，收录{artworks.length}+件中外艺术杰作
             <br />
             <span className="text-sm text-ink-500">涵盖绘画、设计、雕塑、书法等多种创作形式</span>
           </p>
@@ -541,7 +621,7 @@ export default function MaterialsPage() {
         {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
           <div className="bg-rice-50 rounded-xl p-4 shadow-card text-center">
-            <p className="text-2xl font-bold text-ink-900">{getBuiltinArtworkItems().length}</p>
+            <p className="text-2xl font-bold text-ink-900">{artworks.length}</p>
             <p className="text-sm text-ink-500">总作品数</p>
           </div>
           <div className="bg-rice-50 rounded-xl p-4 shadow-card text-center">
@@ -671,13 +751,13 @@ export default function MaterialsPage() {
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-ink-400" />
             <input
               type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              value={rawSearchQuery}
+              onChange={(e) => setRawSearchQuery(e.target.value)}
               placeholder="搜索作品名称、画家、标签（支持中英文）..."
               className="w-full pl-12 pr-4 py-3 border border-ink-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-cinnabar/30 focus:border-cinnabar"
             />
-            {searchQuery && (
-              <button onClick={() => setSearchQuery('')} aria-label="清除搜索" className="absolute right-4 top-1/2 -translate-y-1/2 p-1 hover:bg-ink-100 rounded-full">
+            {rawSearchQuery && (
+              <button onClick={() => setRawSearchQuery('')} aria-label="清除搜索" className="absolute right-4 top-1/2 -translate-y-1/2 p-1 hover:bg-ink-100 rounded-full">
                 <X className="w-4 h-4 text-ink-400" />
               </button>
             )}
@@ -695,7 +775,7 @@ export default function MaterialsPage() {
             </div>
             <div className="flex flex-wrap gap-2">
               {Object.entries(categoryNames).map(([key, name]) => {
-                const count = getBuiltinArtworkItems().filter(a => a.category === key).length;
+                const count = filterCounts.category[key] ?? 0;
                 if (count === 0) return null;
                 return (
                   <TagButton
@@ -719,7 +799,7 @@ export default function MaterialsPage() {
             </div>
             <div className="flex flex-wrap gap-2">
               {Object.entries(regionNames).map(([key, name]) => {
-                const count = getBuiltinArtworkItems().filter(a => a.region === key).length;
+                const count = filterCounts.region[key] ?? 0;
                 if (count === 0) return null;
                 return (
                   <TagButton
@@ -743,7 +823,7 @@ export default function MaterialsPage() {
             </div>
             <div className="flex flex-wrap gap-2">
               {filterOptions.styles.map((style) => {
-                const count = getBuiltinArtworkItems().filter(a => a.style === style).length;
+                const count = filterCounts.style[style] ?? 0;
                 if (count === 0) return null;
                 return (
                   <TagButton
@@ -767,7 +847,7 @@ export default function MaterialsPage() {
             </div>
             <div className="flex flex-wrap gap-2">
               {filterOptions.eras.map((era) => {
-                const count = getBuiltinArtworkItems().filter(a => a.era === era).length;
+                const count = filterCounts.era[era] ?? 0;
                 if (count === 0) return null;
                 return (
                   <TagButton
@@ -947,6 +1027,29 @@ export default function MaterialsPage() {
           </div>
         )}
 
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-center gap-3 mt-8">
+            <button
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page === 1}
+              className="px-4 py-2 rounded-lg bg-white text-ink-700 text-sm disabled:opacity-40 hover:bg-rice-100 transition-all"
+            >
+              上一页
+            </button>
+            <span className="text-sm text-ink-600">
+              第 <span className="font-medium text-ink-900">{page}</span> / {totalPages} 页
+            </span>
+            <button
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page === totalPages}
+              className="px-4 py-2 rounded-lg bg-white text-ink-700 text-sm disabled:opacity-40 hover:bg-rice-100 transition-all"
+            >
+              下一页
+            </button>
+          </div>
+        )}
+
         {/* Detail Modal */}
         {selectedArtwork && (
           <div className="fixed inset-0 bg-ink-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setSelectedArtwork(null)}>
@@ -1043,7 +1146,7 @@ export default function MaterialsPage() {
                     </a>
                   )}
                   <button
-                    onClick={() => { const link = document.createElement('a'); link.href = selectedArtwork.imageUrl; link.download = `${selectedArtwork.title}.jpg`; link.target = '_blank'; document.body.appendChild(link); link.click(); document.body.removeChild(link); }}
+                    onClick={() => { const link = document.createElement('a'); link.href = selectedArtworkImageUrl || selectedArtwork.imageUrl; link.download = `${selectedArtwork.title}.svg`; link.target = '_blank'; document.body.appendChild(link); link.click(); document.body.removeChild(link); }}
                     aria-label="下载参考"
                     className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-ink-900 text-white rounded-lg hover:bg-cinnabar transition-all"
                   >

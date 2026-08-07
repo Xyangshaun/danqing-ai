@@ -27,6 +27,7 @@ const StylesPage = lazy(() => import('./pages/StylesPage'));
 const FusePage = lazy(() => import('./pages/FusePage'));
 const EmotionPage = lazy(() => import('./pages/EmotionPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
+const ImageSearchPage = lazy(() => import('./pages/ImageSearchPage'));
 
 /**
  * 受保护的业务布局(Header + Sidebar + Main + StatusBar)
@@ -82,6 +83,7 @@ export function AppLayout() {
         '5': '/emotion',
         '6': '/history',
         '7': '/growth',
+        '8': '/images',
         '0': '/settings',
       };
       const path = map[e.key];
@@ -193,6 +195,7 @@ export function AppLayout() {
                   <Route path="/emotion" element={<EmotionPage />} />
                   <Route path="/history" element={<HistoryPage />} />
                   <Route path="/growth" element={<GrowthPage />} />
+                  <Route path="/images" element={<ImageSearchPage />} />
                   <Route path="/settings" element={<SettingsPage />} />
                 </Routes>
               </Suspense>

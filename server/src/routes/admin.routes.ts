@@ -27,6 +27,8 @@ import { authMiddleware } from '../middlewares/auth.js';
 import { tenantMiddleware } from '../middlewares/tenant.js';
 import { apiRateLimiter } from '../middlewares/rate-limit.js';
 import { requirePermission } from '../middlewares/permission.js';
+import { highRiskConfirmPassword } from '../middlewares/high-risk-confirm.js';
+import { idempotencyMiddleware } from '../middlewares/idempotency.js';
 
 // 用户管理模块
 import {
@@ -101,6 +103,12 @@ import {
 // AI 生产化:AI 配置管理(查看 / 测试)
 import { getAiConfig, testAiConfig } from '../controllers/admin-ai-config.controller.js';
 
+// 租户仲裁配置(M-1 DOC-2026-08-003/005)
+import {
+  getTenantArbitrationConfig,
+  updateTenantArbitrationConfig,
+} from '../controllers/admin-arbitration.controller.js';
+
 // AI 用量统计模块(每次 AI 调用日志的聚合统计)
 import {
   getAiUsageOverview,
@@ -133,11 +141,23 @@ adminRouter.get('/users/:id', requirePermission('admin:user:read'), getUser);
 // PATCH /api/admin/users/:id - 更新用户(角色/状态/资料)
 adminRouter.patch('/users/:id', requirePermission('admin:user:write'), updateUser);
 
-// POST /api/admin/users/:id/lock - 锁定/解锁用户
-adminRouter.post('/users/:id/lock', requirePermission('admin:user:write'), lockUser);
+// POST /api/admin/users/:id/lock - 锁定/解锁用户(高危:支持 confirmPassword + Idempotency-Key)
+adminRouter.post(
+  '/users/:id/lock',
+  requirePermission('admin:user:write'),
+  idempotencyMiddleware(),
+  highRiskConfirmPassword,
+  lockUser,
+);
 
-// POST /api/admin/users/batch - 批量操作用户(更新角色/删除)
-adminRouter.post('/users/batch', requirePermission('admin:user:write'), batchUsers);
+// POST /api/admin/users/batch - 批量操作用户(更新角色/删除)[高危:confirmPassword + Idempotency-Key]
+adminRouter.post(
+  '/users/batch',
+  requirePermission('admin:user:write'),
+  idempotencyMiddleware(),
+  highRiskConfirmPassword,
+  batchUsers,
+);
 
 // GET /api/admin/roles - 查询角色权限矩阵
 adminRouter.get('/roles', requirePermission('admin:role:read'), listRoles);
@@ -155,8 +175,14 @@ adminRouter.get('/artworks', requirePermission('admin:artwork:read'), listArtwor
 // GET /api/admin/artworks/:id - 查询作品详情
 adminRouter.get('/artworks/:id', requirePermission('admin:artwork:read'), getArtwork);
 
-// POST /api/admin/artworks/:id/review - 审核作品
-adminRouter.post('/artworks/:id/review', requirePermission('admin:artwork:write'), reviewArtwork);
+// POST /api/admin/artworks/:id/review - 审核作品(高危:confirmPassword + Idempotency-Key)
+adminRouter.post(
+  '/artworks/:id/review',
+  requirePermission('admin:artwork:write'),
+  idempotencyMiddleware(),
+  highRiskConfirmPassword,
+  reviewArtwork,
+);
 
 // DELETE /api/admin/artworks/:id - 删除作品
 adminRouter.delete('/artworks/:id', requirePermission('admin:artwork:write'), deleteArtwork);
@@ -189,8 +215,14 @@ adminRouter.get('/subscriptions/:id', requirePermission('admin:subscription:read
 // POST /api/admin/subscriptions/:id/cancel - 管理员取消订阅
 adminRouter.post('/subscriptions/:id/cancel', requirePermission('admin:subscription:write'), cancelSubscription);
 
-// POST /api/admin/subscriptions/:id/refund - 退款处理
-adminRouter.post('/subscriptions/:id/refund', requirePermission('admin:subscription:write'), refundSubscription);
+// POST /api/admin/subscriptions/:id/refund - 退款处理(高危:confirmPassword + Idempotency-Key)
+adminRouter.post(
+  '/subscriptions/:id/refund',
+  requirePermission('admin:subscription:write'),
+  idempotencyMiddleware(),
+  highRiskConfirmPassword,
+  refundSubscription,
+);
 
 // GET /api/admin/invoices - 分页查询发票列表
 adminRouter.get('/invoices', requirePermission('admin:subscription:read'), listInvoices);
@@ -278,8 +310,14 @@ adminRouter.get('/system/api-keys', requirePermission('admin:apikey:read'), list
 // POST /api/admin/system/api-keys - 创建 API 密钥(完整密钥仅返回一次)
 adminRouter.post('/system/api-keys', requirePermission('admin:apikey:write'), createApiKey);
 
-// DELETE /api/admin/system/api-keys/:id - 吊销 API 密钥
-adminRouter.delete('/system/api-keys/:id', requirePermission('admin:apikey:write'), revokeApiKey);
+// DELETE /api/admin/system/api-keys/:id - 吊销 API 密钥(高危:confirmPassword + Idempotency-Key)
+adminRouter.delete(
+  '/system/api-keys/:id',
+  requirePermission('admin:apikey:write'),
+  idempotencyMiddleware(),
+  highRiskConfirmPassword,
+  revokeApiKey,
+);
 
 // GET /api/admin/system/health - 系统健康检查
 adminRouter.get('/system/health', requirePermission('admin:system:health'), getSystemHealth);
@@ -345,6 +383,22 @@ adminRouter.post(
   '/tenants/:id/students/batch',
   requirePermission('admin:invitation:write'),
   batchImportStudents,
+);
+
+// GET /api/admin/tenants/:id/arbitration-config - 查询租户仲裁配置(M-1 DOC-2026-08-003)
+// 权限:admin:tenant:read
+adminRouter.get(
+  '/tenants/:id/arbitration-config',
+  requirePermission('admin:tenant:read'),
+  getTenantArbitrationConfig,
+);
+
+// PUT /api/admin/tenants/:id/arbitration-config - 更新租户仲裁配置(M-1 DOC-2026-08-005)
+// 权限:admin:tenant:write;深合并 + Zod 全量校验 + 权重归一化校验 + 审计日志
+adminRouter.put(
+  '/tenants/:id/arbitration-config',
+  requirePermission('admin:tenant:write'),
+  updateTenantArbitrationConfig,
 );
 
 // GET /api/admin/presets - 列出所有预设(含 built-in + 用户预设,ADMIN/OWNER)

@@ -91,7 +91,12 @@ export type Permission =
   | 'dispute:resolve' // 裁定争议(TEACHER/ADMIN/OWNER)
   | 'admin:invitation:write' // 创建邀请码/批量导入学生(ADMIN/OWNER)
   | 'admin:preset:read' // 管理后台查看所有预设(ADMIN/OWNER)
-  | 'admin:preset:write'; // 管理后台派生覆盖预设(ADMIN/OWNER)
+  | 'admin:preset:write' // 管理后台派生覆盖预设(ADMIN/OWNER)
+  // 实时图片搜索权限(P0,详见 docs/realtime-image-search-solution.md)
+  | 'image:read' // 图片搜索与详情查看(所有角色)
+  | 'image:create' // 创建图片条目(ADMIN/OWNER)
+  | 'image:update' // 更新图片条目(ADMIN/OWNER)
+  | 'image:delete'; // 删除图片条目(ADMIN/OWNER)
 
 /**
  * 权限全集(用于 ADMIN/OWNER 全权角色)
@@ -158,6 +163,11 @@ export const ALL_PERMISSIONS: readonly Permission[] = [
   'admin:invitation:write',
   'admin:preset:read',
   'admin:preset:write',
+  // 实时图片搜索权限(P0)
+  'image:read',
+  'image:create',
+  'image:update',
+  'image:delete',
 ];
 
 // ============================================================
@@ -239,6 +249,8 @@ export const ROLE_PERMISSIONS: Readonly<Record<UserRole, readonly Permission[]>>
     'review:write',
     'dispute:read',
     'dispute:resolve',
+    // 实时图片搜索:教师可读
+    'image:read',
   ]),
   // 学生:仅自己的资源 + 个人统计 + 订阅只读 + Phase 5 预留读类权限
   student: Object.freeze<Permission[]>([
@@ -260,6 +272,8 @@ export const ROLE_PERMISSIONS: Readonly<Record<UserRole, readonly Permission[]>>
     'preset:read',
     'review:read',
     'dispute:read',
+    // 实时图片搜索:学生可读(服务端强制 status=published)
+    'image:read',
   ]),
 });
 

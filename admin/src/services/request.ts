@@ -24,6 +24,26 @@ import {
 /** 客户端标识头(管理后台) */
 const X_CLIENT = 'admin';
 
+/** 状态变更方法(需携带 CSRF 双提交头) */
+const MUTATING_METHODS = new Set(['POST', 'PATCH', 'PUT', 'DELETE']);
+
+/**
+ * 读取指定名称的 Cookie 值(用于 CSRF 双提交校验)
+ * csrf_token 为登录/刷新时下发的非 HttpOnly Cookie,前端读取后以 X-CSRF-Token 头回传
+ */
+function readCookie(name: string): string | undefined {
+  if (typeof document === 'undefined') return undefined;
+  const prefix = `${name}=`;
+  const parts = document.cookie.split(';');
+  for (const part of parts) {
+    const trimmed = part.trim();
+    if (trimmed.startsWith(prefix)) {
+      return decodeURIComponent(trimmed.slice(prefix.length));
+    }
+  }
+  return undefined;
+}
+
 /** axios 实例 */
 const instance: AxiosInstance = axios.create({
   baseURL: '/',
@@ -93,6 +113,15 @@ instance.interceptors.request.use(
     // 确保客户端标识存在
     if (!config.headers.get('X-Client')) {
       config.headers.set('X-Client', X_CLIENT);
+    }
+    // CSRF 双提交:状态变更方法读取 csrf_token Cookie 并以 X-CSRF-Token 头回传
+    // 后端 csrfMiddleware 仅在存在 refresh_token Cookie 时校验,admin 走 HttpOnly Cookie 刷新,故必须携带
+    const method = (config.method ?? 'get').toUpperCase();
+    if (MUTATING_METHODS.has(method)) {
+      const csrf = readCookie('csrf_token');
+      if (csrf && !config.headers.get('X-CSRF-Token')) {
+        config.headers.set('X-CSRF-Token', csrf);
+      }
     }
     return config;
   },
@@ -201,6 +230,11 @@ export function post<T>(url: string, data?: unknown, config?: AxiosRequestConfig
 /** PATCH */
 export function patch<T>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> {
   return request<T>({ method: 'PATCH', url, data, ...config });
+}
+
+/** PUT */
+export function put<T>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> {
+  return request<T>({ method: 'PUT', url, data, ...config });
 }
 
 /** DELETE */

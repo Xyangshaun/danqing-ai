@@ -116,6 +116,8 @@ export enum ErrorCode {
   KNOWLEDGE_NOT_FOUND = 8101,
   KNOWLEDGE_INDEX_ERROR = 8102,
   KNOWLEDGE_PERMISSION_DENIED = 8103,
+  // 实时图片搜索相关错误码(8104-8106,详见 docs/realtime-image-search-solution.md)
+  IMAGE_NOT_FOUND = 8104, // 图片条目不存在/跨租户不可见
   // 模块化功能扩展相关错误码(8201-8203,Phase 5 预留)
   MODULE_NOT_FOUND = 8201,
   MODULE_ALREADY_INSTALLED = 8202,
@@ -209,6 +211,8 @@ export const ERROR_HTTP_STATUS: Readonly<Record<number, number>> = Object.freeze
   [ErrorCode.KNOWLEDGE_NOT_FOUND]: 404,
   [ErrorCode.KNOWLEDGE_INDEX_ERROR]: 503,
   [ErrorCode.KNOWLEDGE_PERMISSION_DENIED]: 403,
+  // 实时图片搜索错误码 HTTP 状态映射
+  [ErrorCode.IMAGE_NOT_FOUND]: 404,
   [ErrorCode.MODULE_NOT_FOUND]: 404,
   [ErrorCode.MODULE_ALREADY_INSTALLED]: 409,
   [ErrorCode.MODULE_CONFIG_INVALID]: 400,
@@ -2057,6 +2061,131 @@ export interface KnowledgeSearchValidateResponse {
   sanitizedQuery: KnowledgeSearchQuery;
 }
 
+// ---------- 3.11.1b 实时图片搜索(P0 落地实现) ----------
+//
+/**
+ * 实时图片搜索服务
+ * 对应文档:docs/realtime-image-search-solution.md
+ * 对应 API:/api/v1/images/*
+ * 设计要点:
+ *   - 内存倒排索引(中文二元分词 + 字段加权 title×5 / tags×4 / category×2)
+ *   - 多租户隔离 + 角色权限强制(student 仅可见 published)
+ *   - 搜索延迟 ≤300ms,前端防抖 200ms + AbortController 取消竞态
+ */
+
+/** 图片条目状态 */
+export type ImageStatus = 'published' | 'draft' | 'archived';
+
+/** 图片文档(元数据 + 缩略图/原图 URL) */
+export interface ImageDoc {
+  id: string;
+  tenantId: string;
+  /** 标题 */
+  title: string;
+  /** 标签列表 */
+  tags: string[];
+  /** 分类(如 绘画基础 / 色彩理论) */
+  category: string;
+  /** 状态 */
+  status: ImageStatus;
+  /** 缩略图 URL(搜索结果网格使用) */
+  thumbUrl: string;
+  /** 原图 URL(详情页使用) */
+  fullUrl: string;
+  /** 元信息(宽高/体积) */
+  meta: {
+    width: number;
+    height: number;
+    size: number;
+  };
+  /** 创建人 ID */
+  createdById: string;
+  /** 最后更新人 ID */
+  updatedById: string;
+  createdAt: ISODateString;
+  updatedAt: ISODateString;
+  /** 全文检索相关性分数(仅搜索接口返回,0-1) */
+  score?: number;
+}
+
+/** GET /images/search 查询参数 */
+export interface ImageSearchQuery extends PaginationQuery {
+  /** 关键词(全文检索) */
+  q?: string;
+  /** 标签筛选(逗号分隔,AND 语义) */
+  tags?: string;
+  /** 分类筛选 */
+  category?: string;
+  /** 作品类型筛选 */
+  artType?: ArtType;
+  /** 状态筛选(默认 published) */
+  status?: ImageStatus;
+}
+
+/** GET /images/search 响应(分页) */
+export type ImageSearchResponse = PaginatedData<ImageDoc>;
+
+/** GET /images/suggest 查询参数 */
+export interface ImageSuggestQuery {
+  /** 前缀关键词(≥1 字符触发) */
+  q: string;
+  /** 返回条数上限,默认 8,最大 20 */
+  limit?: number;
+}
+
+/** GET /images/suggest 响应 */
+export interface ImageSuggestResponse {
+  /** 联想补全候选词列表 */
+  suggestions: string[];
+}
+
+/** GET /images/:id 响应 */
+export type GetImageResponse = ImageDoc;
+
+/** POST /images 请求体(创建图片条目) */
+export interface CreateImageRequest {
+  title: string;
+  tags?: string[];
+  category: string;
+  artType?: ArtType | null;
+  status?: ImageStatus;
+  thumbUrl: string;
+  fullUrl: string;
+  meta?: {
+    width: number;
+    height: number;
+    size: number;
+  };
+}
+
+/** POST /images 响应 */
+export type CreateImageResponse = ImageDoc;
+
+/** PATCH /images/:id 请求体(部分更新) */
+export interface UpdateImageRequest {
+  title?: string;
+  tags?: string[];
+  category?: string;
+  artType?: ArtType | null;
+  status?: ImageStatus;
+  thumbUrl?: string;
+  fullUrl?: string;
+  meta?: {
+    width: number;
+    height: number;
+    size: number;
+  };
+}
+
+/** PATCH /images/:id 响应 */
+export type UpdateImageResponse = ImageDoc;
+
+/** DELETE /images/:id 响应 */
+export interface DeleteImageResponse {
+  id: string;
+  deleted: boolean;
+}
+
 // ---------- 3.11.2 模块化功能扩展(预留) ----------
 //
 /**
@@ -3421,6 +3550,8 @@ export interface CreateGenerationRequest {
   aspect?: 'portrait' | 'landscape' | 'square';
   /** 生成数量(默认 1,上限 4) */
   count?: number;
+  /** 同步模式:为 true 时直接同步生成并返回结果,不走异步队列 */
+  sync?: boolean;
 }
 
 /** 单张生成结果 */

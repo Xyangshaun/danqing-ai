@@ -43,6 +43,7 @@ import {
   batchImportStudents,
 } from '@/services/system';
 import Access from '@/components/Access';
+import TenantArbitrationConfig from '@/components/TenantArbitrationConfig';
 import { useConfirmAction } from '@/components/ConfirmAction';
 import {
   PERM,
@@ -67,6 +68,9 @@ export default function TenantsPage() {
   const [editOpen, setEditOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [form] = Form.useForm();
+
+  // 仲裁配置抽屉
+  const [arbTenant, setArbTenant] = useState<AdminTenantListItem | null>(null);
 
   const openCreate = () => {
     setEditId(null);
@@ -312,6 +316,11 @@ export default function TenantsPage() {
         <Access key="members" permission={PERM.invitationWrite}>
           <a onClick={() => openMemberDrawer(r)}>
             <TeamOutlined /> 成员
+          </a>
+        </Access>,
+        <Access key="arbitration" permission={PERM.tenantWrite}>
+          <a onClick={() => setArbTenant(r)}>
+            <EditOutlined /> 仲裁配置
           </a>
         </Access>,
         <Access key="toggle" permission={PERM.tenantWrite}>
@@ -621,6 +630,14 @@ export default function TenantsPage() {
           </Form.Item>
         </Form>
       </Modal>
+
+      {/* 租户仲裁配置抽屉 */}
+      <TenantArbitrationConfig
+        tenantId={arbTenant?.id}
+        tenantName={arbTenant?.name}
+        open={!!arbTenant}
+        onClose={() => setArbTenant(null)}
+      />
     </PageContainer>
   );
 }
