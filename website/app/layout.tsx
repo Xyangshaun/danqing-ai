@@ -8,15 +8,10 @@ import { JsonLd } from '@/components/seo/JsonLd';
 import { SITE } from '@/lib/site';
 import { organizationJsonLd } from '@/lib/seo';
 
-// 搜索引擎站长验证(百度/必应):构建前设置环境变量即可注入 meta 标签
-// 示例:BAIDU_VERIFICATION_CODE=your-code BING_VERIFICATION_CODE=your-code npm run build
-const searchVerification: Record<string, string> = {};
-if (process.env.BAIDU_VERIFICATION_CODE) {
-  searchVerification['baidu-site-verification'] = process.env.BAIDU_VERIFICATION_CODE;
-}
-if (process.env.BING_VERIFICATION_CODE) {
-  searchVerification['msvalidate.01'] = process.env.BING_VERIFICATION_CODE;
-}
+// 搜索引擎站长验证(百度/必应):由 deploy-website.sh 在构建后往静态 <head> 直接插入 meta。
+// 注意:不能依赖 Next.js 的 metadata 或 <head> JSX——App Router 会把 head 内容 hoist 进
+// RSC flight 数据(__next_f),静态 HTML 的 <head> 里没有,必应等不执行 JS 的爬虫读不到。
+// 因此验证 meta 由部署脚本 sed 插入到 out/index.html 的静态 <head>。
 
 // 全局元数据:所有页面继承,单页可覆盖
 export const metadata: Metadata = {
@@ -80,10 +75,6 @@ export const metadata: Metadata = {
       'max-snippet': -1,
     },
   },
-  verification:
-    Object.keys(searchVerification).length > 0
-      ? { other: searchVerification }
-      : undefined,
   icons: {
     icon: [
       { url: '/favicon.svg', type: 'image/svg+xml' },

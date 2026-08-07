@@ -84,6 +84,52 @@ if [ ! -f "$OUT_DIR/index.html" ]; then
   exit 1
 fi
 
+# 3.5 验证码 meta 注入(关键)
+# Next.js App Router 会把 <head> 内容 hoist 进 RSC flight 数据(__next_f),
+# 静态 HTML 的 <head> 里没有 meta,必应等不执行 JS 的爬虫读不到。
+# 因此这里用 sed 直接把验证 meta 插入到 out/index.html 的静态 <head> 内。
+echo ""
+echo "[3.5/6] 注入站长验证 meta 到静态 <head>..."
+INJECT_SCRIPT="script_insert_verification_meta.sh"
+INJECT_SCRIPT_PATH="$WEBSITE_DIR/$INJECT_SCRIPT"
+cat > "$INJECT_SCRIPT_PATH" <<'INJECT_EOF'
+#!/bin/bash
+# 由 deploy-website.sh 生成并调用:向 out/index.html 的 <head> 注入站长验证 meta。
+set -e
+HTML="$1"
+BAIDU_VERIFICATION_CODE="$2"
+BING_VERIFICATION_CODE="$3"
+if [ ! -f "$HTML" ]; then
+  echo "[inject] 错误: $HTML 不存在"
+  exit 1
+fi
+# 幂等:若已含则跳过,避免重复注入
+if grep -q 'baidu-site-verification' "$HTML" && grep -q 'msvalidate' "$HTML"; then
+  echo "[inject] 验证 meta 已存在,跳过"
+  exit 0
+fi
+META=""
+if [ -n "$BAIDU_VERIFICATION_CODE" ] && ! grep -q 'baidu-site-verification' "$HTML"; then
+  META="${META}<meta name=\"baidu-site-verification\" content=\"${BAIDU_VERIFICATION_CODE}\" />"
+fi
+if [ -n "$BING_VERIFICATION_CODE" ] && ! grep -q 'msvalidate' "$HTML"; then
+  META="${META}<meta name=\"msvalidate.01\" content=\"${BING_VERIFICATION_CODE}\" />"
+fi
+if [ -n "$META" ]; then
+  # 在 <head> 标签结束前插入(replace first occurrence of </head>)
+  sed -i "0,|</head>|s||${META}</head>|" "$HTML"
+  echo "[inject] 已注入验证 meta"
+  # 校验
+  if grep -q "baidu-site-verification" "$HTML"; then echo "[inject]   [OK] baidu-site-verification"; fi
+  if grep -q "msvalidate" "$HTML"; then echo "[inject]   [OK] msvalidate"; fi
+else
+  echo "[inject] 无验证码可注入"
+fi
+INJECT_EOF
+chmod +x "$INJECT_SCRIPT_PATH"
+bash "$INJECT_SCRIPT_PATH" "$OUT_DIR/index.html" "$BAIDU_VERIFICATION_CODE" "$BING_VERIFICATION_CODE"
+rm -f "$INJECT_SCRIPT_PATH"
+
 # 4. 校验 meta 标签已注入
 echo ""
 echo "[4/6] 校验 meta 标签..."
