@@ -111,6 +111,30 @@ const DEFAULT_PLACEHOLDER =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mN8/C8AAcsGAR7vHxkAAAAASUVORK5CYII=';
 
 /**
+ * 查找元素的最近可滚动祖先(用于 IntersectionObserver 的 root)。
+ *
+ * 背景:若不指定 root,IntersectionObserver 默认以浏览器视口为 root,
+ * 但素材库/风格库等内容渲染在 `<main class="overflow-y-auto">` 这类
+ * 内部滚动容器里,元素相对视口可能永远在 rootMargin 之外,导致 observer
+ * 永不触发、图片卡在占位符。此处自动检测最近滚动祖先作为 root,使
+ * intersection 基于真实滚动容器计算;找不到则回退 null(视口)。
+ *
+ * 判定规则:overflow-y 为 auto/scroll 且 scrollHeight>clientHeight(确实可滚动)。
+ */
+function getScrollParent(el: Element | null): Element | null {
+  let node = el?.parentElement ?? null;
+  while (node) {
+    const style = typeof getComputedStyle === 'function' ? getComputedStyle(node) : null;
+    const overflowY = style?.overflowY;
+    if ((overflowY === 'auto' || overflowY === 'scroll') && node.scrollHeight > node.clientHeight) {
+      return node;
+    }
+    node = node.parentElement;
+  }
+  return null;
+}
+
+/**
  * 图片懒加载 Hook
  *
  * @param src 目标图片地址(undefined 时 loadedSrc 返回 undefined)
@@ -167,21 +191,25 @@ export function useLazyImage(
       if (!target || target.startsWith('data:')) return;
       if (typeof IntersectionObserver === 'undefined') return;
       disconnect();
+      // 自动检测最近可滚动祖先作为 root;若内容在内部滚动容器(如素材库的
+      // <main class="overflow-y-auto">)内,默认视口 root 会使图片永远超出
+      // rootMargin,observer 永不触发。找不到时回退 null(视口)。
+      const root = getScrollParent(el);
       const observer = new IntersectionObserver(
         (entries) => {
           for (const entry of entries) {
             if (entry.isIntersecting) {
-              logLazy('intersect', target, { rootMargin, threshold });
+              logLazy('intersect', target, { rootMargin, threshold, hasRoot: !!root });
               setLoadedSrc(target);
               if (once) disconnect();
             }
           }
         },
-        { rootMargin, threshold },
+        { root, rootMargin, threshold },
       );
       observerRef.current = observer;
       observer.observe(el);
-      logLazy('observe', target, { rootMargin, threshold });
+      logLazy('observe', target, { rootMargin, threshold, hasRoot: !!root });
     },
     [rootMargin, threshold, once, disconnect],
   );
