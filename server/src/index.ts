@@ -172,6 +172,13 @@ async function startServer(): Promise<void> {
     // 6a-2. 停止 Redis 指标定时日志
     redisMetrics.stopLogInterval();
 
+    // 6a-3. 停止 M3 指标告警调度器(若已启动)
+    if (metricsAlertTimer) {
+      clearInterval(metricsAlertTimer);
+      metricsAlertTimer = null;
+      logger.info('[shutdown] metrics alert scheduler stopped');
+    }
+
     // 6b. 关闭 Redis(给 in-flight 请求 5s 缓冲)
     try {
       await closeRedis();
