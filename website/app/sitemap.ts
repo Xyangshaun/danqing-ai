@@ -15,6 +15,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: getCanonicalUrl('/product'), lastModified: now, changeFrequency: 'monthly', priority: 0.9 },
     { url: getCanonicalUrl('/pricing'), lastModified: now, changeFrequency: 'monthly', priority: 0.9 },
     { url: getCanonicalUrl('/cases'), lastModified: now, changeFrequency: 'monthly', priority: 0.8 },
+    { url: getCanonicalUrl('/insights'), lastModified: now, changeFrequency: 'monthly', priority: 0.8 },
     { url: getCanonicalUrl('/blog'), lastModified: now, changeFrequency: 'weekly', priority: 0.8 },
     { url: getCanonicalUrl('/about'), lastModified: now, changeFrequency: 'monthly', priority: 0.6 },
     { url: getCanonicalUrl('/privacy'), lastModified: now, changeFrequency: 'yearly', priority: 0.3 },

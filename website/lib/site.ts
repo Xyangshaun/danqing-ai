@@ -26,6 +26,7 @@ export const NAV_LINKS = [
   { label: '产品功能', href: '/product' },
   { label: '价格方案', href: '/pricing' },
   { label: '客户案例', href: '/cases' },
+  { label: '行业洞察', href: '/insights' },
   { label: '博客资源', href: '/blog' },
   { label: '关于我们', href: '/about' },
 ] as const;
@@ -42,6 +43,7 @@ export const FOOTER_LINKS = {
   resource: {
     title: '资源',
     links: [
+      { label: '行业洞察', href: '/insights' },
       { label: '博客', href: '/blog' },
       { label: '关于我们', href: '/about' },
     ],

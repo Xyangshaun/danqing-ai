@@ -5,7 +5,7 @@ import { InkDecoration } from '@/components/ui/InkDecoration';
 import { Parallax } from '@/components/ui/RevealGroup';
 
 /**
- * 未来方向区块
+ * 未来愿景区块
  * 墨黑背景 + 玻璃卡片,与 Scenarios 形成水墨阴阳呼应
  * 展示四大演进方向卡片 + M0→M4 里程碑路线时间线
  * 内容依据:硬件实时监督与监考架构规划(软件化先行、硬件后置)
@@ -145,10 +145,10 @@ export function FutureDirection() {
         <div className="max-w-2xl">
           <span className="section-eyebrow text-gold-400">
             <span style={{ background: 'currentColor' }} className="inline-block h-px w-8" />
-            未来方向
+            未来愿景
           </span>
           <p className="mt-3 text-xs font-medium uppercase tracking-[0.25em] text-paper-200/30">
-            Roadmap
+            Vision & Roadmap
           </p>
           <h2 className="mt-2 text-display-md font-semibold leading-tight text-paper-50">
             从评分诊断,走向完整教学闭环
