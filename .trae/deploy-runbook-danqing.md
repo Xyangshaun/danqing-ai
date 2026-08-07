@@ -744,3 +744,74 @@ curl -s http://127.0.0.1:3000/health
 2. runbook §10.3 记录生产曾将 generation 开关默认置 enabled,与门禁 M2-4(默认关闭)冲突;本任务本地已恢复 disabled,生产部署时需统一为 disabled 并灰度放量。
 3. runbook §10.3 曾提及生产 `.env` 直接写入 GLM key(硬编码风险),建议生产改用 KMS/Secret Manager 注入。
 
+---
+
+## 15. M2-T9 + M3 生产部署 (2026-08-07) — 生成 worker 竞态修复 + 告警基础设施 (devops-qa / backend-service)
+
+> 本任务将本地已提交的 M2-T9 环境配置与 M-3 可观测性规划落地到生产 (43.128.25.202)。
+
+### 15.1 部署内容 (origin/main 37ac2c1 → 6dbf101,3 提交)
+
+| 提交 | 内容 |
+|------|------|
+| `2e067ec` | 官网 v6 开屏动画改版 |
+| `2285f03` | M2-T9 环境配置与告警基础设施 + M-3 可观测性规划文档 (env.ts SMTP 告警变量 / alert.service.ts / logger AlertTransport / .env.docker.example / docker-compose.monitoring.yml / m3-observability-plan) |
+| `6dbf101` | **生成 worker 启动竞态修复** (index.ts 判定前显式 getFeature hydration) + AlertTransport 真正注册 + alert.service.ts 类型修复 + @types/nodemailer |
+
+### 15.2 部署前诊断结论
+
+- 生产健康检查 OK (`/health` up)
+- `AI_IMAGE_*` 环境变量已配置 (glm / cogview-3 / GLM Key)
+- Redis 中 `config:feature:generation` = **enabled** (value:true,已灰度开启)
+- 队列 `queue:generation` 长度 0 (空闲)
+- `GenerationTask` 迁移已存在 (20260806233736_add_generation_task),**无需新迁移**
+
+### 15.3 部署操作
+
+```bash
+# 1. 备份当前 dist
+cp -a server/dist server/dist.bak-m3deploy-20260807-215031
+
+# 2. 处理生产本地未提交的同源 M2-T9 改动 (与 origin/main 内容一致,安全 stash/备份)
+#    - tracked 改动 (env.ts/index.ts/logger.ts/package*.json): 本地与 origin/main 完全一致
+#    - untracked 同源文件 (.env.docker.example/docker-compose.monitoring.yml/alert.service.ts): mv 至 .trae/deploy/untracked-backup-20260807-215141/
+git fetch origin main
+git checkout -- server/src/services/alert.service.ts   # 恢复被备份的同源文件
+
+# 3. 拉码到 6dbf101 (git pull 成功,Already up to date)
+git pull origin main
+
+# 4. 依赖 + 构建 + 重启
+cd server && npm install && npx prisma generate && npx tsc -p tsconfig.json
+pm2 restart danqing-api
+```
+
+### 15.4 部署验证结果 (PASS)
+
+- [x] `/health` 返回 up
+- [x] **generation worker 启动成功**: `[startup] generation worker started` (22:08:41)
+- [x] **竞态修复生效**: worker 启动前正确读到 Redis enabled 开关 (之前出现 "feature disabled, worker not started" 已消除)
+- [x] **真实生成成功**: 日志 `[audit] generation completed` (jobId 8eaafff0, provider=glm, usedFallback=false, durationMs=8819ms)
+- [x] Redis 指标正常: RPOP 非阻塞轮询 (无 BRPOP 阻塞 / 无 rate-limit timeout)
+- [x] worker 稳定存活,无崩溃 (PM2 restarts 为历史累计 107,本次无新增)
+
+### 15.5 备份点 / 回滚
+
+| 备份 | 路径 |
+|------|------|
+| 构建产物 | `server/dist.bak-m3deploy-20260807-215031` |
+| 同源 untracked 文件 | `.trae/deploy/untracked-backup-20260807-215141/` |
+| git 版本 | origin/main `6dbf101` (git checkout/reset 可回退到 37ac2c1) |
+
+**回滚命令**:
+```bash
+cd /var/www/danqing-ai
+rm -rf server/dist && mv server/dist.bak-m3deploy-20260807-215031 server/dist
+git reset --hard 37ac2c1
+pm2 restart danqing-api
+```
+
+### 15.6 遗留
+
+- `ALERT_*` 环境变量生产 `.env` 未显式配置 (env.ts 有默认值,alertEnabled 默认 false,SMTP 告警默认关闭);如需开启请在 `.env` 配置 `ALERT_ENABLED=true` + `ALERT_SMTP_PASS` 授权码
+
