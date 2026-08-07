@@ -66,3 +66,12 @@ export const CTA_LINKS = {
   // 联系销售(mailto)
   contactSales: 'mailto:sales@danqing.site?subject=%E9%99%A2%E6%A0%A1%E7%89%88%E5%92%A8%E8%AF%A2',
 } as const;
+
+/**
+ * 获取规范 URL(与 next.config.js trailingSlash:true 保持一致)
+ * 页面路径统一以 / 结尾,sitemap/robots/canonical/og:url 均应调用此函数
+ */
+export function getCanonicalUrl(path: string): string {
+  const cleanPath = path === '/' || path === '' ? '' : path.replace(/\/$/, '');
+  return cleanPath ? `${SITE.url}${cleanPath}/` : `${SITE.url}/`;
+}

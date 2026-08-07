@@ -8,6 +8,16 @@ import { JsonLd } from '@/components/seo/JsonLd';
 import { SITE } from '@/lib/site';
 import { organizationJsonLd } from '@/lib/seo';
 
+// 搜索引擎站长验证(百度/必应):构建前设置环境变量即可注入 meta 标签
+// 示例:BAIDU_VERIFICATION_CODE=your-code BING_VERIFICATION_CODE=your-code npm run build
+const searchVerification: Record<string, string> = {};
+if (process.env.BAIDU_VERIFICATION_CODE) {
+  searchVerification['baidu-site-verification'] = process.env.BAIDU_VERIFICATION_CODE;
+}
+if (process.env.BING_VERIFICATION_CODE) {
+  searchVerification['msvalidate.01'] = process.env.BING_VERIFICATION_CODE;
+}
+
 // 全局元数据:所有页面继承,单页可覆盖
 export const metadata: Metadata = {
   metadataBase: new URL(SITE.url),
@@ -70,6 +80,10 @@ export const metadata: Metadata = {
       'max-snippet': -1,
     },
   },
+  verification:
+    Object.keys(searchVerification).length > 0
+      ? { other: searchVerification }
+      : undefined,
   icons: {
     icon: [
       { url: '/favicon.svg', type: 'image/svg+xml' },
@@ -77,7 +91,7 @@ export const metadata: Metadata = {
     shortcut: '/favicon.svg',
     apple: '/favicon.svg',
   },
-  manifest: undefined,
+  manifest: '/manifest.webmanifest',
   formatDetection: {
     telephone: false,
     address: false,
@@ -115,7 +129,7 @@ export default function RootLayout({
         <InkCursor />
         <Navbar />
         {/* 主内容区:顶部留白避开固定导航 */}
-        <main id="main-content" className="flex-1 pt-16 md:pt-18 content-reveal scroll-mt-20">
+        <main id="main-content" className="flex-1 pt-16 md:pt-18 scroll-mt-20">
           {children}
         </main>
         <Footer />

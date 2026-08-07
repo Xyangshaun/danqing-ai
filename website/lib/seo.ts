@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { SITE } from './site';
+import { SITE, getCanonicalUrl } from './site';
 
 type PageSeoInput = {
   title: string;
@@ -23,7 +23,7 @@ export function buildMetadata({
   ogImage = '/images/og-default.svg',
   noIndex = false,
 }: PageSeoInput): Metadata {
-  const url = `${SITE.url}${path === '/' ? '' : path}`;
+  const url = getCanonicalUrl(path);
   const fullTitle = title.includes(SITE.name) ? title : `${title} | ${SITE.name}`;
   const defaultKeywords = [
     '丹青有AI',
@@ -155,6 +155,27 @@ export function faqJsonLd(faqs: { question: string; answer: string }[]) {
         text: faq.answer,
       },
     })),
+  };
+}
+
+/**
+ * WebSite JSON-LD(首页使用,支持搜索引擎 Sitelinks 搜索框)
+ */
+export function websiteJsonLd() {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'WebSite',
+    name: SITE.name,
+    alternateName: SITE.nameEn,
+    url: getCanonicalUrl('/'),
+    potentialAction: {
+      '@type': 'SearchAction',
+      target: {
+        '@type': 'EntryPoint',
+        urlTemplate: `${getCanonicalUrl('/blog')}?q={search_term_string}`,
+      },
+      'query-input': 'required name=search_term_string',
+    },
   };
 }
 

@@ -9,7 +9,7 @@ import { DataEndorsement } from '@/components/home/DataEndorsement';
 import { FutureDirection } from '@/components/home/FutureDirection';
 import { CTASection } from '@/components/ui/CTASection';
 import { JsonLd } from '@/components/seo/JsonLd';
-import { buildMetadata, productJsonLd, faqJsonLd } from '@/lib/seo';
+import { buildMetadata, productJsonLd, faqJsonLd, websiteJsonLd } from '@/lib/seo';
 
 export const metadata: Metadata = buildMetadata({
   title: '丹青有AI | 让艺术教育更智能',
@@ -51,6 +51,7 @@ const HOME_FAQ = [
 export default function HomePage() {
   return (
     <>
+      <JsonLd data={websiteJsonLd()} />
       <JsonLd data={productJsonLd()} />
       <JsonLd data={faqJsonLd(HOME_FAQ)} />
 

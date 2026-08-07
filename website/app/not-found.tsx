@@ -1,5 +1,14 @@
 import Link from 'next/link';
+import type { Metadata } from 'next';
 import { LogoMark } from '@/components/layout/Logo';
+import { buildMetadata } from '@/lib/seo';
+
+export const metadata: Metadata = buildMetadata({
+  title: '页面未找到',
+  description: '你访问的页面不存在或已被移除,返回丹青有AI 首页继续浏览。',
+  path: '/',
+  noIndex: true,
+});
 
 /**
  * 404 页面(静态导出会生成 404.html)
