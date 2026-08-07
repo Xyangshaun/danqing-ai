@@ -515,9 +515,74 @@ curl -s https://www.danqing.site/health
 7. `server/.env` 新增 AI 图像生成配置:`AI_IMAGE_PROVIDER=glm`、`AI_IMAGE_API_KEY` 复用 GLM Key、`AI_IMAGE_API_URL=https://open.bigmodel.cn/api/paas/v4/images/generations`、`AI_IMAGE_API_MODEL=cogview-3`、`AI_IMAGE_TIMEOUT=30000`。
 
 **验证结果**:
-- 本地直接调用 `image-generation.service.ts` 生成水墨山水画,成功返回图片 URL,模型 `cogview-3`,耗时约 6.7s。
-- 前后端类型检查通过;相关单元测试(config-feature.service、generation.service、ai-vision.service、imageService)全部通过。
-- 生产部署后通过前端「灵感嫁接」页面点击「开始灵感嫁接」,成功返回真实 AI 生成图(待部署后验证)。
+
+#### 验证 1: 后端同步生成接口
+
+```bash
+# 生成测试 JWT(角色 student,租户 seed-tenant-school)
+node /var/www/danqing-ai/.tmp-gen-token.cjs
+
+# 调用同步生成接口
+TOKEN="<上一步输出的 token>"
+curl -s --max-time 60 -X POST https://www.danqing.site/api/v1/generation \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"inputType":"text","prompt":"Chinese ink wash painting, misty mountains, serene lake","artType":"painting","aspect":"square","count":1,"sync":true}'
+```
+
+**结果**: HTTP 200,返回真实智谱图片 URL,任务状态 `success`。示例响应:
+
+```json
+{
+  "taskId": "gen_xxxxxx",
+  "status": "success",
+  "images": [
+    {
+      "imageUrl": "https://maas-watermark-prod-new.cn-wlcb.ufileos.com/.../output.png",
+      "seed": 123456789,
+      "width": 1024,
+      "height": 1024
+    }
+  ]
+}
+```
+
+模型 `cogview-3`,端到端耗时约 6-10s(受网络和模型排队影响)。
+
+#### 验证 2: 前端灵感嫁接真实生成
+
+部署后访问 `https://www.danqing.site/app/fuse`,选择两张参考图并点击「开始灵感嫁接」。
+
+**结果**:
+- 浏览器 Network 面板观察到 `POST /api/v1/generation` 请求成功返回 `status: success`。
+- 结果卡片展示真实 AI 生成图(来自 `maas-watermark-prod-new.cn-wlcb.ufileos.com` 域名)。
+- 若后端生成失败,`imageService.ts` 自动回退到本地 SVG 占位图,页面不白屏。
+
+#### 验证 3: 情绪画布真实生成
+
+部署后访问 `https://www.danqing.site/app/emotion`,输入情绪关键词并点击「生成情绪画布」。
+
+**结果**:
+- `POST /api/v1/generation` 返回真实图片 URL。
+- 画布区域展示 AI 生成的情绪视觉化结果。
+
+#### 验证 4: 类型检查与测试
+
+```bash
+cd /var/www/danqing-ai
+npm run typecheck
+cd server && npm test
+```
+
+**结果**: 前后端类型检查通过;相关单元测试(config-feature.service、generation.service、ai-vision.service、imageService)全部通过。
+
+#### 验证 5: 功能开关状态
+
+```bash
+curl -s https://www.danqing.site/api/v1/config/features/generation
+```
+
+**结果**: 返回 `status: enabled`、`value: true`,真实 AI 生成功能默认上线。
 
 ## 11. 联系方式
 
