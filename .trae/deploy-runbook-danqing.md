@@ -198,6 +198,100 @@ ls -lh /home/ubuntu/backups/
 find /home/ubuntu/backups/ -name "danqing_ai_*.sql.gz" -mtime +7 -delete
 ```
 
+### 5.4 代码与配置回滚
+
+> 以下回滚命令对应 **2026-08-07 AI 视觉配置变更** 的备份点。
+> 回滚前请先确认备份文件存在，回滚后必须执行验证命令。
+
+#### A. 后端构建产物回滚
+
+```bash
+cd /var/www/danqing-ai/server
+
+# 1. 确认当前 dist 与备份存在
+ls -ld dist dist.bak-20260807-3
+
+# 2. 备份当前 dist(可选,仅当需要保留失败现场)
+cp -a dist dist.bak-20260807-rollback-$(date +%H%M%S)
+
+# 3. 用部署前备份替换当前 dist
+rm -rf dist
+mv dist.bak-20260807-3 dist
+
+# 4. 重启服务
+pm2 restart danqing-api
+
+# 5. 验证
+sleep 3
+curl -s https://www.danqing.site/health | python3 -m json.tool
+curl -s https://www.danqing.site/api/admin/system/ai-config \
+  -H "Authorization: Bearer <ADMIN_TOKEN>" \
+  -H "X-Client: admin" | python3 -m json.tool
+```
+
+#### B. 环境变量回滚
+
+```bash
+cd /var/www/danqing-ai/server
+
+# 1. 确认备份存在
+ls -l .env.bak-20260807-1
+
+# 2. 备份当前 .env
+cp .env .env.bak-rollback-$(date +%Y%m%d_%H%M%S)
+
+# 3. 恢复旧 .env
+cp .env.bak-20260807-1 .env
+
+# 4. 重启服务
+pm2 restart danqing-api
+
+# 5. 验证环境变量加载
+pm2 logs danqing-api --lines 20 | grep -E "(AI_API_KEY|AI_PROVIDER|AI_API_MODEL|assertRequired)"
+```
+
+#### C. Nginx 配置回滚
+
+```bash
+# 1. 确认备份存在
+ls -l /etc/nginx/conf.d/danqing.conf.bak-20260807-2
+
+# 2. 恢复配置
+sudo cp /etc/nginx/conf.d/danqing.conf.bak-20260807-2 /etc/nginx/conf.d/danqing.conf
+
+# 3. 检查配置语法
+sudo nginx -t
+
+# 4. 零中断重载
+sudo systemctl reload nginx
+
+# 5. 验证超时设置已恢复
+grep -E "proxy_(send|read)_timeout" /etc/nginx/conf.d/danqing.conf
+```
+
+#### D. 组合回滚(一键式)
+
+```bash
+#!/bin/bash
+set -e
+cd /var/www/danqing-ai/server
+
+# dist
+rm -rf dist && mv dist.bak-20260807-3 dist
+
+# .env
+cp .env .env.bak-rollback-$(date +%Y%m%d_%H%M%S)
+cp .env.bak-20260807-1 .env
+
+pm2 restart danqing-api
+
+# nginx
+sudo cp /etc/nginx/conf.d/danqing.conf.bak-20260807-2 /etc/nginx/conf.d/danqing.conf
+sudo nginx -t && sudo systemctl reload nginx
+
+echo "Rollback completed. Run health check to verify."
+```
+
 ## 6. 安全配置
 
 ### 6.1 SSH 加固
@@ -302,13 +396,21 @@ sudo docker system prune -f
 | DATABASE_URL | PG 连接 | postgresql://danqing:***@127.0.0.1:5432/danqing_ai |
 | REDIS_URL | Redis 连接 | redis://:***@127.0.0.1:6379 |
 | FEISHU_APP_ID | 飞书应用ID | cli_aaedf9c92cb8dd1f |
-| AI_API_KEY | GLM API Key | ⚠️ 占位符 (需替换) |
+| FEISHU_APP_SECRET | 飞书应用密钥 | *** |
+| FEISHU_REDIRECT_URI_WEB | 飞书 Web 回调地址 | https://www.danqing.site/auth/feishu/callback |
+| JWT_PRIVATE_KEY | JWT 私钥 | /var/www/danqing-ai/server/jwt-private.pem |
+| JWT_PUBLIC_KEY | JWT 公钥 | /var/www/danqing-ai/server/jwt-public.pem |
+| JWT_KEY_ID | JWT Key ID | *** |
+| AI_API_KEY | GLM API Key | fb5c...IPLTb (已配置) |
+| AI_API_URL | AI API 端点 | https://open.bigmodel.cn/api/paas/v4/chat/completions |
+| AI_API_MODEL | AI 模型 | glm-4.6v-flash |
+| COOKIE_SECURE | Cookie Secure | true |
 | COOKIE_DOMAIN | Cookie 域名 | .danqing.site |
 | CORS_ORIGINS | CORS 白名单 | https://www.danqing.site |
 
 ### 8.2 待办配置
 
-- [ ] 替换 AI_API_KEY 为真实 GLM-4V API Key
+- [x] 替换 AI_API_KEY 为真实 GLM-4V API Key (2026-08-07 已配置 glm-4.6v-flash)
 - [ ] 飞书 OAuth 回调地址在飞书开放平台配置为 https://www.danqing.site/auth/feishu/callback
 
 ## 9. 部署检查清单
@@ -332,7 +434,62 @@ sudo docker system prune -f
 - ✅ **门关上了**: iptables 限制 3000 + SSH prohibit-password + DB 绑定 127.0.0.1
 - ✅ **有人看着**: 健康检查每分钟 + 备份每日 + 磁盘监控每小时
 
-## 10. 联系方式
+## 10. 变更记录与验证结果
+
+### 10.1 2026-08-07 AI 视觉配置变更
+
+| 项 | 内容 |
+|----|------|
+| 变更人 | TRAE 部署助手 |
+| 变更范围 | 后端 AI 视觉服务、admin AI 配置测试接口、Nginx 超时配置、server/.env |
+| 相关文件 | `server/src/services/ai-vision.service.ts`、`server/src/controllers/admin-ai-config.controller.ts`、`deploy/nginx-site.conf`、`server/.env` |
+| 备份点 | `server/dist.bak-20260807-3`、`server/.env.bak-20260807-1`、`/etc/nginx/conf.d/danqing.conf.bak-20260807-2` |
+| 回滚章节 | [5.4 代码与配置回滚](#54-代码与配置回滚) |
+
+**变更摘要**:
+1. `ai-vision.service.ts` 修复 `isUrl` 函数，新增 `data:` 前缀识别，避免 data URL 被误判为本地文件。
+2. `ai-vision.service.ts` 将 `max_tokens` 从 1500 调整为 1024，适配智谱 GLM-4V 模型限制。
+3. `admin-ai-config.controller.ts` 将测试图片从 1x1 PNG data URL 替换为服务器真实图片 `/var/www/danqing-ai/website/images/gallery-hero.jpg`，避免模型返回 1210 图片解析错误。
+4. `deploy/nginx-site.conf` 将 `proxy_send_timeout` 与 `proxy_read_timeout` 从 10s 调整为 30s，适配 AI 模型实际 7-13s 响应延迟。
+5. `server/.env` 配置智谱 API Key，设置 `AI_PROVIDER=glm`、`AI_API_MODEL=glm-4.6v-flash`、`AI_API_TIMEOUT=15000`。
+
+### 10.2 验证结果
+
+#### 验证 1: Admin AI 配置测试接口
+
+```bash
+curl -s -X POST https://www.danqing.site/api/admin/system/ai-config/test \
+  -H "Authorization: Bearer <ADMIN_TOKEN>" \
+  -H "X-Client: admin" \
+  -H "Content-Type: application/json"
+```
+
+**结果**: `success: true`，返回 `AI 连通性测试通过`，`suggestionsCount: 3`，耗时约 7-13s。
+
+#### 验证 2: 端到端视觉分析流程
+
+通过 `_test_analysis.sh` 脚本上传测试图片并调用 `/api/v1/analyses` 接口。
+
+**结果**: 接口返回 HTTP 200，AI 分析结果包含构图、色彩、笔触等维度评分与专业建议，符合 `ProfessionalSuggestion` 结构（含 `evidence` 与 `priority` 字段）。
+
+#### 验证 3: Nginx 配置生效
+
+```bash
+grep -E "proxy_(send|read)_timeout" /etc/nginx/conf.d/danqing.conf
+# 输出: proxy_send_timeout 30s; proxy_read_timeout 30s;
+```
+
+**结果**: Nginx 超时设置已更新为 30s，配置语法检查通过，服务已重载。
+
+#### 验证 4: 服务健康状态
+
+```bash
+curl -s https://www.danqing.site/health
+```
+
+**结果**: 返回正常健康响应，服务运行稳定。
+
+## 11. 联系方式
 
 | 角色 | 联系方式 |
 |------|----------|
