@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useCallback, useRef, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, Filter, X, ExternalLink, Heart, Download, Grid3X3, List, Globe, RefreshCw, Tag, ChevronDown, Check, Loader2, ImageOff, ChevronUp, Sparkles, Package, PackagePlus, Trash2 } from 'lucide-react';
-import { loadBuiltinArtworks, getFilterCounts, resolveArtworkThumbUrl, type ArtworkItem, type FilterCounts } from '../services/artworksDatabase';
+import { loadBuiltinArtworks, getFilterCounts, resolveArtworkThumbUrl, resolveArtworkFallbackUrl, type ArtworkItem, type FilterCounts } from '../services/artworksDatabase';
 import { useToast } from '../components/ToastProvider';
 import { getFavorites, toggleFavorite as toggleFavoriteService } from '../services/data-service';
 import {
@@ -81,7 +81,8 @@ const ArtworkCard = memo(function ArtworkCard({
   eager = false,
 }: ArtworkCardProps) {
   const artworkImageUrl = useArtworkImage(artwork, 'thumb');
-  const { imgRef, loadedSrc, isLoaded, isError } = useLazyImage(artworkImageUrl, { eager });
+  const artworkFallbackUrl = useMemo(() => resolveArtworkFallbackUrl(artwork), [artwork]);
+  const { imgRef, loadedSrc, isLoaded, isError } = useLazyImage(artworkImageUrl, { eager, fallbackSrc: artworkFallbackUrl });
 
   return (
     <div
@@ -184,7 +185,8 @@ const ArtworkRow = memo(function ArtworkRow({
   eager = false,
 }: ArtworkCardProps) {
   const artworkImageUrl = useArtworkImage(artwork, 'thumb');
-  const { imgRef, loadedSrc, isLoaded, isError } = useLazyImage(artworkImageUrl, { eager });
+  const artworkFallbackUrl = useMemo(() => resolveArtworkFallbackUrl(artwork), [artwork]);
+  const { imgRef, loadedSrc, isLoaded, isError } = useLazyImage(artworkImageUrl, { eager, fallbackSrc: artworkFallbackUrl });
 
   return (
     <div
@@ -540,12 +542,16 @@ export default function MaterialsPage() {
      弹窗打开时图片在视口内,IntersectionObserver 立即触发加载。
      弹窗用 full 原图(列表卡片用 thumb 缩略图)。 */
   const selectedArtworkImageUrl = useArtworkImage(selectedArtwork, 'full');
+  const selectedArtworkFallbackUrl = useMemo(
+    () => (selectedArtwork ? resolveArtworkFallbackUrl(selectedArtwork) : undefined),
+    [selectedArtwork],
+  );
   const {
     imgRef: detailImgRef,
     loadedSrc: detailLoadedSrc,
     isLoaded: detailIsLoaded,
     isError: detailIsError,
-  } = useLazyImage(selectedArtworkImageUrl);
+  } = useLazyImage(selectedArtworkImageUrl, { fallbackSrc: selectedArtworkFallbackUrl });
 
   /* 相关推荐:按「共同标签数 × 10 + 同风格 3 + 同时代 2 + 同地区 1」打分排序,
      排除当前作品,取前 6 件。点击相关作品切换详情,弹窗滚回顶部。 */

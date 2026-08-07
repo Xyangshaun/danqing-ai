@@ -98,6 +98,8 @@ export interface LazyImageOptions {
   once?: boolean;
   /** 首屏直出:跳过 IntersectionObserver,立即加载真实 src,默认 false */
   eager?: boolean;
+  /** 兜底 src:真实 src 加载失败时自动切换(如本地生成的内联 SVG),默认无 */
+  fallbackSrc?: string;
 }
 
 export interface LazyImageResult {
@@ -152,6 +154,7 @@ export function useLazyImage(
     placeholder = DEFAULT_PLACEHOLDER,
     once = true,
     eager = false,
+    fallbackSrc,
   } = options;
 
   const observerRef = useRef<IntersectionObserver | null>(null);
@@ -315,6 +318,13 @@ export function useLazyImage(
     };
     const handleError = () => {
       if (srcMatches(el.src, activeSrcRef.current)) {
+        // 有兜底地址且当前失败的不是兜底本身:切换到兜底(如内联 SVG,零网络)
+        if (fallbackSrc && activeSrcRef.current !== fallbackSrc) {
+          logLazy('error-fallback', activeSrcRef.current);
+          activeSrcRef.current = fallbackSrc;
+          setLoadedSrc(fallbackSrc);
+          return;
+        }
         setIsError(true);
         setIsLoaded(false);
         logLazy('error', activeSrcRef.current);
@@ -343,7 +353,7 @@ export function useLazyImage(
       el.removeEventListener('load', handleLoad);
       el.removeEventListener('error', handleError);
     };
-  }, [loadedSrc, placeholder, srcMatches]);
+  }, [loadedSrc, placeholder, fallbackSrc, srcMatches]);
 
   return {
     imgRef,

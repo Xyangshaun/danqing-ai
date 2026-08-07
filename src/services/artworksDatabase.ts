@@ -217,6 +217,17 @@ export function getFilterCounts(items: ArtworkItem[] = getBuiltinArtworks()): Fi
   };
 }
 
+/**
+ * 根绝对路径(如 /images/...)补应用 base 前缀。
+ * 应用部署在 /app/ 子路径,浏览器直接请求 /images/... 会命中官网 SPA 兜底,
+ * 返回 text/html 导致图片解码失败。dev 下 BASE_URL='/' 时保持原样。
+ */
+function withAppBase(url: string): string {
+  if (!url.startsWith('/')) return url;
+  const base = import.meta.env.BASE_URL || '/';
+  return base === '/' ? url : base.replace(/\/$/, '') + url;
+}
+
 /** 将 __ARTWORK_IMAGE__:seed 协议解析为内联 SVG data URI */
 function resolveProtocolUrl(url: string, item: ArtworkItem): string {
   if (url.startsWith(ARTWORK_IMAGE_PREFIX)) {
@@ -229,7 +240,7 @@ function resolveProtocolUrl(url: string, item: ArtworkItem): string {
       size: 'landscape_4_3',
     });
   }
-  return url;
+  return withAppBase(url);
 }
 
 /** 为单个作品生成视觉化缩略图 URL */
@@ -248,6 +259,21 @@ export function resolveArtworkImageUrl(item: ArtworkItem): ArtworkItem {
 export function resolveArtworkThumbUrl(item: ArtworkItem): string {
   const raw = item.thumbUrl || item.imageUrl;
   return resolveProtocolUrl(raw, item);
+}
+
+/**
+ * 兜底图 URL:始终返回本地生成的内联 SVG(零网络,永不错裂)。
+ * 当真实 PNG/JPG 加载失败(404/网络异常)时,useLazyImage 自动切换到此地址,
+ * 保证演示场景下任何素材都有视觉呈现。seed 取作品 id,风格与标题保持一致。
+ */
+export function resolveArtworkFallbackUrl(item: ArtworkItem): string {
+  return artworkImage(item.id, {
+    category: item.category as ArtworkCategory,
+    style: item.style,
+    title: item.title,
+    subtitle: item.artist,
+    size: 'landscape_4_3',
+  });
 }
 
 /**
