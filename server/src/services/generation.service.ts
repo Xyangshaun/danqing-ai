@@ -13,7 +13,7 @@
 //   3. createGeneration:提交生成(配额→限流→校验输入→落库→入队/同步降级)
 //   4. getGeneration:查询任务(RBAC 数据范围过滤 + Redis 最新状态补充)
 //   5. processQueueOnce / processGenerationJob:Worker 处理(生命周期 + 审核 + 用量)
-//   6. handleReview:内容审核(简单黑名单 flagged 标记,M2-T8 完善)
+//   6. handleReview:内容审核(委托 content-review.service,M2-T8 完善规则/分类)
 //   7. recordUsage:用量日志(仅 generateImage 实际调用时记录)
 //   8. submitForAnalysis:教学闭环占位(依赖 analysis 模块,M2-T6 接线)
 //
@@ -29,6 +29,7 @@ import { tenantRepository } from '../repositories/tenant.repository.js';
 import { aiUsageRepository } from '../repositories/ai-usage.repository.js';
 import { generationQueueService, type GenerationJob } from './generation-queue.service.js';
 import { generateImage, resolveImageAIConfig, type ImageGenerationResult } from './image-generation.service.js';
+import { contentReviewService } from './content-review.service.js';
 import { configFeatureService } from './config-feature.service.js';
 import { analysisService } from './analysis.service.js';
 import { redis } from '../config/redis.js';
@@ -63,19 +64,6 @@ const GENERATION_PLAN_QUOTA: Record<Tenant['plan'], number> = {
  * 对应计划 §5.3(5 次/分钟)与契约 GENERATION_RATE_LIMITED
  */
 const RATE_LIMIT_WINDOW_SECONDS = 60;
-
-/**
- * 内容审核黑名单(简单占位实现,对应计划 §6.2;M2-T8 将接入 review.service 完善)
- * 命中黑名单关键词的生成内容标记为 flagged(存疑),不进入一键诊断
- */
-const CONTENT_BLACKLIST: readonly string[] = [
-  '血腥',
-  '暴力',
-  '色情',
-  '裸露',
-  '恐怖主义',
-  '违禁品',
-];
 
 class GenerationServiceClass {
   /**
@@ -286,7 +274,7 @@ class GenerationServiceClass {
       return;
     }
 
-    // 4. 内容审核:命中黑名单 → flagged,否则 pending(§6)
+    // 4. 内容审核:委托 content-review.service,命中规则 → rejected/flagged,否则 pending(§6)
     const images = this.handleReview(genResult.imageUrls, job.prompt);
 
     // 5. Redis 标记成功(供轮询加速;失败静默,不阻断 DB 落库)
@@ -499,28 +487,41 @@ class GenerationServiceClass {
   }
 
   /**
-   * 内容审核(对应计划 §6)
-   * review.service 仅承载评审记录,无内容审核函数,此处先实现简单审核:
-   *   - 命中黑名单关键词 → reviewStatus=flagged(存疑,不进入一键诊断)
-   *   - 未命中 → reviewStatus=pending(由 M2-T8 接入 review.service 完善人工复核)
+   * 内容审核(对应计划 §6,M2-T8 接入 content-review.service)
+   * 委托 contentReviewService.reviewGeneratedImage 完成关键词/语义规则审核,
+   * 复用现有 ReviewStatus(pending/flagged/rejected),与作品审核(admin-content)
+   * /评委评审(review.service)体系独立。
+   *
+   * 分类:
+   *   - 命中明确违禁规则 → reviewStatus=rejected(不进入一键诊断)
+   *   - 命中敏感/语义规则 → reviewStatus=flagged(前端灰显,进入人工复核挂点)
+   *   - 未命中任何规则 → reviewStatus=pending(待人工复核入口)
+   *
+   * 同一任务的生成图基于同一 prompt,故审核结果一致(reviewStatus 相同)。
+   * 命中的 reasons/ruleId 写入审计日志(契约 frozen,GeneratedImage 仅含
+   * imageUrl+reviewStatus,不新增字段)。
+   *
    * @param imageUrls 生成图 URL 列表
-   * @param prompt 生成提示词(用于黑名单过滤)
+   * @param prompt 生成提示词(用于关键词/语义规则审核)
    * @returns 标记审核状态的 GeneratedImage[]
    */
   private handleReview(imageUrls: string[], prompt?: string): GeneratedImage[] {
-    const flagged = this.isFlaggedContent(prompt);
-    return imageUrls.map((imageUrl) => ({
-      imageUrl,
-      reviewStatus: (flagged ? 'flagged' : 'pending') as GeneratedImage['reviewStatus'],
-    }));
-  }
-
-  /**
-   * 黑名单关键词匹配(简单占位实现,M2-T8 完善)
-   */
-  private isFlaggedContent(text?: string): boolean {
-    if (!text) return false;
-    return CONTENT_BLACKLIST.some((word) => text.includes(word));
+    const result = contentReviewService.reviewGeneratedImage(prompt);
+    // reasons/ruleId 用于审计追溯(契约 frozen,不写入 GeneratedImage,仅日志透出)
+    if (result.reasons.length > 0) {
+      logger.info(
+        {
+          action: 'generation.contentReview',
+          reviewStatus: result.reviewStatus,
+          reasons: result.reasons,
+          ruleId: result.ruleId,
+          needsManualReview: result.needsManualReview,
+        },
+        '[audit] generation content review',
+      );
+    }
+    const status = result.reviewStatus as GeneratedImage['reviewStatus'];
+    return imageUrls.map((imageUrl) => ({ imageUrl, reviewStatus: status }));
   }
 
   /**
