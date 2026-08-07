@@ -153,7 +153,48 @@ function IntroPaintings({ active }: { active: boolean }) {
   const rafRef = useRef<number | null>(null);
   const cacheRef = useRef<Array<{ el: HTMLElement; cx: number; cy: number }>>([]);
 
+  // ================ 性能日志状态(排查流畅度) ================
+  // 默认开发环境开启;生产需 URL 加 ?perf=1 临时打开。日志用 console.groupCollapsed
+  // 折叠,避免污染 console;关键指标:帧耗时、mousemove 触发间隔、显隐跨阈值延迟、cache 刷新耗时。
+  const perfEnabled = useRef(false);
+  const lastMoveLoggedAt = useRef(0); // 节流:mousemove 触发日志最大 200ms/次
+  const lastReveal = useRef<number[]>([]); // 每张画作上一次 reveal,用于跨阈值打点
+  const perfStats = useRef({
+    moveCount: 0,
+    lastMoveAt: 0,
+    moveGapMax: 0,
+    moveGapSum: 0,
+    frameCount: 0,
+    frameCostSum: 0,
+    frameCostMax: 0,
+    slowFrames: 0, // 单帧 loop 耗时 > 16ms
+    activeFrames: 0, // mouseActive=true 的帧数
+    emptyFrames: 0, // mouseActive=false 的"空跑"帧数
+    activatedAt: 0, // mouseActive 切换为 true 的时刻
+    firstRevealAt: 0, // 激活后第一张画作 reveal 跨过 0.5 的时刻
+    nextSummaryAt: 0, // 下一次汇总日志时间
+  });
+  // 单条折叠日志:展开后能看到完整触发链路
+  const perfLog = (title: string, payload?: Record<string, unknown>) => {
+    if (!perfEnabled.current || typeof console === 'undefined') return;
+    const t = performance.now();
+    // eslint-disable-next-line no-console
+    console.groupCollapsed(`[perf] ${title} @${t.toFixed(1)}ms`);
+    if (payload) {
+      // eslint-disable-next-line no-console
+      Object.entries(payload).forEach(([k, v]) => console.log(k, v));
+    }
+    // eslint-disable-next-line no-console
+    console.groupEnd();
+  };
+
   useEffect(() => {
+    // 1) 决定是否启用 perf 日志:开发环境默认开;生产需 ?perf=1
+    if (typeof window !== 'undefined') {
+      const isDev = process.env.NODE_ENV !== 'production';
+      const want = new URLSearchParams(window.location.search).get('perf') === '1';
+      perfEnabled.current = isDev || want;
+    }
     if (!active) return;
     const wrapper = wrapperRef.current;
     if (!wrapper) return;
@@ -162,8 +203,15 @@ function IntroPaintings({ active }: { active: boolean }) {
     const LERP = 0.14; // 跟随/淡出速度
     const BASE_OPACITY = 0.28; // 基础可见度(更克制)
     const BASE_BLUR = 3.5; // 基础模糊(更轻)
+    const SLOW_FRAME_MS = 16; // 60fps 单帧预算
+    const SUMMARY_INTERVAL_MS = 2000; // 每 2s 汇总一次帧指标
+    const MOVE_LOG_THROTTLE = 200; // mousemove 触发日志节流
+
+    // 初始化 lastReveal
+    lastReveal.current = new Array(INTRO_PAINTINGS.length).fill(0);
 
     const refreshCache = () => {
+      const t0 = performance.now();
       const items: Array<{ el: HTMLElement; cx: number; cy: number }> = [];
       wrapper.querySelectorAll<HTMLElement>('.intro-painting').forEach((el) => {
         const rect = el.getBoundingClientRect();
@@ -174,21 +222,108 @@ function IntroPaintings({ active }: { active: boolean }) {
         });
       });
       cacheRef.current = items;
+      const cost = performance.now() - t0;
+      perfLog('refreshCache', {
+        count: items.length,
+        costMs: +cost.toFixed(2),
+      });
     };
 
     const onMove = (e: MouseEvent | TouchEvent) => {
       const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
       const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+      const t = performance.now();
+      const wasActive = mouseRef.current.active;
       mouseRef.current = { x: clientX, y: clientY, active: true };
+
+      // 统计:触发计数 + 与上一次触发的间隔(用旧值算,再更新)
+      const s = perfStats.current;
+      let gapMs = 0;
+      s.moveCount += 1;
+      if (s.lastMoveAt > 0) {
+        gapMs = t - s.lastMoveAt;
+        s.moveGapSum += gapMs;
+        if (gapMs > s.moveGapMax) s.moveGapMax = gapMs;
+      }
+      s.lastMoveAt = t;
+
+      // 触发"激活"延迟:从 inactive 切到 active,记录时刻(用于算首张显隐延迟)
+      if (!wasActive) {
+        s.activatedAt = t;
+        s.firstRevealAt = 0;
+      }
+
+      // 节流打点:每 200ms 输出一条触发记录
+      if (t - lastMoveLoggedAt.current > MOVE_LOG_THROTTLE) {
+        lastMoveLoggedAt.current = t;
+        perfLog('mousemove', {
+          x: clientX,
+          y: clientY,
+          count: s.moveCount,
+          gapMsSinceLast: +gapMs.toFixed(2),
+          gapMax: +s.moveGapMax.toFixed(2),
+        });
+      }
     };
     const onLeave = () => {
+      const wasActive = mouseRef.current.active;
       mouseRef.current.active = false;
+      if (wasActive) {
+        const s = perfStats.current;
+        const t = performance.now();
+        if (s.activatedAt > 0 && s.firstRevealAt > 0) {
+          perfLog('mouseActive→false', {
+            activeDurationMs: +(t - s.activatedAt).toFixed(2),
+            firstRevealDelayMs: +(s.firstRevealAt - s.activatedAt).toFixed(2),
+            moveCount: s.moveCount,
+          });
+        }
+        // 离开时重置统计
+        s.activatedAt = 0;
+        s.firstRevealAt = 0;
+        s.lastMoveAt = 0;
+        s.moveGapMax = 0;
+        s.moveGapSum = 0;
+        s.moveCount = 0;
+        lastReveal.current = new Array(INTRO_PAINTINGS.length).fill(0);
+      }
     };
 
     const loop = () => {
+      const frameStart = performance.now();
       const { x, y, active: mouseActive } = mouseRef.current;
+      const s = perfStats.current;
 
-      for (const p of cacheRef.current) {
+      // 上一次帧耗时(用于上一帧结束点;当前帧数据在循环末尾汇总)
+      if (s.frameCount > 0 && frameStart - s.nextSummaryAt > SUMMARY_INTERVAL_MS) {
+        // 每 2s 输出一次帧统计
+        const avg = s.frameCostSum / s.frameCount;
+        perfLog('frame-summary', {
+          frames: s.frameCount,
+          avgCostMs: +avg.toFixed(2),
+          maxCostMs: +s.frameCostMax.toFixed(2),
+          slowFrames: s.slowFrames, // > 16ms
+          slowRatio: +(s.slowFrames / s.frameCount).toFixed(3),
+          activeFrames: s.activeFrames,
+          emptyFrames: s.emptyFrames,
+        });
+        s.frameCount = 0;
+        s.frameCostSum = 0;
+        s.frameCostMax = 0;
+        s.slowFrames = 0;
+        s.activeFrames = 0;
+        s.emptyFrames = 0;
+        s.nextSummaryAt = frameStart;
+      }
+      s.nextSummaryAt = s.nextSummaryAt || frameStart + SUMMARY_INTERVAL_MS;
+      s.frameCount += 1;
+      if (mouseActive) s.activeFrames += 1;
+      else s.emptyFrames += 1;
+
+      // =============== 画作显隐计算 ===============
+      const revealNow: number[] = [];
+      for (let i = 0; i < cacheRef.current.length; i += 1) {
+        const p = cacheRef.current[i];
         let reveal = 0;
         if (mouseActive) {
           const dist = Math.hypot(x - p.cx, y - p.cy);
@@ -197,6 +332,33 @@ function IntroPaintings({ active }: { active: boolean }) {
             reveal = Math.pow(reveal, 0.9);
           }
         }
+        revealNow.push(reveal);
+
+        // 跨阈值打点:0→0.5 记"进入高显区";0.5→0 记"离开高显区"
+        const prev = lastReveal.current[i] ?? 0;
+        if (prev < 0.5 && reveal >= 0.5) {
+          const t = performance.now();
+          if (s.activatedAt > 0 && s.firstRevealAt === 0) {
+            s.firstRevealAt = t;
+            perfLog('first-reveal-0.5', {
+              index: i,
+              alt: INTRO_PAINTINGS[i].alt,
+              delayMs: +(t - s.activatedAt).toFixed(2),
+            });
+          } else {
+            perfLog('reveal-in', {
+              index: i,
+              alt: INTRO_PAINTINGS[i].alt,
+              dist: +Math.hypot(x - p.cx, y - p.cy).toFixed(1),
+            });
+          }
+        } else if (prev >= 0.5 && reveal < 0.5) {
+          perfLog('reveal-out', {
+            index: i,
+            alt: INTRO_PAINTINGS[i].alt,
+          });
+        }
+        lastReveal.current[i] = reveal;
 
         const target = BASE_OPACITY + (1 - BASE_OPACITY) * reveal;
         const current = parseFloat(
@@ -212,9 +374,17 @@ function IntroPaintings({ active }: { active: boolean }) {
         p.el.style.setProperty('--p-blur', `${blur.toFixed(1)}px`);
       }
 
+      // =============== 帧渲染耗时统计 ===============
+      const frameEnd = performance.now();
+      const frameCost = frameEnd - frameStart;
+      s.frameCostSum += frameCost;
+      if (frameCost > s.frameCostMax) s.frameCostMax = frameCost;
+      if (frameCost > SLOW_FRAME_MS) s.slowFrames += 1;
+
       rafRef.current = requestAnimationFrame(loop);
     };
 
+    perfStats.current.nextSummaryAt = 0;
     refreshCache();
     window.addEventListener('resize', refreshCache);
     window.addEventListener('mousemove', onMove, { passive: true });
@@ -222,6 +392,7 @@ function IntroPaintings({ active }: { active: boolean }) {
     window.addEventListener('touchmove', onMove, { passive: true });
     window.addEventListener('touchend', onLeave);
     rafRef.current = requestAnimationFrame(loop);
+    perfLog('mount', { active: true, paintingCount: INTRO_PAINTINGS.length });
 
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
@@ -230,6 +401,7 @@ function IntroPaintings({ active }: { active: boolean }) {
       window.removeEventListener('mouseleave', onLeave);
       window.removeEventListener('touchmove', onMove);
       window.removeEventListener('touchend', onLeave);
+      perfLog('unmount');
     };
   }, [active]);
 

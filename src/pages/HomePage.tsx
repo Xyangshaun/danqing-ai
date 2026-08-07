@@ -96,6 +96,8 @@ export default function HomePage() {
   }, [user, tenant, draftsTick]);
 
   // 异步并行加载历史和成长数据：通过 data-service 自动选择数据源
+  // 依赖 user?.id:AuthProvider 异步恢复登录态后,user 从 undefined→对象,
+  // 需重试拉取(否则首屏挂载时 token 未恢复会拉空,后续不再重试)
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -113,7 +115,7 @@ export default function HomePage() {
       }
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [user?.id]);
 
   /* 每日名言（按日期取初始值，用户可手动切换） */
   const todayQuote = useMemo(() => artQuotes[quoteIndex] ?? artQuotes[0], [quoteIndex]);

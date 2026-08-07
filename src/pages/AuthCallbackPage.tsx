@@ -84,7 +84,7 @@ export default function AuthCallbackPage() {
           title: '授权已取消',
           desc: '您已取消飞书授权,请重新点击登录',
         });
-        scheduleRedirectToLogin(3000);
+        scheduleRedirectToLogin(1500);
         return;
       }
 
@@ -95,7 +95,7 @@ export default function AuthCallbackPage() {
           title: '回调参数缺失',
           desc: '未收到有效的授权码,请重新登录',
         });
-        scheduleRedirectToLogin(3000);
+        scheduleRedirectToLogin(1500);
         return;
       }
 
@@ -107,7 +107,8 @@ export default function AuthCallbackPage() {
         //   - 首次登录(isFirstLogin=true)→ /onboarding 选职业身份
         //   - 非首次登录 → /#/(首页)
         const target = result.isFirstLogin ? redirectToOnboarding : redirectToHome;
-        setTimeout(target, 800);
+        // 保留 100ms 让用户看到"登录成功"反馈即跳转(原 800ms 明显拖慢首屏)
+        setTimeout(target, 100);
       } catch (err) {
         setStatus('error');
         if (err instanceof ApiError) {
@@ -139,7 +140,7 @@ export default function AuthCallbackPage() {
             desc: '请检查网络连接后重试',
           });
         }
-        scheduleRedirectToLogin(3000);
+        scheduleRedirectToLogin(1500);
       }
     })();
   }, []);
@@ -212,7 +213,7 @@ export default function AuthCallbackPage() {
               <p className="font-serif text-lg text-ink-900">{errorInfo.title}</p>
               <p className="text-xs text-ink-500">{errorInfo.desc}</p>
             </div>
-            <p className="text-2xs text-ink-400">3 秒后自动返回登录页</p>
+            <p className="text-2xs text-ink-400">1.5 秒后自动返回登录页</p>
             <button
               type="button"
               onClick={redirectToLogin}

@@ -4,6 +4,7 @@ import { Navbar } from '@/components/layout/Navbar';
 import { Footer } from '@/components/layout/Footer';
 import { InkLoader } from '@/components/ui/InkLoader';
 import { InkCursor } from '@/components/ui/InkCursor';
+import { PaperBackground } from '@/components/background/PaperBackground';
 import { JsonLd } from '@/components/seo/JsonLd';
 import { SITE } from '@/lib/site';
 import { organizationJsonLd } from '@/lib/seo';
@@ -108,7 +109,7 @@ export default function RootLayout({
         {/* 组织结构化数据:全站注入 */}
         <JsonLd data={organizationJsonLd()} />
       </head>
-      <body className="min-h-screen flex flex-col antialiased">
+      <body className="min-h-screen flex flex-col antialiased depth-stage">
         {/* 无障碍:跳转到主内容 */}
         <a
           href="#main-content"
@@ -116,6 +117,8 @@ export default function RootLayout({
         >
           跳转到主内容
         </a>
+        {/* 画纸纹理背景(2.5D 远景层) — 永远在所有内容之下,提供"画纸在底,内容浮起"的景深 */}
+        <PaperBackground />
         <InkLoader />
         <InkCursor />
         <Navbar />

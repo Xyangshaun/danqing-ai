@@ -12,9 +12,10 @@ import { AuthProvider } from './context/AuthContext';
 import RequireAuth from './components/auth/RequireAuth';
 import PermissionToast from './components/auth/PermissionToast';
 import { useTheme } from './hooks/useTheme';
-import LoginPage from './pages/LoginPage';
-import RegisterPage from './pages/RegisterPage';
-import OnboardingPage from './pages/OnboardingPage';
+/* 鉴权相关页面懒加载(非首屏,按需加载以减小首屏 chunk) */
+const LoginPage = lazy(() => import('./pages/LoginPage'));
+const RegisterPage = lazy(() => import('./pages/RegisterPage'));
+const OnboardingPage = lazy(() => import('./pages/OnboardingPage'));
 /* 首页直接加载(首屏优先级最高) */
 import HomePage from './pages/HomePage';
 
@@ -230,31 +231,35 @@ function App() {
   return (
     <ToastProvider>
       <AuthProvider>
-        <Routes>
-          {/* 公开路由:登录页 + 注册页(无需鉴权) */}
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/register" element={<RegisterPage />} />
+        {/* 根 Suspense:覆盖懒加载的 LoginPage/RegisterPage/OnboardingPage。
+            AppLayout 内部路由已有独立 Suspense(L188),互不干扰。 */}
+        <Suspense fallback={<PageSkeleton variant="generic" />}>
+          <Routes>
+            {/* 公开路由:登录页 + 注册页(无需鉴权) */}
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/register" element={<RegisterPage />} />
 
-          {/* 受保护路由:新手引导(全屏,不走 AppLayout) */}
-          <Route
-            path="/onboarding"
-            element={
-              <RequireAuth>
-                <OnboardingPage />
-              </RequireAuth>
-            }
-          />
+            {/* 受保护路由:新手引导(全屏,不走 AppLayout) */}
+            <Route
+              path="/onboarding"
+              element={
+                <RequireAuth>
+                  <OnboardingPage />
+                </RequireAuth>
+              }
+            />
 
-          {/* 受保护路由:所有业务页面(RequireAuth 守卫) */}
-          <Route
-            path="/*"
-            element={
-              <RequireAuth>
-                <AppLayout />
-              </RequireAuth>
-            }
-          />
-        </Routes>
+            {/* 受保护路由:所有业务页面(RequireAuth 守卫) */}
+            <Route
+              path="/*"
+              element={
+                <RequireAuth>
+                  <AppLayout />
+                </RequireAuth>
+              }
+            />
+          </Routes>
+        </Suspense>
 
         {/* 权限不足提示(全局,所有路由可见;订阅 api.ts 的 403 事件) */}
         <PermissionToast />

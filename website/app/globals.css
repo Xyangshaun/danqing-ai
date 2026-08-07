@@ -27,19 +27,29 @@
   }
 
   body {
-    background-color: theme('colors.paper.DEFAULT');
+    /* 背景基色交给 <PaperBackground /> 处理(分层画纸纹理);
+       这里只保留 1px 极淡的纸缘渐变以兼容未挂载组件的页面。 */
+    background-color: theme('colors.paper.100');
     color: theme('colors.ink.DEFAULT');
     font-family: theme('fontFamily.sans');
-    /* 宣纸纹理:多层径向渐变 + 极淡噪点感 */
-    background-image:
-      radial-gradient(circle at 15% 20%, rgba(201, 169, 97, 0.05) 0%, transparent 35%),
-      radial-gradient(circle at 85% 75%, rgba(46, 92, 110, 0.04) 0%, transparent 40%),
-      radial-gradient(circle at 50% 50%, rgba(26, 26, 26, 0.015) 0%, transparent 60%);
-    background-attachment: fixed;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
   }
+
+  /* 全局透视舞台(2.5D 景深基线):让任何子元素可以安全地做微小 rotateX/Y */
+  .depth-stage {
+    perspective: 1600px;
+    perspective-origin: 50% 30%;
+  }
+  /* 远景层(背景画纸) */
+  .z-floor { transform: translateZ(0); }
+  /* 中景层(默认内容) */
+  .z-base { transform: translateZ(20px); }
+  /* 抬升层(强调卡片) */
+  .z-raise { transform: translateZ(40px); }
+  /* 浮起层(浮窗/CTA) */
+  .z-overlay { transform: translateZ(80px); }
 
   /* 标题:衬线 + 字重控制,营造书卷气 */
   h1, h2, h3, h4 {
@@ -165,25 +175,49 @@
     transform: translateY(-1px);
   }
 
-  /* 卡片:宣纸感 + 立体层次(多层阴影 + 内高光 + 渐变边框) */
+  /* 卡片:宣纸感 + 立体层次(多层阴影 + 内高光 + 渐变边框)
+     2.5D 升级:双层投影(近 + 远) + 微弱 0.5° 透视 + 接触阴影 ::after */
   .ink-card {
-    @apply relative overflow-hidden rounded-lg border border-ink-100/80 bg-paper-50/80 p-8 backdrop-blur-md transition-all duration-500 ease-ink;
+    @apply relative overflow-hidden rounded-lg border border-ink-100/80 bg-paper-50/85 p-8 backdrop-blur-md transition-all duration-500 ease-ink;
     background-image:
-      linear-gradient(180deg, rgba(255, 255, 255, 0.5) 0%, transparent 50%),
-      linear-gradient(180deg, rgba(250, 248, 243, 0.9) 0%, rgba(250, 248, 243, 0.7) 100%);
+      linear-gradient(180deg, rgba(255, 255, 255, 0.55) 0%, transparent 50%),
+      linear-gradient(180deg, rgba(250, 248, 243, 0.95) 0%, rgba(248, 244, 232, 0.85) 100%);
     box-shadow:
-      0 1px 0 rgba(255, 255, 255, 0.7) inset,
-      0 1px 2px rgba(26, 26, 26, 0.04),
-      0 4px 12px rgba(26, 26, 26, 0.05);
+      0 1px 0 rgba(255, 255, 255, 0.75) inset,
+      0 1px 2px rgba(26, 26, 26, 0.05),
+      0 6px 18px rgba(26, 26, 26, 0.06),
+      0 22px 48px -18px rgba(26, 26, 26, 0.08);
+    transform: translateZ(0) rotateX(0.3deg);
+    transform-style: preserve-3d;
+  }
+  /* 接触阴影:卡片下方的"落地影子",加深景深感 */
+  .ink-card::after {
+    content: '';
+    position: absolute;
+    left: 8%;
+    right: 8%;
+    bottom: -16px;
+    height: 24px;
+    background: radial-gradient(ellipse 60% 100% at 50% 50%, rgba(26, 26, 26, 0.12) 0%, transparent 70%);
+    filter: blur(6px);
+    opacity: 0.7;
+    pointer-events: none;
+    transition: opacity 0.5s theme('transitionTimingFunction.ink'),
+                bottom 0.5s theme('transitionTimingFunction.ink');
   }
   .ink-card:hover {
     box-shadow:
-      0 1px 0 rgba(255, 255, 255, 0.8) inset,
-      0 2px 4px rgba(26, 26, 26, 0.05),
-      0 12px 32px rgba(26, 26, 26, 0.08),
-      0 0 0 1px rgba(201, 169, 97, 0.12);
-    transform: translateY(-3px);
-    border-color: rgba(201, 169, 97, 0.3);
+      0 1px 0 rgba(255, 255, 255, 0.85) inset,
+      0 2px 4px rgba(26, 26, 26, 0.06),
+      0 14px 36px rgba(26, 26, 26, 0.1),
+      0 32px 64px -20px rgba(26, 26, 26, 0.12),
+      0 0 0 1px rgba(201, 169, 97, 0.18);
+    transform: translateY(-6px) translateZ(20px) rotateX(0.5deg);
+    border-color: rgba(201, 169, 97, 0.35);
+  }
+  .ink-card:hover::after {
+    opacity: 0.9;
+    bottom: -22px;
   }
 
   /* 玻璃卡片:现代半透明材质(用于强调内容) */
@@ -275,6 +309,94 @@
 }
 
 @layer utilities {
+  /* ========== 画纸纹理背景系统(2.5D 景深) ==========
+     组合使用:
+       <div class="paper-base" />          // 基础米黄 + 横向纤维
+       <div class="paper-noise" />         // SVG 噪点(微观质感)
+       <div class="paper-wash-tl" />       // 左上水墨晕染
+       <div class="paper-wash-br" />       // 右下水墨晕染
+       <div class="paper-vignette-top" />  // 顶部 vignette
+       <div class="paper-vignette-bot" />  // 底部 vignette
+     由 <PaperBackground /> 一次性组合渲染。 */
+
+  /* 1. 基础米黄 + 横向纤维 pattern(模拟宣纸帘纹) */
+  .paper-base {
+    background-color: #f7f2e3;
+    background-image:
+      repeating-linear-gradient(
+        0deg,
+        transparent 0,
+        transparent 3px,
+        rgba(160, 130, 70, 0.025) 3px,
+        rgba(160, 130, 70, 0.025) 4px
+      ),
+      repeating-linear-gradient(
+        90deg,
+        transparent 0,
+        transparent 5px,
+        rgba(120, 100, 60, 0.018) 5px,
+        rgba(120, 100, 60, 0.018) 6px
+      );
+  }
+
+  /* 2. SVG 噪点:feTurbulence 微观颗粒感,提升纸张真实度 */
+  .paper-noise {
+    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 220 220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.12  0 0 0 0 0.1  0 0 0 0 0.08  0 0 0 0.22 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-size: 220px 220px;
+    background-repeat: repeat;
+    opacity: 0.55;
+    mix-blend-mode: multiply;
+  }
+
+  /* 3. 左上水墨晕染(冷暖交界) */
+  .paper-wash-tl {
+    background: radial-gradient(
+      ellipse 70% 50% at 12% 8%,
+      rgba(46, 92, 110, 0.08) 0%,
+      rgba(46, 92, 110, 0.03) 30%,
+      transparent 65%
+    );
+  }
+
+  /* 4. 右下水墨晕染(暖金过渡) */
+  .paper-wash-br {
+    background: radial-gradient(
+      ellipse 65% 55% at 88% 92%,
+      rgba(201, 169, 97, 0.1) 0%,
+      rgba(168, 133, 74, 0.04) 30%,
+      transparent 65%
+    );
+  }
+
+  /* 5. 顶部 vignette:引导视线 + 配合固定导航 */
+  .paper-vignette-top {
+    background: linear-gradient(
+      to bottom,
+      rgba(26, 26, 26, 0.04) 0%,
+      rgba(26, 26, 26, 0.015) 40%,
+      transparent 100%
+    );
+    height: 120px;
+  }
+  .paper-vignette-bot {
+    background: linear-gradient(
+      to top,
+      rgba(26, 26, 26, 0.05) 0%,
+      rgba(26, 26, 26, 0.018) 40%,
+      transparent 100%
+    );
+    height: 140px;
+  }
+
+  /* 6. 装饰:中部水波晕染(可选用,给 Section 留白用) */
+  .paper-wash-mid {
+    background: radial-gradient(
+      ellipse 90% 35% at 50% 50%,
+      rgba(46, 92, 110, 0.05) 0%,
+      transparent 70%
+    );
+  }
+
   /* 水墨晕染容器 */
   .ink-wash-bg {
     background-image: radial-gradient(ellipse 80% 60% at 50% 0%, rgba(26, 26, 26, 0.05) 0%, transparent 70%);

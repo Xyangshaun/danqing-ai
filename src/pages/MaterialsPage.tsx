@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback, memo } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, Filter, X, ExternalLink, Heart, Download, Grid3X3, List, Globe, RefreshCw, Tag, ChevronDown, Check, Loader2, ImageOff, ChevronUp, Sparkles, Package, PackagePlus, Trash2 } from 'lucide-react';
 import { loadBuiltinArtworks, getFilterCounts, type ArtworkItem, type FilterCounts } from '../services/artworksDatabase';
@@ -52,9 +52,22 @@ interface ArtworkCardProps {
   onSendToFuse: (artwork: ArtworkItem) => void;
   onPickPack: (artwork: ArtworkItem) => void;
   onToggleFavorite: (id: string) => void;
+  /** 紧凑模式:用于详情弹窗「相关推荐」小卡片,缩小尺寸/字号并隐藏标签行 */
+  compact?: boolean;
 }
 
-/* 网格视图卡片 */
+/* ============================================================
+ * 网格视图卡片(Pinterest 风格瀑布流)
+ *
+ * 设计要点(任务 Pinterest 改造):
+ *   1. 图片按自然宽高比显示(w-full h-auto),不固定 aspect,
+ *      配合外层 CSS columns 实现真正的瀑布流
+ *   2. 悬停时叠加渐变遮罩 + 完整标题/艺术家/年份 + 前 3 个标签
+ *   3. 右上角悬浮操作按钮组(收藏/嫁接/入包),backdrop-blur 玻璃质感
+ *   4. 卡片圆角 + 阴影,鼠标悬停轻微上浮(translateY(-4px))
+ *   5. compact 模式供相关推荐复用,缩小尺寸但保持交互一致
+ *   6. 触屏设备(hover:none)下遮罩常驻显示,保证信息可达
+ * ============================================================ */
 const ArtworkCard = memo(function ArtworkCard({
   artwork,
   isFavorite,
@@ -62,22 +75,25 @@ const ArtworkCard = memo(function ArtworkCard({
   onSendToFuse,
   onPickPack,
   onToggleFavorite,
+  compact = false,
 }: ArtworkCardProps) {
   const artworkImageUrl = useArtworkImage(artwork);
   const { imgRef, loadedSrc, isLoaded, isError } = useLazyImage(artworkImageUrl);
 
   return (
     <div
-      className="bg-rice-50 rounded-2xl overflow-hidden shadow-card hover:shadow-card-hover transition-all group cursor-pointer"
+      className={`break-inside-avoid bg-rice-50 overflow-hidden shadow-card hover:shadow-card-hover transition-all duration-300 hover:-translate-y-1 group cursor-pointer ${
+        compact ? 'rounded-lg mb-2' : 'rounded-xl mb-4'
+      }`}
       onClick={() => onSelect(artwork)}
     >
-      <div className="aspect-[4/3] overflow-hidden relative bg-ink-100">
+      <div className={`relative bg-ink-100 overflow-hidden ${compact ? 'min-h-[120px]' : 'min-h-[180px]'}`}>
         {!isLoaded && !isError && (
           <SkeletonBox className="absolute inset-0 z-10" />
         )}
         {isError ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-rice-100">
-            <ImageOff className="w-10 h-10 text-ink-300 mb-2" />
+            <ImageOff className={`${compact ? 'w-6 h-6' : 'w-10 h-10'} text-ink-300 mb-2`} />
             <p className="text-xs text-ink-400">加载失败</p>
           </div>
         ) : (
@@ -86,67 +102,68 @@ const ArtworkCard = memo(function ArtworkCard({
             src={loadedSrc}
             alt={artwork.title}
             loading="lazy"
-            className={`w-full h-full object-cover group-hover:scale-105 transition-all duration-500 ${
-              isLoaded ? 'opacity-100' : 'opacity-0'
+            className={`w-full h-auto block transition-all duration-500 ${
+              isLoaded ? 'opacity-100 group-hover:scale-105' : 'opacity-0'
             }`}
           />
         )}
-        <div className="absolute inset-0 bg-gradient-to-t from-ink-900/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-        <div className="absolute top-3 left-3 flex gap-2">
-          <span className="px-2 py-0.5 bg-cinnabar/90 text-white text-xs rounded-full">
+
+        {/* Pinterest 风格悬停渐变遮罩 */}
+        <div className="absolute inset-0 bg-gradient-to-t from-ink-900/85 via-ink-900/25 to-transparent opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity duration-300 pointer-events-none" />
+
+        {/* 左上角分类徽章(常驻可见) */}
+        <div className="absolute top-2 left-2 flex gap-1.5 z-10">
+          <span className={`px-1.5 py-0.5 bg-cinnabar/90 text-white rounded-full ${compact ? 'text-2xs' : 'text-xs'}`}>
             {categoryNames[artwork.category] || artwork.category}
           </span>
-          <span className="px-2 py-0.5 bg-ink-900/70 text-white text-xs rounded-full">
-            {regionNames[artwork.region] || artwork.region}
-          </span>
         </div>
-        <div className="absolute bottom-3 left-3 right-3 flex items-end justify-between opacity-0 group-hover:opacity-100 transition-opacity">
-          <div className="flex gap-1 flex-wrap">
-            {artwork.tags.slice(0, 3).map((tag) => (
-              <span key={tag} className="px-2 py-0.5 bg-white/80 backdrop-blur-sm text-xs rounded-full text-ink-700">
-                {tag}
-              </span>
-            ))}
-          </div>
+
+        {/* 右上角悬浮操作按钮组 */}
+        <div className="absolute top-2 right-2 flex flex-col gap-1.5 z-20 opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity duration-300">
+          <button
+            onClick={(e) => { e.stopPropagation(); onToggleFavorite(artwork.id); }}
+            aria-label={isFavorite ? '取消收藏' : '收藏'}
+            aria-pressed={isFavorite}
+            title={isFavorite ? '取消收藏' : '收藏'}
+            className={`rounded-full backdrop-blur-md bg-white/25 text-white hover:bg-cinnabar/90 transition-colors ${compact ? 'p-1' : 'p-1.5'}`}
+          >
+            <Heart className={`${compact ? 'w-3 h-3' : 'w-3.5 h-3.5'} ${isFavorite ? 'fill-white' : ''}`} />
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); onSendToFuse(artwork); }}
+            aria-label="用于嫁接"
+            title="用于嫁接"
+            className={`rounded-full backdrop-blur-md bg-white/25 text-white hover:bg-cinnabar/90 transition-colors ${compact ? 'p-1' : 'p-1.5'}`}
+          >
+            <Sparkles className={compact ? 'w-3 h-3' : 'w-3.5 h-3.5'} />
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); onPickPack(artwork); }}
+            aria-label="加入素材包"
+            title="加入素材包"
+            className={`rounded-full backdrop-blur-md bg-white/25 text-white hover:bg-cinnabar/90 transition-colors ${compact ? 'p-1' : 'p-1.5'}`}
+          >
+            <PackagePlus className={compact ? 'w-3 h-3' : 'w-3.5 h-3.5'} />
+          </button>
         </div>
-      </div>
-      <div className="p-4">
-        <div className="flex items-start justify-between mb-2">
-          <div>
-            <h3 className="font-serif text-lg font-bold text-ink-900">{artwork.title}</h3>
-            <p className="text-sm text-ink-500">{artwork.artist} · {artwork.era}</p>
-          </div>
-          <div className="flex items-center gap-1">
-            <button
-              onClick={(e) => { e.stopPropagation(); onSendToFuse(artwork); }}
-              aria-label="用于嫁接"
-              className="p-1.5 rounded-full hover:bg-cinnabar/10 hover:text-cinnabar text-ink-400 transition-all"
-              title="用于嫁接"
-            >
-              <Sparkles className="w-4 h-4" />
-            </button>
-            <button
-              onClick={(e) => { e.stopPropagation(); onPickPack(artwork); }}
-              aria-label="加入素材包"
-              className="p-1.5 rounded-full hover:bg-cinnabar/10 hover:text-cinnabar text-ink-400 transition-all"
-              title="加入素材包"
-            >
-              <PackagePlus className="w-4 h-4" />
-            </button>
-            <button
-              onClick={(e) => { e.stopPropagation(); onToggleFavorite(artwork.id); }}
-              className="p-1.5 rounded-full hover:bg-rice-100 transition-all"
-              aria-label={isFavorite ? '取消收藏' : '收藏'}
-              aria-pressed={isFavorite}
-            >
-              <Heart className={`w-4 h-4 ${isFavorite ? 'text-cinnabar fill-cinnabar' : 'text-ink-400'}`} />
-            </button>
-          </div>
-        </div>
-        <p className="text-sm text-ink-600 line-clamp-2">{artwork.description}</p>
-        <div className="flex gap-2 mt-3 flex-wrap">
-          <span className="px-2 py-0.5 bg-rice-100 text-xs rounded-full text-ink-600">{artwork.style}</span>
-          {artwork.medium && <span className="px-2 py-0.5 bg-rice-100 text-xs rounded-full text-ink-600">{artwork.medium}</span>}
+
+        {/* 底部信息:完整标题/艺术家/年份 + 前 3 个标签(悬停显示) */}
+        <div className={`absolute inset-x-0 bottom-0 z-10 opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity duration-300 ${compact ? 'p-2' : 'p-3'}`}>
+          <h3 className={`font-serif font-bold text-white line-clamp-2 drop-shadow-sm ${compact ? 'text-sm' : 'text-base'}`}>
+            {artwork.title}
+          </h3>
+          <p className={`text-white/85 mt-0.5 truncate ${compact ? 'text-2xs' : 'text-xs'}`}>
+            {artwork.artist} · {artwork.year}
+          </p>
+          {!compact && (
+            <div className="flex gap-1 flex-wrap mt-1.5">
+              {artwork.tags.slice(0, 3).map((tag) => (
+                <span key={tag} className="px-1.5 py-0.5 bg-white/25 backdrop-blur-sm text-white text-2xs rounded-full">
+                  {tag}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -252,14 +269,21 @@ export default function MaterialsPage() {
   const [showAllTags, setShowAllTags] = useState(false);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [groupBy, setGroupBy] = useState<'none' | 'style' | 'era' | 'region'>('none');
+  // 艺术家筛选(多选):默认折叠,显示前 12 个(按作品数排序)
+  const [selectedArtists, setSelectedArtists] = useState<Set<string>>(new Set());
+  const [showAllArtists, setShowAllArtists] = useState(false);
 
   /* ---------- 素材数据状态 ---------- */
   const [artworks, setArtworks] = useState<ArtworkItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  /* ---------- 分页状态 ---------- */
+  /* ---------- 分页状态(无限滚动:page 递增,visibleArtworks 累积展示) ---------- */
   const PAGE_SIZE = 24;
   const [page, setPage] = useState(1);
+  // 无限滚动底部哨兵:IntersectionObserver 监听触底加载下一页
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  // 详情弹窗右侧滚动容器:切换相关作品时滚回顶部
+  const detailScrollRef = useRef<HTMLDivElement>(null);
 
   // 异步加载内置艺术作品库
   useEffect(() => {
@@ -429,6 +453,25 @@ export default function MaterialsPage() {
   // 显示的标签（折叠时只显示前12个）
   const displayedTags = showAllTags ? sortedTags : sortedTags.slice(0, 12);
 
+  // 统计每个艺术家的作品数量,用于筛选区按作品数排序展示
+  const artistCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    artworks.forEach((a) => {
+      counts[a.artist] = (counts[a.artist] || 0) + 1;
+    });
+    return counts;
+  }, [artworks]);
+
+  // 艺术家按作品数量降序排序
+  const sortedArtists = useMemo(() => {
+    return Object.entries(artistCounts)
+      .sort((a, b) => b[1] - a[1])
+      .map(([artist, count]) => ({ artist, count }));
+  }, [artistCounts]);
+
+  // 显示的艺术家(折叠时只显示前12个)
+  const displayedArtists = showAllArtists ? sortedArtists : sortedArtists.slice(0, 12);
+
   // 过滤作品
   const filteredArtworks = useMemo(() => {
     let results = [...artworks];
@@ -462,12 +505,16 @@ export default function MaterialsPage() {
       results = results.filter((a) => selectedRegions.has(a.region));
     }
 
+    if (selectedArtists.size > 0) {
+      results = results.filter((a) => selectedArtists.has(a.artist));
+    }
+
     if (selectedTags.size > 0) {
       results = results.filter((a) => a.tags.some((t) => selectedTags.has(t)));
     }
 
     return results;
-  }, [artworks, searchQuery, selectedCategories, selectedStyles, selectedEras, selectedRegions, selectedTags]);
+  }, [artworks, searchQuery, selectedCategories, selectedStyles, selectedEras, selectedRegions, selectedArtists, selectedTags]);
 
   // 切换收藏：通过 data-service 异步落库,本地状态同步更新
   const toggleFavorite = useCallback(async (id: string) => {
@@ -495,6 +542,35 @@ export default function MaterialsPage() {
     isError: detailIsError,
   } = useLazyImage(selectedArtworkImageUrl);
 
+  /* 相关推荐:按「共同标签数 × 10 + 同风格 3 + 同时代 2 + 同地区 1」打分排序,
+     排除当前作品,取前 6 件。点击相关作品切换详情,弹窗滚回顶部。 */
+  const relatedArtworks = useMemo<ArtworkItem[]>(() => {
+    if (!selectedArtwork) return [];
+    const currentTags = new Set(selectedArtwork.tags);
+    return artworks
+      .filter((a) => a.id !== selectedArtwork.id)
+      .map((a) => {
+        const sharedTags = a.tags.reduce((n, t) => n + (currentTags.has(t) ? 1 : 0), 0);
+        let score = sharedTags * 10;
+        if (a.style === selectedArtwork.style) score += 3;
+        if (a.era === selectedArtwork.era) score += 2;
+        if (a.region === selectedArtwork.region) score += 1;
+        return { a, score };
+      })
+      .sort((x, y) => y.score - x.score)
+      .slice(0, 6)
+      .map((s) => s.a);
+  }, [selectedArtwork, artworks]);
+
+  // 切换详情作品时,弹窗右侧滚动容器滚回顶部(切换相关作品体验)
+  // 守卫 typeof scrollTo === 'function':jsdom / 非滚动元素下避免抛错
+  useEffect(() => {
+    const el = detailScrollRef.current;
+    if (el && typeof el.scrollTo === 'function') {
+      el.scrollTo({ top: 0 });
+    }
+  }, [selectedArtwork]);
+
   const toggleSet = (
     value: string,
     setter: (fn: (prev: Set<string>) => Set<string>) => void
@@ -516,23 +592,45 @@ export default function MaterialsPage() {
     });
   };
 
-  // 筛选/搜索变化时重置到第一页
+  // 筛选/搜索变化时重置到第一页(无限滚动累积重新开始)
   useEffect(() => {
     setPage(1);
-  }, [searchQuery, selectedCategories, selectedStyles, selectedEras, selectedRegions, selectedTags]);
+  }, [searchQuery, selectedCategories, selectedStyles, selectedEras, selectedRegions, selectedArtists, selectedTags]);
 
-  // 分页后的作品(避免一次性渲染 9999 个 DOM 节点导致浏览器卡顿)
-  const paginatedArtworks = useMemo(() => {
-    const start = (page - 1) * PAGE_SIZE;
-    return filteredArtworks.slice(start, start + PAGE_SIZE);
+  // 累积展示的作品:page 递增时累积 slice(0, page*PAGE_SIZE),
+  // 而非每页 slice 替换 —— 实现无限滚动「向下加载更多」体验。
+  // 避免一次性渲染 9999 个 DOM 节点导致浏览器卡顿。
+  const visibleArtworks = useMemo(() => {
+    return filteredArtworks.slice(0, page * PAGE_SIZE);
   }, [filteredArtworks, page]);
 
-  const totalPages = Math.max(1, Math.ceil(filteredArtworks.length / PAGE_SIZE));
+  // 是否还有更多未加载作品(用于哨兵显隐与 IntersectionObserver 开关)
+  const hasMore = visibleArtworks.length < filteredArtworks.length;
+
+  // 无限滚动:IntersectionObserver 监听底部哨兵,触底时 page+1。
+  // 依赖 [hasMore, page] 让每次加载后重新建立观察:若哨兵仍在视口内(首屏未填满),
+  // 新观察器立即触发,继续加载下一页直到哨兵被推出视口或全部加载完。
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el) return;
+    if (typeof IntersectionObserver === 'undefined') return;
+    if (!hasMore) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          setPage((p) => p + 1);
+        }
+      },
+      { rootMargin: '300px' },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [hasMore, page]);
 
   const groupedArtworks = useMemo(() => {
-    if (groupBy === 'none') return { all: paginatedArtworks };
+    if (groupBy === 'none') return { all: visibleArtworks };
     const groups: Record<string, ArtworkItem[]> = {};
-    paginatedArtworks.forEach((artwork) => {
+    visibleArtworks.forEach((artwork) => {
       const key = groupBy === 'style' ? artwork.style :
                   groupBy === 'era' ? artwork.era :
                   regionNames[artwork.region] || artwork.region;
@@ -540,7 +638,7 @@ export default function MaterialsPage() {
       groups[key].push(artwork);
     });
     return groups;
-  }, [paginatedArtworks, groupBy]);
+  }, [visibleArtworks, groupBy]);
 
   const resetFilters = () => {
     setRawSearchQuery('');
@@ -548,6 +646,7 @@ export default function MaterialsPage() {
     setSelectedStyles(new Set());
     setSelectedEras(new Set());
     setSelectedRegions(new Set());
+    setSelectedArtists(new Set());
     setSelectedTags(new Set());
   };
 
@@ -557,6 +656,7 @@ export default function MaterialsPage() {
     selectedStyles.size +
     selectedEras.size +
     selectedRegions.size +
+    selectedArtists.size +
     selectedTags.size;
 
   // 初始化：通过 data-service 异步加载收藏列表
@@ -790,6 +890,36 @@ export default function MaterialsPage() {
             </div>
           </div>
 
+          {/* 艺术家筛选 */}
+          <div className="mb-4">
+            <div className="flex items-center gap-2 mb-2">
+              <Tag className="w-4 h-4 text-ink-500" />
+              <span className="text-sm font-medium text-ink-700">艺术家</span>
+              <span className="text-xs text-ink-400">（可多选）</span>
+              {sortedArtists.length > 12 && (
+                <button
+                  onClick={() => setShowAllArtists(!showAllArtists)}
+                  aria-label={showAllArtists ? '收起艺术家' : '展开全部艺术家'}
+                  className="ml-auto text-xs text-cinnabar hover:underline flex items-center gap-1"
+                >
+                  {showAllArtists ? '收起' : `展开全部 (${sortedArtists.length})`}
+                  <ChevronDown className={`w-3 h-3 transition-transform ${showAllArtists ? 'rotate-180' : ''}`} />
+                </button>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {displayedArtists.map(({ artist, count }) => (
+                <TagButton
+                  key={artist}
+                  label={artist}
+                  count={count}
+                  active={selectedArtists.has(artist)}
+                  onClick={() => toggleSet(artist, setSelectedArtists)}
+                />
+              ))}
+            </div>
+          </div>
+
           {/* 地区标签 */}
           <div className="mb-4">
             <div className="flex items-center gap-2 mb-2">
@@ -991,7 +1121,7 @@ export default function MaterialsPage() {
                   {!isCollapsed && (
                     <>
                       {viewMode === 'grid' ? (
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        <div className="columns-1 md:columns-3 lg:columns-4 xl:columns-5 gap-4">
                           {artworks.map((artwork) => (
                             <ArtworkCard
                               key={artwork.id}
@@ -1027,26 +1157,19 @@ export default function MaterialsPage() {
           </div>
         )}
 
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-center gap-3 mt-8">
-            <button
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              disabled={page === 1}
-              className="px-4 py-2 rounded-lg bg-white text-ink-700 text-sm disabled:opacity-40 hover:bg-rice-100 transition-all"
-            >
-              上一页
-            </button>
-            <span className="text-sm text-ink-600">
-              第 <span className="font-medium text-ink-900">{page}</span> / {totalPages} 页
-            </span>
-            <button
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              disabled={page === totalPages}
-              className="px-4 py-2 rounded-lg bg-white text-ink-700 text-sm disabled:opacity-40 hover:bg-rice-100 transition-all"
-            >
-              下一页
-            </button>
+        {/* 无限滚动哨兵 + 加载/结束提示 */}
+        {filteredArtworks.length > 0 && (
+          <div ref={sentinelRef} className="h-12 flex items-center justify-center mt-8" aria-live="polite">
+            {hasMore ? (
+              <div className="flex items-center gap-2 text-ink-500">
+                <Loader2 className="w-4 h-4 animate-spin text-cinnabar" />
+                <span className="text-sm">正在加载更多作品...</span>
+              </div>
+            ) : (
+              <span className="text-sm text-ink-400">
+                已加载全部 {filteredArtworks.length} 件作品
+              </span>
+            )}
           </div>
         )}
 
@@ -1081,7 +1204,7 @@ export default function MaterialsPage() {
                   <span className="px-2 py-1 bg-ink-900/80 text-white text-sm rounded-full">{regionNames[selectedArtwork.region] || selectedArtwork.region}</span>
                 </div>
               </div>
-              <div className="md:w-2/5 p-6 overflow-y-auto max-h-[40vh] md:max-h-[80vh]">
+              <div ref={detailScrollRef} className="md:w-2/5 p-6 overflow-y-auto max-h-[40vh] md:max-h-[80vh]">
                 <div className="flex items-start justify-between mb-4">
                   <div>
                     <h2 className="font-serif text-2xl font-bold text-ink-900">{selectedArtwork.title}</h2>
@@ -1151,8 +1274,32 @@ export default function MaterialsPage() {
                     className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-ink-900 text-white rounded-lg hover:bg-cinnabar transition-all"
                   >
                     <Download className="w-4 h-4" /><span className="text-sm font-medium">下载参考</span>
-                  </button>
+                </button>
                 </div>
+
+                {/* 相关推荐:按共同标签/同风格/同时代/同地区打分排序,点击切换详情 */}
+                {relatedArtworks.length > 0 && (
+                  <div className="mt-6">
+                    <p className="text-sm font-medium text-ink-700 mb-2 flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-cinnabar" />
+                      相关推荐
+                    </p>
+                    <div className="grid grid-cols-3 gap-2">
+                      {relatedArtworks.map((rel) => (
+                        <ArtworkCard
+                          key={rel.id}
+                          artwork={rel}
+                          isFavorite={favorites.has(rel.id)}
+                          onSelect={setSelectedArtwork}
+                          onSendToFuse={handleSendToFuse}
+                          onPickPack={setPackPickerArtwork}
+                          onToggleFavorite={toggleFavorite}
+                          compact
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>

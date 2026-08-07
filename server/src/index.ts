@@ -33,6 +33,8 @@ import app from './app.js';
 import { generationWorker } from './services/generation-worker.service.js';
 import { configFeatureService } from './services/config-feature.service.js';
 import { redisMetrics } from './services/redis-metrics.service.js';
+// M3-T8:可观测性指标告警调度器(每分钟 evaluateAndAlert;alerting 开关默认关闭,开启后生效)
+import { metricsAggregationService } from './services/metrics-aggregation.service.js';
 
 /**
  * 启动服务器(主入口)
@@ -100,6 +102,26 @@ async function startServer(): Promise<void> {
   // 4b. Redis 指标定时日志(间隔由 REDIS_METRICS_LOG_INTERVAL_MS 控制,默认 30s)
   // 对应文档:redis-brpop-fix-2026-08-07.md §7 后续改进
   redisMetrics.startLogInterval(env().redisMetricsLogIntervalMs);
+
+  // 4c. 可观测性指标告警调度器(M3-T8)
+  // 每分钟 evaluateAndAlert:构造近 1 分钟快照 → alert.service 阈值判定
+  // fail-safe:evaluateAndAlert 内部 catch swallow,不阻断主链路(门禁 M3-4)
+  // alerting 开关默认 disabled;开启前先显式 hydration,确保读到 Redis 灰度覆盖
+  let metricsAlertTimer: NodeJS.Timeout | null = null;
+  try {
+    await configFeatureService.getFeature('alerting');
+    if (configFeatureService.isAlertingEnabled()) {
+      metricsAlertTimer = setInterval(() => {
+        void metricsAggregationService.evaluateAndAlert();
+      }, 60 * 1000);
+      logger.info('[startup] metrics alert scheduler started (alerting enabled)');
+    } else {
+      logger.info('[startup] metrics alert scheduler not started (alerting disabled)');
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.warn({ err: msg }, '[startup] metrics alert scheduler start skipped');
+  }
 
   // 5. HTTP 服务(由 app.ts 已构建)
   const server = http.createServer(app);

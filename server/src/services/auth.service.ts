@@ -200,23 +200,36 @@ class AuthServiceClass {
     refreshToken: string,
     client: 'web' | 'admin' | 'mobile' = 'web',
   ): Promise<AuthRefreshResponse> {
+    // ===== 性能埋点(临时,用于定位 5 秒延迟瓶颈)=====
+    const t0 = performance.now();
+    const stepTimings: Record<string, number> = {};
+
     // 1+2+3. JWT 校验 + 黑名单 + Session 表校验
-    let validateResult;
+    let session: import('@prisma/client').Session;
+    let oldJti: string;
     try {
-      validateResult = await sessionService.validateRefreshToken(refreshToken);
+      const t1 = performance.now();
+      const r = await sessionService.validateRefreshToken(refreshToken);
+      stepTimings.validateRefreshToken = Math.round((performance.now() - t1) * 100) / 100;
+      session = r.session;
+      oldJti = r.jti;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       logger.warn({ err: msg }, '[auth] refresh validation failed');
       throw new BusinessError(ErrorCode.REFRESH_TOKEN_INVALID, 'refresh_token 无效,请重新登录', 401);
     }
-    const { session, jti: oldJti } = validateResult;
 
     // 4. 读取用户最新信息(从 DB 重新读取权限,对应 auth-design.md §2.2)
+    const tUser = performance.now();
     const user = await userRepository.findById(session.userId);
+    stepTimings.userFindById = Math.round((performance.now() - tUser) * 100) / 100;
     if (!user) {
       throw new BusinessError(ErrorCode.REFRESH_TOKEN_INVALID, 'refresh_token 无效,请重新登录', 401);
     }
+
+    const tTenant = performance.now();
     const tenant = await tenantRepository.findById(user.tenantId);
+    stepTimings.tenantFindById = Math.round((performance.now() - tTenant) * 100) / 100;
     if (!tenant) {
       throw new BusinessError(ErrorCode.TENANT_NOT_FOUND, '租户不存在', 404);
     }
@@ -225,6 +238,7 @@ class AuthServiceClass {
     }
 
     // 5. 签发新 access_token + 新 refresh_token(滚动)
+    const tJwt = performance.now();
     const accessResult = jwtService.issueAccessToken({
       userId: user.id,
       tenantId: tenant.id,
@@ -238,8 +252,10 @@ class AuthServiceClass {
       userId: user.id,
       client,
     });
+    stepTimings.jwtIssue = Math.round((performance.now() - tJwt) * 100) / 100;
 
     // 6. 滚动:旧 jti 入黑名单 + 更新 Session.refreshTokenHash + 更新 Redis
+    const tRotate = performance.now();
     await sessionService.rotateRefreshToken({
       oldRefreshToken: refreshToken,
       oldJti,
@@ -249,8 +265,17 @@ class AuthServiceClass {
       tenantId: session.tenantId,
       expiresAt: refreshResult.expiresAt,
     });
+    stepTimings.rotateRefreshToken = Math.round((performance.now() - tRotate) * 100) / 100;
 
-    logger.info({ userId: user.id }, '[auth] refresh success');
+    const totalMs = Math.round((performance.now() - t0) * 100) / 100;
+    logger.info(
+      {
+        userId: user.id,
+        totalMs,
+        ...stepTimings,
+      },
+      '[auth] refresh success (perf trace)',
+    );
 
     return {
       accessToken: accessResult.token,
