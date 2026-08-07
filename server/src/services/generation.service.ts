@@ -81,8 +81,10 @@ class GenerationServiceClass {
     tenantId: string;
     userId: string;
     body: CreateGenerationRequest;
+    /** M3 全链路 traceId(traceMiddleware 注入,透传到 AiUsageLog) */
+    traceId?: string;
   }): Promise<CreateGenerationResponse> {
-    const { tenantId, userId, body } = params;
+    const { tenantId, userId, body, traceId } = params;
 
     // 0. 生成功能开关校验(M2-T6,对应计划 §9/门禁 M2-4)
     // 生成功能默认关闭,经 /api/v1/config/features/:featureId 灰度开启
@@ -130,6 +132,7 @@ class GenerationServiceClass {
       aspect: body.aspect ?? 'square',
       count,
       enqueuedAt: new Date().toISOString(),
+      traceId,
     };
 
     // 6. 同步模式优先(前端快速体验):直接处理并返回最终状态,不入队
@@ -552,6 +555,9 @@ class GenerationServiceClass {
         // 图像生成无 token 定价模型,成本估算为 null(后续 M2-T10 可细化)
         costYuan: null,
         failureReason: genResult.failureReason,
+        // M3 可观测性:记录是否降级 + traceId 全链路贯通
+        usedFallback: genResult.usedFallback,
+        traceId: job.traceId ?? null,
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

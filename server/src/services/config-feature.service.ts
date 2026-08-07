@@ -72,6 +72,33 @@ const FEATURE_DEFINITIONS: readonly FeatureDefinition[] = [
     defaultStatus: 'disabled',
     defaultValue: 0,
   },
+  // M3 可观测性(对应 m3-observability-plan §6.2 灰度发布)
+  // 三个开关相互独立:metrics(指标接口)可单独开启,alerting(告警)可单独开启,
+  // trace_id_log(traceId 写入)可单独开启。建议灰度顺序:metrics → alerting → trace_id_log。
+  {
+    featureId: 'metrics',
+    name: '可观测性指标接口',
+    description: '/api/admin/metrics/* 指标接口灰度(默认关闭,按租户百分比灰度开启)',
+    type: 'percentage',
+    defaultStatus: 'disabled',
+    defaultValue: 0,
+  },
+  {
+    featureId: 'alerting',
+    name: '告警通道',
+    description: '指标阈值告警通道(默认关闭,全量或按租户开启;关闭时 fail-closed 不触发)',
+    type: 'boolean',
+    defaultStatus: 'disabled',
+    defaultValue: false,
+  },
+  {
+    featureId: 'trace_id_log',
+    name: 'AiUsageLog traceId 贯通',
+    description: 'traceId 写入 AiUsageLog(默认关闭,灰度开启,避免一次性写满 traceId 字段)',
+    type: 'boolean',
+    defaultStatus: 'disabled',
+    defaultValue: false,
+  },
 ];
 
 /**
@@ -267,6 +294,30 @@ class ConfigFeatureServiceClass {
    */
   isGenerationEnabled(tenantId?: string): boolean {
     return this.isEnabled('generation', tenantId);
+  }
+
+  /**
+   * 可观测性指标接口开关(M3;默认关闭)
+   * @param tenantId 可选;传值按租户灰度判定
+   */
+  isMetricsEnabled(tenantId?: string): boolean {
+    return this.isEnabled('metrics', tenantId);
+  }
+
+  /**
+   * 告警通道开关(M3;默认关闭,fail-closed)
+   * @param tenantId 可选;传值按租户判定
+   */
+  isAlertingEnabled(tenantId?: string): boolean {
+    return this.isEnabled('alerting', tenantId);
+  }
+
+  /**
+   * AiUsageLog traceId 贯通开关(M3;默认关闭,灰度开启)
+   * @param tenantId 可选;传值按租户判定
+   */
+  isTraceIdLogEnabled(tenantId?: string): boolean {
+    return this.isEnabled('trace_id_log', tenantId);
   }
 
   /**

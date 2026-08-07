@@ -117,6 +117,9 @@ import {
   getAiUsageTrend,
 } from '../controllers/admin-ai-usage.controller.js';
 
+// M3 可观测性:AI 指标(METRICS_DATA_UNAVAILABLE 9201 / AI_METRICS 契约已冻结)
+import { getMetricsAi, getMetricsSla } from '../controllers/metrics.controller.js';
+
 export const adminRouter: Router = Router();
 
 // ---------- 全局中间件(所有 /api/admin/* 路由必须经过鉴权 + 租户校验 + 限流)----------
@@ -278,6 +281,16 @@ adminRouter.get('/stats/ai-usage/by-user', requirePermission('admin:stats:read')
 
 // GET /api/admin/stats/ai-usage/trend - 按日期趋势(最近 N 天)
 adminRouter.get('/stats/ai-usage/trend', requirePermission('admin:stats:read'), getAiUsageTrend);
+
+// ============================================================
+// M3 可观测性:AI 指标(契约已冻结,api-contract.ts §3.18)
+//   GET /api/admin/metrics/ai  → AiMetricsResponse(冻结)
+//   GET /api/admin/metrics/sla → SlaMetricsResponse(冻结)
+//   特性开关 metrics 默认 disabled,关闭时 controller 返回 403
+//   多租户隔离:非平台 owner 传他人 tenantId → 403(门禁 M3-3)
+// ============================================================
+adminRouter.get('/metrics/ai', requirePermission('admin:stats:read'), getMetricsAi);
+adminRouter.get('/metrics/sla', requirePermission('admin:stats:read'), getMetricsSla);
 
 // GET /api/admin/stats/realtime - 实时监控(不缓存)
 adminRouter.get('/stats/realtime', requirePermission('admin:stats:read'), getStatsRealtime);

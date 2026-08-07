@@ -42,6 +42,12 @@ export default [
         access: 'canStatsRead',
       },
       {
+        path: '/dashboard/observability',
+        name: '可观测性',
+        component: './dashboard/observability',
+        access: 'canStatsRead',
+      },
+      {
         path: '/dashboard/tenant',
         name: '租户下钻',
         component: './dashboard/tenant',

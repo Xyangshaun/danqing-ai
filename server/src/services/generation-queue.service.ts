@@ -73,6 +73,8 @@ export interface GenerationJob {
   count?: number;
   /** 入队时间(ISO 8601) */
   enqueuedAt: string;
+  /** 全链路 traceId(M3 可观测性;由 traceMiddleware 注入,写入 AiUsageLog.traceId) */
+  traceId?: string;
 }
 
 /**

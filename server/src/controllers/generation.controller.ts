@@ -109,6 +109,7 @@ export const createGeneration: RequestHandler = async (req, res, next) => {
       tenantId: req.tenantId,
       userId: req.userId,
       body: parsed.data,
+      traceId: req.traceId,
     });
 
     logger.debug(

@@ -767,6 +767,10 @@ model AiUsageLog {
   usageType        String   @default("diagnose") @map("usage_type") @db.VarChar(16)
   // generate 类型关联的生成任务 ID(诊断为 null)
   generationId     String?  @map("generation_id")
+  // 是否经降级(M3 可观测性:双提供商降级/主提供商切换标记,默认 false;M3-T1)
+  usedFallback     Boolean  @default(false) @map("used_fallback")
+  // traceId 全链路贯通(M3 可观测性:HTTP 请求 traceId,可空;trace_id_log 开关灰度写入)
+  traceId          String?  @map("trace_id") @db.VarChar(64)
   createdAt        DateTime @default(now()) @map("created_at")
 
   @@index([tenantId, createdAt], map: "ai_usage_logs_tenant_id_created_at_idx")

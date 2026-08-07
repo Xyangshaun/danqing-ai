@@ -143,6 +143,22 @@ export interface EnvConfig {
   alertMaxRetries: number;
   /** 同一组件同级别告警最小间隔(毫秒),防止邮件轰炸 */
   alertMinIntervalMs: number;
+
+  // M3 可观测性(M3-T3 env 阈值变量;全部带默认值,缺失不报错,向后兼容)
+  /** 指标 Redis 缓存 TTL(秒,默认 300) */
+  metricsCacheTtlSeconds: number;
+  /** SLA 达标阈值(毫秒,默认 3000,硬约束 3 秒) */
+  metricsSlaThresholdMs: number;
+  /** AI 降级率告警阈值(0-1,默认 0.1) */
+  alertAiFallbackRateThreshold: number;
+  /** SLA 达标率告警阈值(0-1,低于此值告警,默认 0.99) */
+  alertSlaComplianceRateThreshold: number;
+  /** 告警静默窗口(分钟,默认 30,防重复告警) */
+  alertSilenceMinutes: number;
+  /** 飞书告警 webhook URL(留空则仅写 alerts.log) */
+  alertFeishuWebhookUrl: string;
+  /** 飞书 webhook 签名密钥(可选) */
+  alertFeishuSecret: string;
 }
 
 function parseBoolean(value: string | undefined, defaultValue: boolean): boolean {
@@ -155,6 +171,15 @@ function parseInteger(value: string | undefined, defaultValue: number): number {
   const parsed = Number.parseInt(value, 10);
   if (Number.isNaN(parsed)) {
     throw new Error(`env parse failed: expected integer, got "${value}"`);
+  }
+  return parsed;
+}
+
+function parseFloat(value: string | undefined, defaultValue: number): number {
+  if (value === undefined || value === '') return defaultValue;
+  const parsed = Number.parseFloat(value);
+  if (Number.isNaN(parsed)) {
+    throw new Error(`env parse failed: expected float, got "${value}"`);
   }
   return parsed;
 }
@@ -439,6 +464,15 @@ export function loadEnv(): EnvConfig {
     alertFrom: env.ALERT_FROM ?? '2692963779@qq.com',
     alertMaxRetries: parseInteger(env.ALERT_MAX_RETRIES, 3),
     alertMinIntervalMs: parseInteger(env.ALERT_MIN_INTERVAL_MS, 300000),
+
+    // M3 可观测性(全部带默认值,缺失不报错,向后兼容;对应 m3-observability-plan §2.4)
+    metricsCacheTtlSeconds: parseInteger(env.METRICS_CACHE_TTL_SECONDS, 300),
+    metricsSlaThresholdMs: parseInteger(env.METRICS_SLA_THRESHOLD_MS, 3000),
+    alertAiFallbackRateThreshold: parseFloat(env.ALERT_AI_FALLBACK_RATE_THRESHOLD, 0.1),
+    alertSlaComplianceRateThreshold: parseFloat(env.ALERT_SLA_COMPLIANCE_RATE_THRESHOLD, 0.99),
+    alertSilenceMinutes: parseInteger(env.ALERT_SILENCE_MINUTES, 30),
+    alertFeishuWebhookUrl: env.ALERT_FEISHU_WEBHOOK_URL ?? '',
+    alertFeishuSecret: env.ALERT_FEISHU_SECRET ?? '',
   };
 }
 

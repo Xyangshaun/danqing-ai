@@ -557,6 +557,59 @@ export interface AdminTenantStats {
   avgScore: number;
 }
 
+// ============ 可观测性(metrics) ============
+
+/** 单一提供商可用性(glm/trae) */
+export interface MetricsProviderAvailability {
+  /** 成功率 0-1 */
+  successRate: number;
+  /** 切换次数 */
+  switchCount: number;
+}
+
+/** AI 生成可观测性指标(GET /api/admin/metrics/ai) */
+export interface AiMetricsResponse {
+  startDate: ISODateString;
+  endDate: ISODateString;
+  /** SLA 达标率 0-1 */
+  slaComplianceRate: number;
+  /** AI 降级率 0-1 */
+  aiFallbackRate: number;
+  /** 双提供商可用性 */
+  providerAvailability: {
+    glm: MetricsProviderAvailability;
+    trae: MetricsProviderAvailability;
+  };
+  /** 分析任务 */
+  analysis: {
+    total: number;
+    /** 成功率 0-1 */
+    successRate: number;
+    /** 平均耗时 ms */
+    avgDurationMs: number;
+  };
+  /** 逐日成本 */
+  costByDay: Array<{ date: string; costYuan: number }>;
+  timestamp: ISODateString;
+}
+
+/** SLA 逐日单点 */
+export interface SlaDailyPoint {
+  date: string;
+  /** 达标率 0-1 */
+  complianceRate: number;
+  /** 当日请求总数 */
+  total: number;
+}
+
+/** SLA 指标(GET /api/admin/metrics/sla?days=N) */
+export interface SlaMetricsResponse {
+  days: number;
+  dailySla: SlaDailyPoint[];
+  /** 平均达标率 0-1 */
+  avgComplianceRate: number;
+}
+
 // ============ 系统管理 ============
 
 export interface AdminTenantListItem {

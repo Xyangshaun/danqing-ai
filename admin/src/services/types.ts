@@ -62,6 +62,11 @@ export type {
   AdminStatsAiCostResponse,
   AdminStatsRealtime,
   AdminTenantStats,
+  // 可观测性
+  MetricsProviderAvailability,
+  AiMetricsResponse,
+  SlaDailyPoint,
+  SlaMetricsResponse,
   // 系统
   ListAdminTenantsQuery,
   ListAdminTenantsResponse,

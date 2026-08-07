@@ -226,6 +226,9 @@ export interface MockAiUsageLog {
   failureReason: string | null;
   usageType: string; // 'diagnose' | 'generate'
   generationId: string | null;
+  // M3 可观测性:是否经降级 + traceId 全链路贯通(对齐 schema.prisma)
+  usedFallback: boolean;
+  traceId: string | null;
   createdAt: Date;
 }
 
@@ -876,6 +879,8 @@ class PrismaMock {
       failureReason: null,
       usageType: 'diagnose',
       generationId: null,
+      usedFallback: false,
+      traceId: null,
     },
   );
 
@@ -1133,6 +1138,8 @@ class PrismaMock {
       failureReason: null,
       usageType: 'diagnose',
       generationId: null,
+      usedFallback: false,
+      traceId: null,
       createdAt: new Date(),
       ...log,
     };

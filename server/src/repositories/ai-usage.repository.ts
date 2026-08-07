@@ -9,7 +9,56 @@
 
 import { Prisma } from '@prisma/client';
 import { prisma } from '../config/prisma.js';
+import { env } from '../config/env.js';
 import type { AiUsageType } from '../types/api-contract.js';
+
+/**
+ * 用量类型过滤(M3 聚合方法;'all' 表示合并 diagnose+generate)
+ */
+export type UsageTypeFilter = AiUsageType | 'all';
+
+/**
+ * M3 聚合方法通用过滤条件
+ *  - tenantId:多租户隔离(由调用方注入;非平台 owner 强制本人租户)
+ *  - usageType:按用量类型过滤('all' 表示合并 diagnose+generate)
+ *  - 所有条件均以 Prisma 参数化拼接,杜绝 SQL 注入
+ */
+export interface MetricsWhereOpts {
+  tenantId?: string;
+  usageType?: UsageTypeFilter;
+}
+
+/** SLA 达标聚合结果(durationMs ≤ 阈值 占比) */
+export interface SlaComplianceResult {
+  total: number;
+  compliant: number;
+  complianceRate: number;
+}
+
+/** AI 降级率聚合结果(usedFallback=true 占比 + 细分) */
+export interface FallbackRateResult {
+  total: number;
+  fallbackCount: number;
+  fallbackRate: number;
+  details: {
+    /** Jimp-only 降级:调用失败回退(失败原因含 timeout/http_error/parse_error) */
+    jimpOnly: number;
+    /** 模板建议降级:AI 未启用/key 缺失(失败原因含 no_api_key/ai_disabled/key_missing) */
+    templateSuggestion: number;
+    /** 主提供商切换降级:usedFallback=true 且实际调用过某 provider */
+    providerSwitch: number;
+  };
+}
+
+/** 双提供商可用性 */
+export interface ProviderAvailabilityEntry {
+  successRate: number;
+  switchCount: number;
+}
+export interface ProviderAvailability {
+  glm: ProviderAvailabilityEntry;
+  trae: ProviderAvailabilityEntry;
+}
 
 /**
  * 创建 AI 用量日志的输入参数
@@ -36,6 +85,10 @@ export interface CreateAiUsageLogInput {
   usageType?: AiUsageType;
   /** generate 类型关联的生成任务 ID(诊断为 null 或不传) */
   generationId?: string | null;
+  /** 是否经降级(M3;双提供商降级/主提供商切换标记,默认 false) */
+  usedFallback?: boolean;
+  /** traceId 全链路贯通(M3;由 trace_id_log 开关灰度控制写入,可空) */
+  traceId?: string | null;
 }
 
 /**
@@ -50,6 +103,26 @@ function buildDateWhere(startDate?: Date, endDate?: Date): Prisma.AiUsageLogWher
     if (endDate) where.createdAt.lte = endDate;
   }
   return where;
+}
+
+/**
+ * M3 聚合方法通用 WHERE 片段(Prisma 参数化,杜绝 SQL 注入)
+ * 组合日期范围 / tenant_id 多租户隔离 / usage_type 用量类型
+ */
+function buildMetricsWhere(
+  startDate?: Date,
+  endDate?: Date,
+  opts: MetricsWhereOpts = {},
+): Prisma.Sql {
+  const parts: Prisma.Sql[] = [];
+  if (startDate) parts.push(Prisma.sql`created_at >= ${startDate}`);
+  if (endDate) parts.push(Prisma.sql`created_at <= ${endDate}`);
+  if (opts.tenantId) parts.push(Prisma.sql`tenant_id = ${opts.tenantId}`);
+  if (opts.usageType && opts.usageType !== 'all') {
+    parts.push(Prisma.sql`usage_type = ${opts.usageType}`);
+  }
+  if (parts.length === 0) return Prisma.empty;
+  return Prisma.sql`WHERE ${Prisma.join(parts, ' AND ')}`;
 }
 
 export class AiUsageRepository {
@@ -69,9 +142,12 @@ export class AiUsageRepository {
   /**
    * 总览统计:总次数 / 成功数 / 失败数 / 总 token / 总成本 / 平均耗时 / 成功率
    * 使用 Prisma aggregate(groupBy + _count + _sum + _avg)
+   * @param opts M3 可选过滤(tenantId 多租户隔离 / usageType 用量类型)
    */
-  async overview(startDate?: Date, endDate?: Date) {
+  async overview(startDate?: Date, endDate?: Date, opts: MetricsWhereOpts = {}) {
     const where = buildDateWhere(startDate, endDate);
+    if (opts.tenantId) where.tenantId = opts.tenantId;
+    if (opts.usageType && opts.usageType !== 'all') where.usageType = opts.usageType;
     const [agg, successAgg] = await Promise.all([
       prisma().aiUsageLog.aggregate({
         where,
@@ -198,6 +274,175 @@ export class AiUsageRepository {
       totalTokens: Number(r.total_tokens),
       totalCostYuan: r.total_cost_yuan,
       avgDurationMs: r.avg_duration_ms,
+    }));
+  }
+
+  /**
+   * SLA 达标率聚合(M3;metrics-aggregation.service 使用)
+   * durationMs ≤ env().metricsSlaThresholdMs(默认 3000) 占比
+   * 走 (tenant_id, created_at) 索引,单次聚合 < 100ms
+   */
+  async slaCompliance(
+    startDate?: Date,
+    endDate?: Date,
+    opts: MetricsWhereOpts = {},
+    thresholdMs?: number,
+  ): Promise<SlaComplianceResult> {
+    const threshold = thresholdMs ?? env().metricsSlaThresholdMs;
+    const where = buildMetricsWhere(startDate, endDate, opts);
+    const rows = await prisma().$queryRaw<Array<{ total_count: number; compliant_count: number }>>(Prisma.sql`
+      SELECT
+        COUNT(*)::int AS total_count,
+        COUNT(*) FILTER (WHERE duration_ms <= ${threshold})::int AS compliant_count
+      FROM ai_usage_logs
+      ${where}
+    `);
+    const row = rows[0] ?? { total_count: 0, compliant_count: 0 };
+    return {
+      total: row.total_count,
+      compliant: row.compliant_count,
+      complianceRate: row.total_count > 0 ? row.compliant_count / row.total_count : 0,
+    };
+  }
+
+  /**
+   * AI 降级率聚合(M3)
+   * usedFallback=true 占比 + 降级细分(Jimp-only / 模板建议 / 主提供商切换)
+   * 注:used_fallback 为 null 的旧日志按 false 处理(COALESCE),向后兼容
+   */
+  async fallbackRate(
+    startDate?: Date,
+    endDate?: Date,
+    opts: MetricsWhereOpts = {},
+  ): Promise<FallbackRateResult> {
+    const where = buildMetricsWhere(startDate, endDate, opts);
+    const rows = await prisma().$queryRaw<
+      Array<{
+        total_count: number;
+        fallback_count: number;
+        jimp_only: number;
+        template_suggestion: number;
+        provider_switch: number;
+      }>
+    >(Prisma.sql`
+      SELECT
+        COUNT(*)::int AS total_count,
+        COUNT(*) FILTER (WHERE COALESCE(used_fallback, false) = true)::int AS fallback_count,
+        COUNT(*) FILTER (
+          WHERE COALESCE(used_fallback, false) = true
+            AND (failure_reason ILIKE '%timeout%' OR failure_reason ILIKE '%http_error%' OR failure_reason ILIKE '%parse_error%')
+        )::int AS jimp_only,
+        COUNT(*) FILTER (
+          WHERE COALESCE(used_fallback, false) = true
+            AND (failure_reason ILIKE '%no_api_key%' OR failure_reason ILIKE '%ai_disabled%' OR failure_reason ILIKE '%key_missing%')
+        )::int AS template_suggestion,
+        COUNT(*) FILTER (
+          WHERE COALESCE(used_fallback, false) = true AND provider IS NOT NULL
+        )::int AS provider_switch
+      FROM ai_usage_logs
+      ${where}
+    `);
+    const row = rows[0] ?? { total_count: 0, fallback_count: 0, jimp_only: 0, template_suggestion: 0, provider_switch: 0 };
+    return {
+      total: row.total_count,
+      fallbackCount: row.fallback_count,
+      fallbackRate: row.total_count > 0 ? row.fallback_count / row.total_count : 0,
+      details: {
+        jimpOnly: row.jimp_only,
+        templateSuggestion: row.template_suggestion,
+        providerSwitch: row.provider_switch,
+      },
+    };
+  }
+
+  /**
+   * 双提供商可用性聚合(M3)
+   * 按 provider 分组统计 successRate + switchCount(usedFallback=true 次数)
+   */
+  async providerAvailability(
+    startDate?: Date,
+    endDate?: Date,
+    opts: MetricsWhereOpts = {},
+  ): Promise<ProviderAvailability> {
+    const where = buildMetricsWhere(startDate, endDate, opts);
+    const rows = await prisma().$queryRaw<
+      Array<{ provider: string; total_count: number; success_count: number; switch_count: number }>
+    >(Prisma.sql`
+      SELECT
+        provider,
+        COUNT(*)::int AS total_count,
+        COUNT(*) FILTER (WHERE success = true)::int AS success_count,
+        COUNT(*) FILTER (WHERE COALESCE(used_fallback, false) = true)::int AS switch_count
+      FROM ai_usage_logs
+      ${where}
+      GROUP BY provider
+    `);
+    const result: ProviderAvailability = {
+      glm: { successRate: 0, switchCount: 0 },
+      trae: { successRate: 0, switchCount: 0 },
+    };
+    for (const r of rows) {
+      const key = r.provider === 'glm' ? 'glm' : r.provider === 'trae' ? 'trae' : null;
+      if (!key) continue;
+      result[key] = {
+        successRate: r.total_count > 0 ? r.success_count / r.total_count : 0,
+        switchCount: r.switch_count,
+      };
+    }
+    return result;
+  }
+
+  /**
+   * AI 成本按天聚合(M3)
+   * 返回 [{ date: 'YYYY-MM-DD', costYuan: number }]
+   */
+  async dailyCost(
+    startDate?: Date,
+    endDate?: Date,
+    opts: MetricsWhereOpts = {},
+  ): Promise<Array<{ date: string; costYuan: number }>> {
+    const where = buildMetricsWhere(startDate, endDate, opts);
+    const rows = await prisma().$queryRaw<Array<{ date: Date; total_cost: Prisma.Decimal }>>(Prisma.sql`
+      SELECT DATE(created_at) AS date, COALESCE(SUM(cost_yuan), 0) AS total_cost
+      FROM ai_usage_logs
+      ${where}
+      GROUP BY DATE(created_at)
+      ORDER BY date ASC
+    `);
+    return rows.map((r) => ({
+      date: r.date.toISOString().slice(0, 10),
+      costYuan: Number(r.total_cost),
+    }));
+  }
+
+  /**
+   * SLA 逐日达标率聚合(M3;SlaMetricsResponse.dailySla 数据源)
+   * 近 N 天按天聚合,返回 [{ date, complianceRate, total }]
+   */
+  async slaComplianceByDay(
+    days: number,
+    opts: MetricsWhereOpts = {},
+    thresholdMs?: number,
+  ): Promise<Array<{ date: string; complianceRate: number; total: number }>> {
+    const threshold = thresholdMs ?? env().metricsSlaThresholdMs;
+    const rows = await prisma().$queryRaw<
+      Array<{ date: Date; total_count: number; compliant_count: number }>
+    >(Prisma.sql`
+      SELECT
+        DATE(created_at) AS date,
+        COUNT(*)::int AS total_count,
+        COUNT(*) FILTER (WHERE duration_ms <= ${threshold})::int AS compliant_count
+      FROM ai_usage_logs
+      WHERE created_at >= (CURRENT_DATE - (${days} - 1))
+      ${opts.tenantId ? Prisma.sql`AND tenant_id = ${opts.tenantId}` : Prisma.empty}
+      ${opts.usageType && opts.usageType !== 'all' ? Prisma.sql`AND usage_type = ${opts.usageType}` : Prisma.empty}
+      GROUP BY DATE(created_at)
+      ORDER BY date ASC
+    `);
+    return rows.map((r) => ({
+      date: r.date.toISOString().slice(0, 10),
+      complianceRate: r.total_count > 0 ? r.compliant_count / r.total_count : 0,
+      total: r.total_count,
     }));
   }
 
