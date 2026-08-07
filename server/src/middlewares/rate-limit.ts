@@ -67,22 +67,20 @@ function isNoScriptError(err: unknown): boolean {
   return code === 'NOSCRIPT' || /NOSCRIPT/i.test(err.message);
 }
 
-/** Redis 操作硬超时(毫秒),超时后 fail open 放行请求,避免 Redis 抖动阻塞用户 */
-const RATE_LIMIT_REDIS_TIMEOUT_MS = 200;
-
 /**
  * 执行滑动窗口限流脚本,返回当前窗口内请求数
  * EVALSHA 优先,NOSCRIPT 时降级为 EVAL(脚本加载到 Redis 后续可复用)
  * 导出供 client-adapt.ts 的 clientRateLimiter 复用,保证原子语义一致
  *
  * 容错策略:
- *   - Redis 操作加 200ms 硬超时,超时返回 -1(由调用方 fail open)
+ *   - Redis 操作加硬超时(env.RATE_LIMIT_REDIS_TIMEOUT_MS,默认 200ms),超时返回 -1(fail open)
  *   - 避免因 Redis 重连/重试(maxRetriesPerRequest)累积导致请求阻塞 3-5 秒
  */
 export async function checkSlidingWindowRateLimit(key: string): Promise<number> {
   const now = Date.now();
   const member = crypto.randomUUID();
   const args = [String(now), member, String(RATE_LIMIT_WINDOW_MS), String(RATE_LIMIT_TTL_SEC)];
+  const timeoutMs = env().rateLimitRedisTimeoutMs;
 
   const exec = async (): Promise<number> => {
     const tStart = performance.now();
@@ -101,9 +99,9 @@ export async function checkSlidingWindowRateLimit(key: string): Promise<number> 
     }
   };
 
-  // 硬超时保护:Redis 操作超过 200ms 视为不可用,返回 -1 触发 fail open
+  // 硬超时保护:Redis 操作超时视为不可用,返回 -1 触发 fail open
   const timeout = new Promise<number>((resolve) => {
-    setTimeout(() => resolve(-1), RATE_LIMIT_REDIS_TIMEOUT_MS);
+    setTimeout(() => resolve(-1), timeoutMs);
   });
 
   const result = await Promise.race([exec(), timeout]);
