@@ -56,7 +56,7 @@ echo "  BUILD_ONLY: $BUILD_ONLY"
 
 # 1. 拉取最新代码
 echo ""
-echo "[1/6] 拉取最新代码..."
+echo "[1/7] 拉取最新代码..."
 if [ ! -d "$REPO_DIR/.git" ]; then
   echo "[deploy] 错误: $REPO_DIR 不是 git 仓库"
   exit 1
@@ -67,14 +67,14 @@ git -C "$REPO_DIR" pull origin main
 
 # 2. 安装依赖
 echo ""
-echo "[2/6] 安装依赖..."
+echo "[2/7] 安装依赖..."
 if [ ! -d "$WEBSITE_DIR/node_modules" ]; then
   "$NPM_CMD" --prefix "$WEBSITE_DIR" ci || "$NPM_CMD" --prefix "$WEBSITE_DIR" install
 fi
 
 # 3. 构建静态导出到 out/
 echo ""
-echo "[3/6] 构建静态导出 (BAIDU=$BAIDU_VERIFICATION_CODE BING=$BING_VERIFICATION_CODE)..."
+echo "[3/7] 构建静态导出 (BAIDU=$BAIDU_VERIFICATION_CODE BING=$BING_VERIFICATION_CODE)..."
 export BAIDU_VERIFICATION_CODE BING_VERIFICATION_CODE
 "$NPM_CMD" --prefix "$WEBSITE_DIR" run build
 
@@ -89,7 +89,7 @@ fi
 # 静态 HTML 的 <head> 里没有 meta,必应等不执行 JS 的爬虫读不到。
 # 因此这里用 sed 直接把验证 meta 插入到 out/index.html 的静态 <head> 内。
 echo ""
-echo "[3.5/6] 注入站长验证 meta 到静态 <head>..."
+echo "[3.5/7] 注入站长验证 meta 到静态 <head>..."
 INJECT_SCRIPT="script_insert_verification_meta.sh"
 INJECT_SCRIPT_PATH="$WEBSITE_DIR/$INJECT_SCRIPT"
 cat > "$INJECT_SCRIPT_PATH" <<'INJECT_EOF'
@@ -132,7 +132,7 @@ rm -f "$INJECT_SCRIPT_PATH"
 
 # 4. 校验 meta 标签已注入
 echo ""
-echo "[4/6] 校验 meta 标签..."
+echo "[4/7] 校验 meta 标签..."
 if grep -q 'baidu-site-verification' "$OUT_DIR/index.html"; then
   echo "  [OK] baidu-site-verification 已注入"
 else
@@ -152,7 +152,7 @@ fi
 
 # 5. 备份当前 webroot + 增量同步产物
 echo ""
-echo "[5/6] 备份并同步到 webroot ($WEBROOT)..."
+echo "[5/7] 备份并同步到 webroot ($WEBROOT)..."
 if [ ! -d "$WEBROOT" ]; then
   echo "[deploy] 错误: webroot 不存在 $WEBROOT"
   exit 1
@@ -174,7 +174,7 @@ fi
 
 # 6. 校验线上可访问
 echo ""
-echo "[6/6] 校验 nginx 可访问..."
+echo "[6/7] 校验 nginx 可访问..."
 if command -v sudo >/dev/null 2>&1 && sudo systemctl is-active nginx >/dev/null 2>&1; then
   echo "  nginx 状态: $(sudo systemctl is-active nginx)"
   sudo systemctl reload nginx 2>/dev/null || true
@@ -195,3 +195,15 @@ echo "  ✓ 官网部署完成"
 echo "═══════════════════════════════════════════════"
 echo "  备份保留于: $BACKUP_DIR/website.bak.$TS"
 echo "  如需回滚: sudo rsync -a --delete $BACKUP_DIR/website.bak.$TS/ $WEBROOT/"
+
+# 7. 部署后自动触发备份定量清理
+# 每次部署都会新增一个 website 备份,若只依赖每周 cron 清理,周内多次部署会累积超量备份。
+# 因此在部署完成后立即执行一次 cleanup-backups.sh,将备份数收敛回策略内。
+echo ""
+echo "[7/7] 部署后自动清理旧备份..."
+if [ -f "$REPO_DIR/cleanup-backups.sh" ]; then
+  sudo bash "$REPO_DIR/cleanup-backups.sh" 2>&1 | tee -a /var/log/danqing-backup-cleanup.log || \
+    echo "  [WARN] 备份清理执行失败(不影响部署主流程)"
+else
+  echo "  [WARN] 未找到 $REPO_DIR/cleanup-backups.sh,跳过自动清理"
+fi
