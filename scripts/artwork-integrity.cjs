@@ -4,19 +4,144 @@
 // 职责:
 //   1. 为 public/images/artworks/ 生成 MD5 基准清单
 //   2. 定期比对生产目录与基准清单,发现篡改/缺失/新增文件
+//   3. 检测到异常时自动发送邮件告警
 // 用法:
 //   生成基准: node scripts/artwork-integrity.cjs generate
 //   本地校验: node scripts/artwork-integrity.cjs verify --dir public/images/artworks
 //   生产校验: node scripts/artwork-integrity.cjs verify --dir /var/www/danqing-ai/dist/images/artworks --manifest /var/www/danqing-ai/dist/images/artworks-integrity.json
+// 环境变量(告警):
+//   ALERT_SMTP_HOST    SMTP 服务器,默认 smtp.qq.com
+//   ALERT_SMTP_PORT    SMTP 端口,默认 465
+//   ALERT_SMTP_USER    发件账号,默认 2692963779@qq.com
+//   ALERT_SMTP_PASS    SMTP 授权码(必填,QQ 邮箱不是登录密码)
+//   ALERT_TO           收件人,默认 2692963779@qq.com
+//   ALERT_FROM         发件人,默认 2692963779@qq.com
 // 退出码: 0=正常, 1=异常
 // ============================================================
 
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const { execFile } = require('node:child_process');
 
 const MANIFEST_NAME = 'artworks-integrity.json';
 const DEFAULT_MANIFEST_PATH = path.resolve(__dirname, '..', MANIFEST_NAME);
+
+function loadAlertConfig() {
+  return {
+    host: process.env.ALERT_SMTP_HOST || 'smtp.qq.com',
+    port: parseInt(process.env.ALERT_SMTP_PORT || '465', 10),
+    secure: (process.env.ALERT_SMTP_SECURE || 'true') === 'true',
+    user: process.env.ALERT_SMTP_USER || '2692963779@qq.com',
+    pass: process.env.ALERT_SMTP_PASS || '',
+    to: process.env.ALERT_TO || '2692963779@qq.com',
+    from: process.env.ALERT_FROM || '2692963779@qq.com',
+  };
+}
+
+function buildAlertText({ targetDir, missing, modified, added, elapsed }) {
+  const lines = [
+    '[丹青有AI] 素材库完整性校验异常',
+    `目标目录: ${targetDir}`,
+    `校验耗时: ${elapsed}s`,
+    `缺失文件: ${missing.length} 个`,
+    `被篡改文件: ${modified.length} 个`,
+    `新增未知文件: ${added.length} 个`,
+    '',
+  ];
+
+  if (missing.length) {
+    lines.push('=== 缺失文件 ===');
+    missing.slice(0, 20).forEach((p) => lines.push(`- ${p}`));
+    if (missing.length > 20) lines.push(`... 共 ${missing.length} 个`);
+    lines.push('');
+  }
+
+  if (modified.length) {
+    lines.push('=== 被篡改文件 ===');
+    modified.slice(0, 20).forEach((m) => lines.push(`- ${m.path} (大小: ${m.size}B)`));
+    if (modified.length > 20) lines.push(`... 共 ${modified.length} 个`);
+    lines.push('');
+  }
+
+  if (added.length) {
+    lines.push('=== 新增未知文件 ===');
+    added.slice(0, 20).forEach((p) => lines.push(`- ${p}`));
+    if (added.length > 20) lines.push(`... 共 ${added.length} 个`);
+    lines.push('');
+  }
+
+  lines.push('请尽快登录服务器排查。');
+  return lines.join('\n');
+}
+
+async function sendMailViaNodemailer(config, subject, text) {
+  const nodemailer = require('nodemailer');
+  const transporter = nodemailer.createTransport({
+    host: config.host,
+    port: config.port,
+    secure: config.secure,
+    auth: {
+      user: config.user,
+      pass: config.pass,
+    },
+  });
+  await transporter.sendMail({
+    from: config.from,
+    to: config.to,
+    subject,
+    text,
+  });
+}
+
+async function sendMailViaCommand(config, subject, text) {
+  return new Promise((resolve, reject) => {
+    const proc = execFile(
+      'mail',
+      ['-s', subject, '-r', config.from, config.to],
+      { timeout: 30000 },
+      (err, stdout, stderr) => {
+        if (err) return reject(err);
+        resolve(stdout);
+      },
+    );
+    proc.stdin.write(text);
+    proc.stdin.end();
+  });
+}
+
+async function sendAlert(differences) {
+  const config = loadAlertConfig();
+
+  if (!config.pass && config.host === 'smtp.qq.com') {
+    console.warn('[告警] 未配置 ALERT_SMTP_PASS(QQ 邮箱 SMTP 授权码),跳过邮件发送');
+    console.warn('[告警] 获取授权码: QQ 邮箱设置 -> 账号 -> 开启 SMTP -> 生成授权码');
+    return;
+  }
+
+  const subject = '[丹青有AI] 素材库完整性校验异常';
+  const text = buildAlertText(differences);
+
+  try {
+    try {
+      await sendMailViaNodemailer(config, subject, text);
+      console.log('[告警] 邮件已通过 nodemailer 发送');
+      return;
+    } catch (nodemailerErr) {
+      if (nodemailerErr.code === 'MODULE_NOT_FOUND') {
+        console.warn('[告警] 未安装 nodemailer,尝试系统 mail 命令');
+      } else {
+        throw nodemailerErr;
+      }
+    }
+
+    await sendMailViaCommand(config, subject, text);
+    console.log('[告警] 邮件已通过系统 mail 命令发送');
+  } catch (err) {
+    console.error('[告警] 邮件发送失败:', err.message);
+    console.error('[告警] 请检查 ALERT_SMTP_PASS 和 SMTP 配置');
+  }
+}
 
 function md5File(filePath) {
   return new Promise((resolve, reject) => {
@@ -155,6 +280,8 @@ async function verifyDirectory(targetDir, manifestPath) {
     added.slice(0, 10).forEach((p) => console.error(`    - ${p}`));
     if (added.length > 10) console.error(`    ... 共 ${added.length} 个`);
   }
+
+  await sendAlert({ targetDir, missing, modified, added, elapsed });
   process.exit(1);
 }
 
@@ -163,12 +290,20 @@ function printUsage() {
   node scripts/artwork-integrity.cjs generate [--dir <sourceDir>] [--out <manifestPath>]
   node scripts/artwork-integrity.cjs verify --dir <targetDir> [--manifest <manifestPath>]
 
+告警环境变量(检测到异常时发送邮件):
+  ALERT_SMTP_HOST    SMTP 服务器,默认 smtp.qq.com
+  ALERT_SMTP_PORT    SMTP 端口,默认 465
+  ALERT_SMTP_USER    发件账号,默认 2692963779@qq.com
+  ALERT_SMTP_PASS    SMTP 授权码(QQ 邮箱不是登录密码)
+  ALERT_TO           收件人,默认 2692963779@qq.com
+  ALERT_FROM         发件人,默认 2692963779@qq.com
+
 示例:
   生成基准清单:
     node scripts/artwork-integrity.cjs generate
 
-  校验生产目录:
-    node scripts/artwork-integrity.cjs verify --dir /var/www/danqing-ai/dist/images/artworks --manifest /var/www/danqing-ai/dist/artworks-integrity.json`);
+  校验生产目录(带邮件告警):
+    ALERT_SMTP_PASS=xxxxxx node scripts/artwork-integrity.cjs verify --dir /var/www/danqing-ai/dist/images/artworks --manifest /var/www/danqing-ai/dist/artworks-integrity.json`);
 }
 
 function parseArgs() {
