@@ -329,6 +329,7 @@ sudo tail -50 /var/log/danqing-backup-cleanup.log
 2. **website 备份**(`website-backups/`):按时间保留最近 3 个版本(含 tar.gz 或目录),删除更早的。
 3. **根目录遗留**(`website.bak-*` / `website-backup-*`):清理历史遗留小备份。
 4. **关键保障**: 当前 dist 完整备份不足 5 个时**全保留、不误删**;完整备份中的 `images/` 业务图片数据保留。
+5. **自动触发**: `deploy-website.sh` 在第 7 步(部署完成后)自动调用 `cleanup-backups.sh`,确保周内多次部署也不会累积超量备份(避免仅依赖每周 cron 的时间盲区)。
 
 **首次执行结果 (2026-08-08)**:
 - 释放约 2.3G(11G → 8.7G),磁盘使用率 33% → 31%
