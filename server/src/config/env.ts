@@ -101,7 +101,7 @@ export interface EnvConfig {
   aiImageApiUrl: string;
   /** 图像生成模型名 */
   aiImageApiModel: string;
-  /** 图像生成请求超时(毫秒,默认 30000,独立于诊断 2500) */
+  /** 图像生成请求超时(毫秒,默认 90000,独立于诊断 2500) */
   aiImageTimeout: number;
   /** 生成接口单用户分钟限流(次/分钟,默认 5) */
   generationRateLimitPerMin: number;
@@ -439,7 +439,7 @@ export function loadEnv(): EnvConfig {
     aiImageApiKey: env.AI_IMAGE_API_KEY ?? '',
     aiImageApiUrl: env.AI_IMAGE_API_URL ?? '',
     aiImageApiModel: env.AI_IMAGE_API_MODEL ?? '',
-    aiImageTimeout: parseInteger(env.AI_IMAGE_TIMEOUT, 30000),
+    aiImageTimeout: parseInteger(env.AI_IMAGE_TIMEOUT, 90000),
     generationRateLimitPerMin: parseInteger(env.GENERATION_RATE_LIMIT_PER_MIN, 5),
     generationMaxCount: parseInteger(env.GENERATION_MAX_COUNT, 4),
 

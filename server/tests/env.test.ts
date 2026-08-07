@@ -560,7 +560,7 @@ describe('config/env (环境变量加载与启动自检)', () => {
       expect(cfg.aiImageApiKey).toBe('');
       expect(cfg.aiImageApiUrl).toBe('');
       expect(cfg.aiImageApiModel).toBe('');
-      expect(cfg.aiImageTimeout).toBe(30000);
+      expect(cfg.aiImageTimeout).toBe(90000);
       expect(cfg.generationRateLimitPerMin).toBe(5);
       expect(cfg.generationMaxCount).toBe(4);
     });
