@@ -116,8 +116,8 @@ if [ -n "$BING_VERIFICATION_CODE" ] && ! grep -q 'msvalidate' "$HTML"; then
   META="${META}<meta name=\"msvalidate.01\" content=\"${BING_VERIFICATION_CODE}\" />"
 fi
 if [ -n "$META" ]; then
-  # 在 <head> 标签结束前插入(replace first occurrence of </head>)
-  sed -i "0,|</head>|s||${META}</head>|" "$HTML"
+  # 在 <head> 标签结束前插入(替换第一个 </head>;静态 HTML 中 </head> 仅出现一次)
+  sed -i "s|</head>|${META}</head>|" "$HTML"
   echo "[inject] 已注入验证 meta"
   # 校验
   if grep -q "baidu-site-verification" "$HTML"; then echo "[inject]   [OK] baidu-site-verification"; fi
