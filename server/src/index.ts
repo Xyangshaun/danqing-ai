@@ -91,9 +91,9 @@ async function startServer(): Promise<void> {
     logger.warn({ err: msg }, '[startup] generation worker start skipped');
   }
 
-  // 4b. Redis 指标定时日志(每 30 秒输出摘要,便于运维实时观察连接池与 BRPOP 耗时)
+  // 4b. Redis 指标定时日志(间隔由 REDIS_METRICS_LOG_INTERVAL_MS 控制,默认 30s)
   // 对应文档:redis-brpop-fix-2026-08-07.md §7 后续改进
-  redisMetrics.startLogInterval(30_000);
+  redisMetrics.startLogInterval(env().redisMetricsLogIntervalMs);
 
   // 5. HTTP 服务(由 app.ts 已构建)
   const server = http.createServer(app);
