@@ -11,7 +11,8 @@
 //
 // Mock 策略:
 //   - data-service 中的 getSavedMaterials / getFavorites 用 vi.mock 统一 stub
-//   - artworksDatabase 为真实数据,测试内置库查询
+//   - artworksDatabase 用 vi.mock stub(loadBuiltinArtworks 改为 fetch JSON 后,
+//     jsdom 环境无法加载真实文件,内置库数据由本 mock 提供)
 //   - localStorage 由 jsdom 提供,每个用例后 clean 防止交叉污染
 // ============================================================
 
@@ -27,7 +28,31 @@ import {
   resolvePackMaterials,
   type MaterialPack,
 } from '../materialService';
-import { artworksDatabase } from '../artworksDatabase';
+import type { ArtworkItem } from '../artworksDatabase';
+
+/* ---------- Mock artworksDatabase 的内置库数据 ---------- */
+const builtinFixtures: ArtworkItem[] = [
+  {
+    id: 'cn-mountain-001',
+    title: '溪山行旅图',
+    artist: '范宽',
+    year: '北宋',
+    category: 'painting',
+    style: '水墨',
+    era: '宋代',
+    region: 'china',
+    description: '北宋山水代表作',
+    imageUrl: 'https://example.com/mountain.png',
+    source: 'mock',
+    tags: ['山水'],
+  },
+];
+
+vi.mock('../artworksDatabase', () => ({
+  loadBuiltinArtworks: vi.fn(async () => builtinFixtures),
+  searchArtworks: vi.fn(() => builtinFixtures),
+  resolveArtworkImageUrl: (item: ArtworkItem) => item,
+}));
 
 /* ---------- Mock data-service 的异步接口 ---------- */
 vi.mock('../data-service', () => ({
@@ -54,10 +79,9 @@ describe('materialService', () => {
    * ============================================================ */
   describe('getMaterialById', () => {
     it('应能找到内置艺术作品库中的作品', async () => {
-      const first = artworksDatabase[0];
-      const result = await getMaterialById(first.id);
+      const result = await getMaterialById('cn-mountain-001');
       expect(result).not.toBeNull();
-      expect(result!.title).toBe(first.title);
+      expect(result!.title).toBe('溪山行旅图');
       expect(result!.source).toBe('builtin');
     });
 

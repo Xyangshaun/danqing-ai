@@ -203,7 +203,8 @@ describe('EmotionPage 应用到风格库', () => {
 describe('EmotionPage 情绪浓度', () => {
   it('拖动 range 滑块更新浓度', () => {
     renderEmotion();
-    const slider = screen.getByRole('slider');
+    // 页面含多个 slider(生成参数面板等),按 aria-label 精确匹配情绪浓度滑块
+    const slider = screen.getByLabelText('情绪浓度');
     fireEvent.change(slider, { target: { value: '0.8' } });
     // 当前浓度 80%
     expect(screen.getByText(/当前浓度：80%/)).toBeInTheDocument();

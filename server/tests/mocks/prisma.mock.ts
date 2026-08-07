@@ -233,6 +233,29 @@ export interface MockAiUsageLog {
 }
 
 // ============================================================
+// Phase 5 新增 Mock 数据模型:争议案件
+// 对应 prisma/schema.prisma DisputeCase
+// 管理员大屏 countGlobalByStatus(open/reviewing)依赖本模型
+// ============================================================
+
+export interface MockDisputeCase {
+  id: string;
+  tenantId: string;
+  analysisId: string;
+  status: string; // 'open' | 'reviewing' | 'resolved' | 'rejected'
+  triggerLevel: string; // 'low' | 'medium' | 'high'
+  triggerReason: unknown; // Json
+  arbitrationConfig: unknown; // Json
+  finalScore: unknown; // Json | null
+  finalRule: string | null;
+  resolvedBy: string | null;
+  resolvedAt: Date | null;
+  resolutionNote: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// ============================================================
 // Where 条件简化匹配
 // 支持等值匹配 + 复合唯一键(userId_tenantId)+ 范围(gte/lte/in)
 // ============================================================
@@ -603,6 +626,8 @@ class PrismaMock {
   readonly generationTaskStore = new Map<string, MockGenerationTask>();
   // M-2 新增 store:AI 用量日志(支撑 M2-T4 用量日志测试)
   readonly aiUsageLogStore = new Map<string, MockAiUsageLog>();
+  // Phase 5 新增 store:争议案件(支撑管理员大屏 openDisputes 统计)
+  readonly disputeCaseStore = new Map<string, MockDisputeCase>();
 
   // 各模型委托(唯一字段对应 schema.prisma 中的 @unique)
   // tenantMember 委托:支持 include user / include tenant 关系解析
@@ -884,6 +909,9 @@ class PrismaMock {
     },
   );
 
+  // Phase 5 新增:DisputeCase 委托(争议仲裁;管理员大屏 countGlobalByStatus 依赖)
+  readonly disputeCase = createModelDelegate<MockDisputeCase>(this.disputeCaseStore, []);
+
   /**
    * 事务:直接在 mock 自身上执行回调(无真实隔离,但保证顺序)
    */
@@ -915,6 +943,8 @@ class PrismaMock {
     // M-2 新增 store
     this.generationTaskStore.clear();
     this.aiUsageLogStore.clear();
+    // Phase 5 新增 store
+    this.disputeCaseStore.clear();
   }
 
   /**

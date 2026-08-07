@@ -10,7 +10,8 @@
 //   5. 收藏切换(toast 反馈)
 //
 // Mock 策略:
-//   - materialService.getBuiltinArtworkItems: 返回可控作品列表
+//   - artworksDatabase.loadBuiltinArtworks: 返回可控作品列表(源码已改为
+//     异步加载 data/artworks.json,jsdom 环境由本 mock 提供数据)
 //   - artworksDatabase.styleCategories: 保留真实数据(只读常量)
 // ============================================================
 
@@ -23,10 +24,17 @@ import type { ArtworkItem } from '../../services/artworksDatabase';
 
 /* ---------- mock 依赖 ---------- */
 
-const getBuiltinArtworkItemsMock = vi.fn<(...args: unknown[]) => ArtworkItem[]>();
-vi.mock('../../services/materialService', () => ({
-  getBuiltinArtworkItems: (...args: unknown[]) => getBuiltinArtworkItemsMock(...args),
-}));
+const loadBuiltinArtworksMock = vi.fn<(...args: unknown[]) => Promise<ArtworkItem[]>>();
+vi.mock('../../services/artworksDatabase', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('../../services/artworksDatabase')>();
+  return {
+    ...mod,
+    // 数据加载:由 loadBuiltinArtworksMock 控制返回的作品列表
+    loadBuiltinArtworks: (...args: unknown[]) => loadBuiltinArtworksMock(...args),
+    // 缩略图解析:测试用 http URL,直接透传
+    resolveArtworkThumbUrl: (item: ArtworkItem) => item.thumbUrl || item.imageUrl,
+  };
+});
 
 /* ---------- 测试数据工厂 ---------- */
 
@@ -61,8 +69,8 @@ function renderStyles() {
 }
 
 beforeEach(() => {
-  getBuiltinArtworkItemsMock.mockReset();
-  getBuiltinArtworkItemsMock.mockReturnValue([makeArtwork()]);
+  loadBuiltinArtworksMock.mockReset();
+  loadBuiltinArtworksMock.mockResolvedValue([makeArtwork()]);
 });
 
 /* ============================================================
@@ -125,7 +133,7 @@ describe('StylesPage 分类导航', () => {
  * ============================================================ */
 describe('StylesPage 收藏切换', () => {
   it('点击分类卡片后进入列表,点击作品收藏触发 toast', async () => {
-    getBuiltinArtworkItemsMock.mockReturnValue([
+    loadBuiltinArtworksMock.mockResolvedValue([
       makeArtwork({ id: 'a1', title: '水墨山水图', style: '水墨', category: 'painting' }),
     ]);
     renderStyles();

@@ -11,7 +11,8 @@
 //
 // Mock 策略:
 //   - imageService.generateImage: 返回占位图 URL
-//   - materialService.getBuiltinArtworkItems: 返回可控作品列表
+//   - artworksDatabase.loadBuiltinArtworks: 返回可控作品列表(源码已改为
+//     异步加载 data/artworks.json,jsdom 环境由本 mock 提供数据)
 //   - data-service.saveSavedMaterial: 可控
 //   - fuseStandards: 保留真实导出(纯数据 + 纯函数,提升覆盖率)
 // ============================================================
@@ -27,7 +28,7 @@ import type { ArtworkItem } from '../../services/artworksDatabase';
 
 const generateImageMock = vi.fn<(...args: unknown[]) => string>();
 const saveSavedMaterialMock = vi.fn<(...args: unknown[]) => Promise<unknown>>();
-const getBuiltinArtworkItemsMock = vi.fn<(...args: unknown[]) => ArtworkItem[]>();
+const loadBuiltinArtworksMock = vi.fn<(...args: unknown[]) => Promise<ArtworkItem[]>>();
 
 vi.mock('../../services/imageService', () => ({
   generateImage: (...args: unknown[]) => generateImageMock(...args),
@@ -37,8 +38,12 @@ vi.mock('../../services/data-service', () => ({
   saveSavedMaterial: (...args: unknown[]) => saveSavedMaterialMock(...args),
 }));
 
-vi.mock('../../services/materialService', () => ({
-  getBuiltinArtworkItems: (...args: unknown[]) => getBuiltinArtworkItemsMock(...args),
+vi.mock('../../services/artworksDatabase', () => ({
+  // 数据加载:由 loadBuiltinArtworksMock 控制返回的作品列表
+  loadBuiltinArtworks: (...args: unknown[]) => loadBuiltinArtworksMock(...args),
+  // 图片 URL 解析:测试用 http URL,直接透传
+  resolveArtworkImageUrl: (item: ArtworkItem) => item,
+  resolveArtworkThumbUrl: (item: ArtworkItem) => item.thumbUrl || item.imageUrl,
 }));
 
 /* ---------- 测试数据工厂 ---------- */
@@ -76,10 +81,10 @@ function renderFuse() {
 beforeEach(() => {
   generateImageMock.mockReset();
   saveSavedMaterialMock.mockReset();
-  getBuiltinArtworkItemsMock.mockReset();
+  loadBuiltinArtworksMock.mockReset();
   generateImageMock.mockReturnValue('https://example.com/generated.png');
   saveSavedMaterialMock.mockResolvedValue(undefined);
-  getBuiltinArtworkItemsMock.mockReturnValue([
+  loadBuiltinArtworksMock.mockResolvedValue([
     makeArtwork({ id: 'a1', title: '素材一' }),
     makeArtwork({ id: 'a2', title: '素材二' }),
   ]);
@@ -134,20 +139,21 @@ describe('FusePage 融合标准设置', () => {
  * 3. 素材库选择器
  * ============================================================ */
 describe('FusePage 素材库选择器', () => {
-  it('点击"从素材库选"打开选择器面板', () => {
+  it('点击"从素材库选"打开选择器面板', async () => {
     renderFuse();
     const pickBtn = screen.getAllByText(/从素材库选/)[0];
     fireEvent.click(pickBtn);
-    // 选择器打开后显示素材列表中的作品标题
-    expect(screen.getAllByText('素材一').length).toBeGreaterThan(0);
+    // 素材数据异步加载(useEffect → loadBuiltinArtworks),等待列表渲染
+    const items = await screen.findAllByText('素材一');
+    expect(items.length).toBeGreaterThan(0);
   });
 
-  it('在选择器中点击作品选中第一张', () => {
+  it('在选择器中点击作品选中第一张', async () => {
     renderFuse();
     const pickBtn = screen.getAllByText(/从素材库选/)[0];
     fireEvent.click(pickBtn);
     // 选择器中点击"素材一"(选择器打开时取列表中最后一个匹配项)
-    const items = screen.getAllByText('素材一');
+    const items = await screen.findAllByText('素材一');
     fireEvent.click(items[items.length - 1]);
     // 选中后选择器关闭,作品区显示标题
     expect(screen.getAllByText('素材一').length).toBeGreaterThan(0);
@@ -158,15 +164,15 @@ describe('FusePage 素材库选择器', () => {
  * 4. 灵感融合流程
  * ============================================================ */
 describe('FusePage 灵感融合', () => {
-  it('选中两张作品后显示"开始灵感嫁接"按钮', () => {
+  it('选中两张作品后显示"开始灵感嫁接"按钮', async () => {
     renderFuse();
     // 选择第一张(点击 slot 1 的"从素材库选"按钮)
     fireEvent.click(screen.getAllByText(/从素材库选/)[0]);
-    let items = screen.getAllByText('素材一');
+    let items = await screen.findAllByText('素材一');
     fireEvent.click(items[items.length - 1]);
     // 选择第二张(点击 slot 2 的"从素材库选"按钮,索引为 1)
     fireEvent.click(screen.getAllByText(/从素材库选/)[1]);
-    items = screen.getAllByText('素材二');
+    items = await screen.findAllByText('素材二');
     fireEvent.click(items[items.length - 1]);
     // "开始灵感嫁接"在 span 中,用正则匹配
     expect(screen.getByText(/开始灵感嫁接/)).toBeInTheDocument();
@@ -176,10 +182,10 @@ describe('FusePage 灵感融合', () => {
     renderFuse();
     // 选择两张作品
     fireEvent.click(screen.getAllByText(/从素材库选/)[0]);
-    let items = screen.getAllByText('素材一');
+    let items = await screen.findAllByText('素材一');
     fireEvent.click(items[items.length - 1]);
     fireEvent.click(screen.getAllByText(/从素材库选/)[1]);
-    items = screen.getAllByText('素材二');
+    items = await screen.findAllByText('素材二');
     fireEvent.click(items[items.length - 1]);
     fireEvent.click(screen.getByText(/开始灵感嫁接/));
     await waitFor(() => {
@@ -199,10 +205,10 @@ describe('FusePage 错误处理', () => {
     });
     renderFuse();
     fireEvent.click(screen.getAllByText(/从素材库选/)[0]);
-    let items = screen.getAllByText('素材一');
+    let items = await screen.findAllByText('素材一');
     fireEvent.click(items[items.length - 1]);
     fireEvent.click(screen.getAllByText(/从素材库选/)[1]);
-    items = screen.getAllByText('素材二');
+    items = await screen.findAllByText('素材二');
     fireEvent.click(items[items.length - 1]);
     fireEvent.click(screen.getByText(/开始灵感嫁接/));
     await waitFor(() => {

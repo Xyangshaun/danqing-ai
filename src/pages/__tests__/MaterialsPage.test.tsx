@@ -56,6 +56,8 @@ vi.mock('../../services/artworksDatabase', () => ({
   resolveArtworkImageUrl: (item: ArtworkItem) => item,
   // 缩略图解析:与上一致,直接透传 thumbUrl ?? imageUrl
   resolveArtworkThumbUrl: (item: ArtworkItem) => item.thumbUrl || item.imageUrl,
+  // 兜底图解析:源码用于 onError 降级,测试中返回原图即可
+  resolveArtworkFallbackUrl: (item: ArtworkItem) => item.imageUrl,
   // 保留旧导出以兼容(源码未使用)
   getFilterOptions: () => ({
     categories: ['painting', 'design'],

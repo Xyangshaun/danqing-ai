@@ -29,6 +29,11 @@ vi.mock('../../hooks/usePrefetch', () => ({
   },
 }));
 
+/* mock useAuth:未登录态(user=null),不渲染管理后台/教师工作台分组 */
+vi.mock('../../hooks/useAuth', () => ({
+  useAuth: () => ({ user: null }),
+}));
+
 function renderSidebar({
   collapsed = false,
   initialPath = '/',
