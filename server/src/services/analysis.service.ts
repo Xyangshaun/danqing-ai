@@ -873,20 +873,13 @@ class AnalysisServiceClass {
         );
       });
 
-    // 7. 清理临时文件(仅当上传目录为非持久化本地目录时删除)
-    // COS 挂载路径(如 /lhcos-data/uploads)是持久化存储,文件需要保留供前端访问
-    // 判断依据:uploadDir 为绝对路径(以 / 开头) → 持久化存储,不删除
+    // 7. 文件保留(方案A 两阶段响应)
+    // 阶段1完成后不删除上传的原始图片:
+    //   - 阶段2 ai-enhance 需要原始图片调用 GLM-4v(否则 resolveImageSourceForEnhance 返回 410)
+    //   - analysis.imageUrl 指向该文件,前端展示历史记录也需要
+    // 注:原 safeCleanup 已移除(会导致阶段2 文件缺失 410);本地开发 uploads/ 可定期手动清理
     if (hasLocal && localImagePath) {
-      const uploadDirConfig = env().uploadDir;
-      const isPersistentStorage = uploadDirConfig.startsWith('/');
-      if (!isPersistentStorage) {
-        this.safeCleanup(localImagePath).catch((err) => {
-          const msg = err instanceof Error ? err.message : String(err);
-          logger.warn({ err: msg, path: localImagePath }, '[analysis] cleanup temp file failed');
-        });
-      } else {
-        logger.debug({ path: localImagePath }, '[analysis] file in persistent storage (COS mounted), kept');
-      }
+      logger.debug({ path: localImagePath }, '[analysis] file kept (phase 2 ai-enhance needs it)');
     }
 
     logger.info(
