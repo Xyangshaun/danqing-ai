@@ -5,6 +5,7 @@
 //   GET  /analyses/:id/reviews           (列出该作业所有评审,review:read)
 //   GET  /analyses/:id/reviews/:rid      (评审详情,review:read)
 //   POST /analyses/:id/disputes/check    (检查并触发争议仲裁,review:write)
+//   POST /analyses/:id/disputes/request  (学生申请人工复核,dispute:request)
 //
 // 挂载方式:在 analysis.routes.ts 中通过 analysisRouter.use('/:id', reviewRouter) 挂载
 //   - 继承父级 authMiddleware → tenantMiddleware → apiRateLimiter
@@ -22,6 +23,7 @@ import {
   listReviews,
   getReview,
   checkDispute,
+  requestDispute,
 } from '../controllers/review.controller.js';
 
 // mergeParams:true 使子路由可访问父级 :id 参数(Express 4 默认 false)
@@ -45,3 +47,7 @@ reviewRouter.get('/reviews/:rid', requirePermission('review:read'), getReview);
 // POST /disputes/check - 检查并触发争议仲裁(teacher/admin/owner)
 // 路径 /disputes/check 与 /reviews/* 不冲突,Express 按段匹配
 reviewRouter.post('/disputes/check', requirePermission('review:write'), checkDispute);
+
+// POST /disputes/request - 学生申请人工复核(student,dispute:request)
+// 与 /disputes/check 均为静态段,无冲突;权限独立于 review:write
+reviewRouter.post('/disputes/request', requirePermission('dispute:request'), requestDispute);

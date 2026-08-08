@@ -3046,6 +3046,26 @@ export interface DisputeCheckResponse {
   reviewCount: number;
 }
 
+/** POST /analyses/:id/disputes/request 请求体(学生申请人工复核) */
+export interface RequestDisputeRequest {
+  /** 申请理由(10-500 字) */
+  reason: string;
+}
+
+/** POST /analyses/:id/disputes/request 响应 */
+export interface RequestDisputeResponse {
+  /** 已创建的争议案件 ID */
+  disputeCaseId: string;
+  /** 关联的分析任务 ID */
+  analysisId: string;
+  /** 案件状态(创建后为 open) */
+  status: DisputeStatus;
+  /** 触发级别(学生申请固定 general) */
+  triggerLevel: DisputeLevel;
+  /** 创建时间 */
+  createdAt: ISODateString;
+}
+
 // ---------- 3.12.4 争议仲裁类型 ----------
 
 /** GET /disputes 查询参数 */

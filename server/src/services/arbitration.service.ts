@@ -28,6 +28,8 @@ import {
   type DisputeCaseDetail,
   type ResolveDisputeRequest,
   type ApplyDisputeResultResponse,
+  type RequestDisputeResponse,
+  type UserRole,
 } from '../types/api-contract.js';
 import {
   type ArbitrationConfig,
@@ -157,6 +159,109 @@ class ArbitrationServiceClass {
       },
       disputeCaseId: dispute.id,
       reviewCount: reviews.length,
+    };
+  }
+
+  // ============================================================
+  // 1.5 requestDispute:学生申请人工复核
+  // ============================================================
+
+  /**
+   * 学生申请人工复核(作品所有者主动发起)
+   *
+   * 与 checkDispute 的区别:
+   *   - checkDispute 依赖 ≥2 条已提交评审做自动触发判定(教师侧调用)
+   *   - requestDispute 由学生主动发起,直接创建 general 级 open 案件,
+   *     等待教师在争议中心接手评审与裁定(复用现有仲裁闭环)
+   *
+   * 安全约束:
+   *   - student 角色强制校验作品归属(analysis.userId === requesterId)
+   *   - teacher/admin/owner 可为租户内任意分析发起(代申请场景)
+   *   - 分析须已完成(status=completed)才可申请
+   *   - 同一分析存在进行中(open/reviewing)案件时拒绝重复申请(409)
+   *
+   * @param analysisId 分析任务 ID
+   * @param tenantId 租户 ID(强制隔离)
+   * @param requesterId 申请人 ID(从 JWT)
+   * @param role 申请人角色(从 JWT)
+   * @param reason 申请理由(10-500 字,controller 已校验)
+   */
+  async requestDispute(
+    analysisId: string,
+    tenantId: string,
+    requesterId: string,
+    role: UserRole,
+    reason: string,
+  ): Promise<RequestDisputeResponse> {
+    // 1. 校验分析归属租户(多租户隔离)
+    const analysis = await analysisRepository.findById(tenantId, analysisId);
+    if (!analysis) {
+      throw new BusinessError(ErrorCode.ANALYSIS_NOT_FOUND, '分析任务不存在', 404);
+    }
+
+    // 2. 学生只能为自己的作品申请(越权防护)
+    if (role === 'student' && analysis.userId !== requesterId) {
+      logger.warn(
+        { analysisId, requesterId, ownerId: analysis.userId },
+        '[arbitration] requestDispute rejected: not owner',
+      );
+      throw new BusinessError(ErrorCode.FORBIDDEN, '只能为自己的作品申请复核', 403);
+    }
+
+    // 3. 分析须已成功出分(评分已出,才有复核对象)
+    if (analysis.status !== 'success') {
+      throw new BusinessError(ErrorCode.PARAM_INVALID, '分析尚未完成,暂不能申请复核', 400);
+    }
+
+    // 4. 防重复:已存在进行中(open/reviewing)案件 → 409
+    const existing = await disputeRepository.findByAnalysis(tenantId, analysisId);
+    if (existing && (existing.status === 'open' || existing.status === 'reviewing')) {
+      logger.info(
+        { disputeId: existing.id, analysisId, status: existing.status },
+        '[arbitration] requestDispute rejected: active dispute exists',
+      );
+      throw new BusinessError(ErrorCode.DUPLICATE_RESOURCE, '该作品已在复核流程中,请勿重复申请', 409);
+    }
+
+    // 5. 创建 DisputeCase(triggerReason 扩展字段记录申请人信息,免改表结构)
+    const cfg = await tenantArbitrationService.getEffectiveConfig(tenantId);
+    const triggerReason: DisputeTriggerReason = {
+      totalRange: 0,
+      dimDiffs: {},
+      gradeCrossCount: 0,
+      requestType: 'manual_review',
+      requesterId,
+      requestReason: reason,
+    };
+    const dispute = await disputeRepository.create({
+      analysisId,
+      tenantId,
+      triggerLevel: 'general',
+      triggerReason: triggerReason as unknown as Prisma.InputJsonValue,
+      arbitrationConfig: cfg as unknown as Prisma.InputJsonValue,
+      status: 'open',
+    });
+
+    // 6. 关联已有评审(如 AI 评审已存在,一并纳入案件,便于教师对比裁定)
+    const records = await reviewRepository.listSubmittedByAnalysis(analysisId);
+    if (records.length > 0) {
+      await disputeRepository.attachReviews(
+        dispute.id,
+        records.map((r) => r.id),
+      );
+    }
+
+    logger.info(
+      { disputeId: dispute.id, analysisId, requesterId, role, attachedReviews: records.length },
+      '[arbitration] manual review requested',
+    );
+
+    return {
+      disputeCaseId: dispute.id,
+      analysisId,
+      status: dispute.status,
+      triggerLevel: dispute.triggerLevel as DisputeLevel,
+      createdAt: dispute.createdAt.toISOString(),
     };
   }
 

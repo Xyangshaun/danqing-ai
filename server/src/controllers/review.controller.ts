@@ -14,6 +14,7 @@ import { z } from 'zod';
 import { reviewService } from '../services/review.service.js';
 import { success, error } from '../utils/response.js';
 import { ErrorCode } from '../types/api-contract.js';
+import type { UserRole } from '../types/api-contract.js';
 import type { ReviewerType } from '../types/arbitration.js';
 
 // ============================================================
@@ -51,6 +52,11 @@ const analysisIdParamSchema = z.object({
 const reviewIdParamSchema = z.object({
   id: z.string().min(1, '缺少必填参数:id'),
   rid: z.string().min(1, '缺少必填参数:rid'),
+});
+
+/** 申请人工复核请求体校验 */
+const requestDisputeSchema = z.object({
+  reason: z.string().min(10, '申请理由至少 10 个字').max(500, '申请理由不能超过 500 字'),
 });
 
 // ============================================================
@@ -129,6 +135,37 @@ export const checkDispute: RequestHandler = async (req, res, next) => {
     }
     const result = await reviewService.checkDispute(params.data.id, req.tenantId);
     return success(res, result, 'success');
+  } catch (err) {
+    return next(err);
+  }
+};
+
+/** POST /analyses/:id/disputes/request (学生申请人工复核,dispute:request) */
+export const requestDispute: RequestHandler = async (req, res, next) => {
+  try {
+    if (!req.userId || !req.tenantId) {
+      return error(res, ErrorCode.UNAUTHORIZED, '未授权,请先登录', 401);
+    }
+    const params = analysisIdParamSchema.safeParse(req.params);
+    if (!params.success) {
+      return error(res, ErrorCode.PARAM_INVALID, params.error.issues[0]?.message ?? '参数错误', 400);
+    }
+    const parseResult = requestDisputeSchema.safeParse(req.body);
+    if (!parseResult.success) {
+      return error(res, ErrorCode.PARAM_INVALID, parseResult.error.issues[0]?.message ?? '参数错误', 400);
+    }
+    // req.role 由 authMiddleware 注入;缺失时按 student 最严口径处理(触发归属校验)
+    const role: UserRole = req.role === 'admin' || req.role === 'owner' || req.role === 'teacher'
+      ? req.role
+      : 'student';
+    const result = await reviewService.requestDispute(
+      params.data.id,
+      req.tenantId,
+      req.userId,
+      role,
+      parseResult.data.reason,
+    );
+    return success(res, result, '复核申请已提交,请等待教师评审');
   } catch (err) {
     return next(err);
   }

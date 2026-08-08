@@ -9,6 +9,7 @@ import SmartImage from '../components/SmartImage';
 import { useToast } from '../components/ToastProvider';
 import { smartAnalyze, type AnalysisDecision } from '../services/smartAnalysisEngine';
 import PresetSelector from '../components/PresetSelector';
+import RequestReviewSection from '../components/RequestReviewSection';
 
 type Step = 'upload' | 'analyzing' | 'result';
 type ArtTypeLocal = 'painting' | 'design' | 'product' | 'sculpture';
@@ -1596,6 +1597,9 @@ export default function AnalysisPage() {
                 </div>
               );
             })()}
+
+            {/* 人工复核(Phase 5):对 AI 评分有异议可申请教师复核;本地分析结果组件自动隐藏 */}
+            <RequestReviewSection analysisId={result.id} />
 
             <div className="flex flex-wrap justify-center gap-4">
               <button

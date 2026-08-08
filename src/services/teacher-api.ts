@@ -27,6 +27,8 @@ import type {
   DisputeCaseDetail,
   ResolveDisputeRequest,
   ApplyDisputeResultResponse,
+  RequestDisputeRequest,
+  RequestDisputeResponse,
 } from '../types/teacher';
 
 /* ============================================================
@@ -131,7 +133,8 @@ export async function batchCreateReviews(
 }
 
 /* ============================================================
- * 争议仲裁(dispute:read 全员可读;resolve/apply 需 teacher 及以上)
+ * 争议仲裁(dispute:read 全员可读;resolve/apply 需 teacher 及以上;
+ *           request 为学生端申请人工复核入口,需 dispute:request)
  * ============================================================ */
 
 /** GET /api/v1/disputes - 争议分页列表(status/level 过滤) */
@@ -142,6 +145,14 @@ export function listDisputes(query?: DisputeListQuery): Promise<ListDisputesResp
 /** GET /api/v1/disputes/:id - 争议详情(含评审记录与裁定结果) */
 export function getDispute(id: string): Promise<DisputeCaseDetail> {
   return get<DisputeCaseDetail>(`/disputes/${id}`);
+}
+
+/** POST /api/v1/analyses/:id/disputes/request - 学生申请人工复核(dispute:request) */
+export function requestDispute(
+  analysisId: string,
+  body: RequestDisputeRequest,
+): Promise<RequestDisputeResponse> {
+  return post<RequestDisputeResponse>(`/analyses/${analysisId}/disputes/request`, body);
 }
 
 /** POST /api/v1/disputes/:id/resolve - 裁定争议(teacher/admin/owner) */

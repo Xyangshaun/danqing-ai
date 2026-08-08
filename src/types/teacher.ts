@@ -184,6 +184,12 @@ export interface DisputeTriggerReason {
   gradeCrossCount: number;
   /** 否决详情(仅 veto 级别) */
   vetoDetail?: { lowGrade: number; highGrade: number };
+  /** 发起方式(学生申请人工复核时为 'manual_review';自动触发时缺省) */
+  requestType?: 'manual_review';
+  /** 申请人用户 ID(仅 manual_review) */
+  requesterId?: string;
+  /** 申请理由(仅 manual_review) */
+  requestReason?: string;
 }
 
 /** 仲裁配置(系统级默认,可被租户级覆盖) */
@@ -254,6 +260,26 @@ export interface DisputeListQuery {
 
 /** GET /disputes 响应 */
 export type ListDisputesResponse = PaginatedData<DisputeCaseDetail>;
+
+/** POST /analyses/:id/disputes/request 请求体(学生申请人工复核) */
+export interface RequestDisputeRequest {
+  /** 申请理由(10-500 字) */
+  reason: string;
+}
+
+/** POST /analyses/:id/disputes/request 响应 */
+export interface RequestDisputeResponse {
+  /** 已创建的争议案件 ID */
+  disputeCaseId: string;
+  /** 关联的分析任务 ID */
+  analysisId: string;
+  /** 案件状态(创建后为 open) */
+  status: DisputeStatus;
+  /** 触发级别(学生申请固定 general) */
+  triggerLevel: DisputeLevel;
+  /** 创建时间 */
+  createdAt: ISODateString;
+}
 
 /** POST /disputes/:id/resolve 请求体 */
 export interface ResolveDisputeRequest {

@@ -88,6 +88,7 @@ export type Permission =
   | 'review:read' // 查看评审记录(租户内所有角色)
   | 'review:write' // 提交评审(TEACHER/ADMIN/OWNER)
   | 'dispute:read' // 查看争议案件(租户内所有角色)
+  | 'dispute:request' // 申请人工复核(STUDENT 为自己的作品发起;ADMIN/OWNER 全权)
   | 'dispute:resolve' // 裁定争议(TEACHER/ADMIN/OWNER)
   | 'admin:invitation:write' // 创建邀请码/批量导入学生(ADMIN/OWNER)
   | 'admin:preset:read' // 管理后台查看所有预设(ADMIN/OWNER)
@@ -159,6 +160,7 @@ export const ALL_PERMISSIONS: readonly Permission[] = [
   'review:read',
   'review:write',
   'dispute:read',
+  'dispute:request',
   'dispute:resolve',
   'admin:invitation:write',
   'admin:preset:read',
@@ -268,10 +270,11 @@ export const ROLE_PERMISSIONS: Readonly<Record<UserRole, readonly Permission[]>>
     'modules:read',
     'ui:config:read',
     'config:features:read',
-    // Phase 5 新功能权限:学生可读预设/评审/争议(不可写)
+    // Phase 5 新功能权限:学生可读预设/评审/争议,并可为自己的作品申请人工复核
     'preset:read',
     'review:read',
     'dispute:read',
+    'dispute:request',
     // 实时图片搜索:学生可读(服务端强制 status=published)
     'image:read',
   ]),

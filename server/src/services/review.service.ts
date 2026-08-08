@@ -27,6 +27,8 @@ import {
   type ReviewRecordSummary,
   type ReviewScoresPayload,
   type DisputeCheckResponse,
+  type RequestDisputeResponse,
+  type UserRole,
 } from '../types/api-contract.js';
 import type { ReviewerType, ReviewRecordStatus } from '../types/arbitration.js';
 import type { ReviewRecord, Prisma } from '@prisma/client';
@@ -159,6 +161,20 @@ class ReviewServiceClass {
       throw new BusinessError(ErrorCode.ANALYSIS_NOT_FOUND, '分析任务不存在', 404);
     }
     return arbitrationService.checkDispute(analysisId, tenantId);
+  }
+
+  /**
+   * 学生申请人工复核(委托 arbitrationService.requestDispute)
+   * 归属/完成态/防重复校验均在 arbitration 层完成
+   */
+  async requestDispute(
+    analysisId: string,
+    tenantId: string,
+    requesterId: string,
+    role: UserRole,
+    reason: string,
+  ): Promise<RequestDisputeResponse> {
+    return arbitrationService.requestDispute(analysisId, tenantId, requesterId, role, reason);
   }
 
   // ============================================================

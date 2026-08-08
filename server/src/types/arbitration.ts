@@ -144,6 +144,12 @@ export interface DisputeTriggerReason {
   gradeCrossCount: number;
   /** 否决详情(仅 veto 级别) */
   vetoDetail?: { lowGrade: number; highGrade: number };
+  /** 发起方式(学生申请人工复核时为 'manual_review';自动触发时缺省) */
+  requestType?: 'manual_review';
+  /** 申请人用户 ID(仅 manual_review) */
+  requesterId?: string;
+  /** 申请理由(仅 manual_review) */
+  requestReason?: string;
 }
 
 /** 争议最终裁定结果(finalScore 字段结构) */
