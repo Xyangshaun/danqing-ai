@@ -25,6 +25,9 @@ export interface ArtworkItem {
   description: string;
   imageUrl: string;
   thumbUrl?: string;
+  /** 缩略图实际宽高(保比例缩略图):用于前端按自然比例渲染容器,消除裁剪与白边 */
+  thumbW?: number;
+  thumbH?: number;
   source: string;
   sourceUrl?: string;
   tags: string[];
@@ -222,7 +225,7 @@ export function getFilterCounts(items: ArtworkItem[] = getBuiltinArtworks()): Fi
  * 应用部署在 /app/ 子路径,浏览器直接请求 /images/... 会命中官网 SPA 兜底,
  * 返回 text/html 导致图片解码失败。dev 下 BASE_URL='/' 时保持原样。
  */
-function withAppBase(url: string): string {
+export function withAppBase(url: string): string {
   if (!url.startsWith('/')) return url;
   const base = import.meta.env.BASE_URL || '/';
   return base === '/' ? url : base.replace(/\/$/, '') + url;

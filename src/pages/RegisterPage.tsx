@@ -304,15 +304,16 @@ export default function RegisterPage() {
             注册即代表同意服务协议与隐私政策
           </p>
 
-          {/* 底部:返回首页 */}
+          {/* 底部:返回官网(整页跳转至官网首页;?skipIntro=1 跳过开屏动画。
+              注意不能用 <Link to="/">:应用 / 路由被 RequireAuth 守卫,未登录会被弹回 /login 形成死循环) */}
           <div className="mt-6 pt-6 border-t border-ink-900/8 text-center">
-            <Link
-              to="/"
+            <a
+              href="/?skipIntro=1"
               className="text-xs text-ink-500 hover:text-cinnabar transition-colors"
-              title="返回首页"
+              title="返回官网首页"
             >
-              返回首页
-            </Link>
+              返回官网
+            </a>
           </div>
         </div>
 

@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { motion, useReducedMotion, useScroll, useTransform } from 'framer-motion';
 import { CTA_LINKS, SITE } from '@/lib/site';
 import { MagneticButton } from '@/components/ui/MagneticButton';
+import { ResilientImage } from '@/components/ui/ResilientImage';
 import { HERO_ART } from '@/lib/artworks';
 
 /**
@@ -81,11 +82,12 @@ export function Hero() {
           <div className="absolute right-0 top-1/2 hidden w-[44%] max-w-[560px] -translate-y-1/2 md:block">
             <div className="relative overflow-hidden rounded-lg border border-ink-100/40 shadow-ink-lg">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={HERO_ART}
+              <ResilientImage
+                localSrc={HERO_ART}
                 alt="丹青有AI 水墨山水画作"
                 className="aspect-[3/4] w-full object-cover"
                 loading="eager"
+                decoding="async"
               />
               {/* 宣纸内衬边框 */}
               <div className="pointer-events-none absolute inset-2 border border-paper-50/40" aria-hidden="true" />

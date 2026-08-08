@@ -975,6 +975,60 @@ export interface ConfirmActionConfig {
 
 ---
 
+### 3.12 用户在线状态(Presence,P-09,M-4 追加)
+
+> DOC-2026-08-015。架构依据:tech_arch.md §13。三态语义全端统一,禁止各端自行定义在线判定。
+> 兼容约束:既有 `GET /api/admin/dev/accounts` 的 `isOnline`/`activeSessions`/`lastActiveAt` 字段**保持不变**,仅追加 `presenceState`(非破坏性变更)。
+
+```typescript
+// ============ 3.12 用户在线状态 Presence(P-09) ============
+
+/** 在线状态三态(单一真相,全端统一) */
+export type PresenceState = 'online' | 'idle' | 'offline';
+
+/** 客户端类型(与 JWT client claim 一致) */
+export type PresenceClient = 'web' | 'admin' | 'mobile';
+
+/** 单用户实时状态条目 */
+export interface UserPresenceEntry {
+  userId: string;
+  /** 三态:online=近5min活跃 / idle=会话有效不活跃 / offline=无有效会话 */
+  state: PresenceState;
+  /** 最后活跃时间(ISO 8601;offline 且无历史时为 null) */
+  lastSeenAt: string | null;
+  /** 当前活跃客户端类型(非 online 时为 null) */
+  client: PresenceClient | null;
+  /** 有效会话数(DB Session 派生) */
+  activeSessions: number;
+}
+
+/** GET /api/admin/presence/users?ids=a,b,c 响应 data */
+export interface PresenceBatchResponse {
+  items: UserPresenceEntry[];
+  /** 服务端判定时刻(用于前端展示"数据截至") */
+  asOf: string;
+}
+
+/** GET /api/admin/presence/online 响应 data */
+export interface PresenceOnlineResponse {
+  items: UserPresenceEntry[];
+  summary: {
+    online: number;
+    idle: number;
+    offline: number;
+  };
+  asOf: string;
+}
+
+/** GET /api/admin/dev/accounts 条目追加字段(既有字段不动) */
+export interface DevAccountEntryPresenceExt {
+  /** 追加:三态实时状态 */
+  presenceState: PresenceState;
+}
+```
+
+---
+
 ## 4. OpenAPI 3.0 接口规范
 
 > 以下为 OpenAPI 3.0 YAML 片段,可直接粘贴到 Swagger Editor 预览。`components` 部分引用上文 TypeScript 类型。
@@ -2157,6 +2211,107 @@ paths:
 
 ---
 
+### 4.13 用户在线状态 Presence(M-4 新增,DOC-2026-08-015)
+
+> 鉴权:`Authorization: Bearer {access_token}` + 权限码;限流:复用 `apiRateLimiter`(60 次/分钟/用户)。
+> 挂载:`/api/admin/*`(与既有管理后台同链路:authMiddleware → tenantMiddleware → requirePermission)。
+
+```yaml
+# ============ 4.13 Presence(M-4) ============
+/api/admin/presence/users:
+  get:
+    summary: 批量查询用户在线状态(管理后台用户列表合并用)
+    security: [ { bearerAuth: [] } ]
+    parameters:
+      - in: query
+        name: ids
+        required: true
+        schema: { type: string }
+        description: 逗号分隔 userId,上限 100;超出返回 1001
+        example: "u1,u2,u3"
+    responses:
+      '200':
+        description: 批量在线状态
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/ApiResponse'
+                - type: object
+                  properties:
+                    data:
+                      type: object
+                      properties:
+                        items:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              userId: { type: string }
+                              state: { type: string, enum: [online, idle, offline] }
+                              lastSeenAt: { type: string, nullable: true }
+                              client: { type: string, nullable: true, enum: [web, admin, mobile, null] }
+                              activeSessions: { type: integer }
+                        asOf: { type: string }
+      '400': { description: ids 缺失/超限(1001) }
+      '403': { description: 无 admin:user:read 权限(2004) }
+
+/api/admin/presence/online:
+  get:
+    summary: 当前在线用户实时清单(开发者视图)
+    security: [ { bearerAuth: [] } ]
+    responses:
+      '200':
+        description: 在线清单 + 三态汇总
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/ApiResponse'
+                - type: object
+                  properties:
+                    data:
+                      type: object
+                      properties:
+                        items: { type: array, items: { $ref: '#/components/schemas/UserPresenceEntry' } }
+                        summary:
+                          type: object
+                          properties:
+                            online: { type: integer }
+                            idle: { type: integer }
+                            offline: { type: integer }
+                        asOf: { type: string }
+      '403': { description: 无 admin:stats:read 权限(2004) }
+
+/api/admin/dev/accounts:
+  get:
+    summary: 账号清单(既有端点,M-4 增强:条目追加 presenceState)
+    security: [ { bearerAuth: [] } ]
+    responses:
+      '200':
+        description: |
+          既有字段(id/email/name/role/authType/status/tenantId/tenantName/
+          isOnline/activeSessions/lastActiveAt/isTestAccount)保持不变,
+          每条目追加 presenceState: online|idle|offline
+      '403': { description: 无 admin:user:read 权限(2004) }
+
+/api/admin/dev/deployments:
+  get:
+    summary: 部署历史(既有端点,本次补登记,行为不变)
+    security: [ { bearerAuth: [] } ]
+    parameters:
+      - in: query
+        name: limit
+        schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    responses:
+      '200': { description: 按 timestamp 倒序的部署记录 + latest }
+      '403': { description: 无 admin:stats:read 权限(2004) }
+```
+
+> **补登记说明**:`/api/admin/dev/accounts` 与 `/api/admin/dev/deployments` 已在代码实现(`server/src/controllers/admin-dev.controller.ts`),本文档此前缺失登记,本次一并补齐;二者行为无变更。
+
+---
+
 ## 5. 接口清单速查表
 
 | # | 方法 | 路径 | 鉴权 | 描述 | 主要错误码 |
@@ -2179,6 +2334,10 @@ paths:
 | 16 | GET | /generation/:id | 是 | 轮询生成任务结果(M-0) | 6102 |
 | 17 | GET | /api/admin/metrics/ai | 是(IP白名单+admin) | AI 指标聚合(M-0) | 9201, 2004 |
 | 18 | GET | /api/admin/metrics/sla | 是(IP白名单+admin) | SLA 逐日达标率(M-0) | 9201, 2004 |
+| 19 | GET | /api/admin/presence/users | 是(admin:user:read) | 批量查询用户在线状态(M-4) | 1001, 2004 |
+| 20 | GET | /api/admin/presence/online | 是(admin:stats:read) | 当前在线用户实时清单(M-4) | 2004 |
+| 21 | GET | /api/admin/dev/accounts | 是(admin:user:read) | 账号清单(M-4 增强:追加 presenceState;既有端点补登记) | 2004 |
+| 22 | GET | /api/admin/dev/deployments | 是(admin:stats:read) | 部署历史(既有端点补登记,行为不变) | 1001, 2004 |
 
 ---
 
@@ -2234,6 +2393,7 @@ flowchart LR
 |---|---|---|---|
 | v1.0 | 2026-07-27 | product-architect | 初始版本,覆盖 Phase 1 全部 11 个接口 |
 | v2.0 | 2026-08-07 | product-architect + backend-service | **M-0 增补**(依据 `m0-doc-contract-plan-2026-08-06.md`):①错误码表追加 6006/6101-6106/8015/9110/9201 及 7001-7006/8001-8014/8101-8103/8201-8203/8301-8303/8401-8404/9101-9109(M-0 之前已存在但本文档缺失的部分一并补齐);②新增 §3.7-3.11 批删/仲裁配置/生成/指标/高危确认类型;③TenantInfo 追加 `arbitrationConfig`;④新增 §4.10-4.12 OpenAPI 片段;⑤接口清单速查表扩至 18 项;⑥§6.3 更新待定项(移除已落地项);⑦类型与 `api-contract.ts` 主副本完全一致 |
+| v2.1 | 2026-08-08 | product-architect | **M-4 增补**(P-09 用户在线状态双后台同步):①新增 §3.12 Presence 类型(PresenceState 三态/UserPresenceEntry/PresenceBatchResponse/PresenceOnlineResponse);②新增 §4.13 OpenAPI 片段(`GET /api/admin/presence/users`、`GET /api/admin/presence/online`);③补登记既有端点 `/api/admin/dev/accounts`(追加 `presenceState`,非破坏性)与 `/api/admin/dev/deployments`(行为不变);④速查表扩至 22 项;⑤架构依据 tech_arch.md §13 |
 
 ---
 

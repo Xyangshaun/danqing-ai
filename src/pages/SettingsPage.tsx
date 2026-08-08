@@ -10,7 +10,7 @@ import {
 import { useToast } from '../components/ToastProvider';
 import { SkeletonBox } from '../components/PageSkeleton';
 import { useAuth } from '../hooks/useAuth';
-import { updateUserProfile } from '../services/api';
+import { updateUserProfile, sendPhoneOtp, bindPhone } from '../services/api';
 import type { UserRole } from '../types/api-contract';
 
 type Section = {
@@ -105,6 +105,18 @@ export default function SettingsPage() {
   const [editing, setEditing] = useState(false);
   const [profileSaving, setProfileSaving] = useState(false);
   const [draft, setDraft] = useState({ name: '', email: '', phone: '', avatar: '' });
+
+  /* 手机号 OTP 绑定状态(独立于编辑模式,随时可绑定)
+   * - bindStep: 'idle'(未开始) | 'entering'(输入手机号) | 'otp-sent'(已发验证码) | 'verifying'(绑定中)
+   * - bindPhoneInput / bindOtpInput: 表单值
+   * - otpCountdown: 重发倒计时(秒,0=可重发)
+   * - otpSending / bindVerifying: 防重入 */
+  const [bindStep, setBindStep] = useState<'idle' | 'entering' | 'otp-sent' | 'verifying'>('idle');
+  const [bindPhoneInput, setBindPhoneInput] = useState('');
+  const [bindOtpInput, setBindOtpInput] = useState('');
+  const [otpCountdown, setOtpCountdown] = useState(0);
+  const [otpSending, setOtpSending] = useState(false);
+  const [bindVerifying, setBindVerifying] = useState(false);
 
   /* 后端配置：从 localStorage 初始化，状态变更时自动持久化 */
   const [useApi, setUseApi] = useState<boolean>(readUseApi);
@@ -247,10 +259,13 @@ export default function SettingsPage() {
     updateSettings({ theme: t });
     // 同步写入独立 LS 键,供 useTheme hook 立即响应(避免解析整 settings 对象)
     try { localStorage.setItem(LS_KEYS.theme, t); } catch { /* ignore */ }
+    // 手动派发 storage 事件:同 tab 写 localStorage 不自动触发,需通知 useTheme hook
+    window.dispatchEvent(new StorageEvent('storage', { key: LS_KEYS.theme, newValue: t }));
   };
   const setDensity = (d: UserSettings['density']) => {
     updateSettings({ density: d });
     try { localStorage.setItem(LS_KEYS.density, d); } catch { /* ignore */ }
+    window.dispatchEvent(new StorageEvent('storage', { key: LS_KEYS.density, newValue: d }));
   };
   const setNotifications = (
     updater: (n: UserSettings['notifications']) => UserSettings['notifications']
@@ -320,7 +335,6 @@ export default function SettingsPage() {
       await updateUserProfile({
         name: draft.name.trim() || undefined,
         email: draft.email.trim() || null,
-        phone: draft.phone.trim() || null,
         avatar: draft.avatar.trim() || undefined,
       });
       await refreshUser();
@@ -336,6 +350,75 @@ export default function SettingsPage() {
   const cancelEditing = () => {
     setEditing(false);
     setDraft({ name: '', email: '', phone: '', avatar: '' });
+  };
+
+  /* ===== 手机号 OTP 绑定 ===== */
+
+  /* 倒计时 effect:每秒递减,到 0 停止 */
+  useEffect(() => {
+    if (otpCountdown <= 0) return;
+    const timer = setTimeout(() => setOtpCountdown((s) => s - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [otpCountdown]);
+
+  /* 发送验证码 */
+  const handleSendOtp = async () => {
+    const phone = bindPhoneInput.trim();
+    if (!/^1[3-9]\d{9}$/.test(phone)) {
+      toast.error('手机号格式不正确', '请输入 11 位中国大陆手机号');
+      return;
+    }
+    setOtpSending(true);
+    try {
+      const res = await sendPhoneOtp({ phone, purpose: 'bind' });
+      setBindStep('otp-sent');
+      setOtpCountdown(res.resendAfter);
+      toast.success('验证码已发送', '开发模式下请查看服务器日志获取验证码');
+    } catch {
+      // api.ts 已统一处理错误 Toast
+    } finally {
+      setOtpSending(false);
+    }
+  };
+
+  /* 绑定手机号 */
+  const handleBindPhone = async () => {
+    const phone = bindPhoneInput.trim();
+    const code = bindOtpInput.trim();
+    if (!/^\d{6}$/.test(code)) {
+      toast.error('验证码格式不正确', '请输入 6 位数字验证码');
+      return;
+    }
+    setBindVerifying(true);
+    setBindStep('verifying');
+    try {
+      await bindPhone({ phone, code });
+      await refreshUser();
+      toast.success('手机号已绑定');
+      setBindStep('idle');
+      setBindPhoneInput('');
+      setBindOtpInput('');
+    } catch {
+      // api.ts 已统一处理错误 Toast,保留在 otp-sent 步骤让用户重试
+      setBindStep('otp-sent');
+    } finally {
+      setBindVerifying(false);
+    }
+  };
+
+  /* 取消绑定流程 */
+  const cancelBind = () => {
+    setBindStep('idle');
+    setBindPhoneInput('');
+    setBindOtpInput('');
+    setOtpCountdown(0);
+  };
+
+  /* 开始绑定/换绑 */
+  const startBind = () => {
+    setBindStep('entering');
+    setBindPhoneInput('');
+    setBindOtpInput('');
   };
 
   if (loading) {
@@ -483,20 +566,103 @@ export default function SettingsPage() {
               </Field>
 
               <Field label="手机号">
-                {editing ? (
-                  <input
-                    type="tel"
-                    value={draft.phone}
-                    onChange={(e) => setDraft((d) => ({ ...d, phone: e.target.value }))}
-                    placeholder="请输入手机号"
-                    className="w-full h-9 px-3 bg-rice-50 border border-ink-900/10 rounded-md text-sm focus:border-cinnabar focus-ring transition-all"
-                  />
-                ) : (
-                  <input
-                    value={user?.phone ?? (isAuthenticated ? '' : '未登录')}
-                    readOnly
-                    className="w-full h-9 px-3 bg-rice-100 border border-ink-900/10 rounded-md text-sm text-ink-700 cursor-not-allowed"
-                  />
+                {/* idle:展示已绑定手机号或未绑定提示 */}
+                {bindStep === 'idle' && (
+                  <div className="flex items-center gap-2">
+                    <input
+                      value={user?.phone ? user.phone.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2') : (isAuthenticated ? '未绑定' : '未登录')}
+                      readOnly
+                      className="flex-1 h-9 px-3 bg-rice-100 border border-ink-900/10 rounded-md text-sm text-ink-700 cursor-not-allowed"
+                    />
+                    {isAuthenticated && (
+                      <button
+                        type="button"
+                        onClick={startBind}
+                        className="px-3 h-9 text-sm bg-ink-900/5 hover:bg-ink-900/10 text-ink-700 rounded-md transition-colors whitespace-nowrap"
+                      >
+                        {user?.phone ? '更换' : '绑定手机号'}
+                      </button>
+                    )}
+                  </div>
+                )}
+                {/* entering:输入手机号 */}
+                {bindStep === 'entering' && (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="tel"
+                      value={bindPhoneInput}
+                      onChange={(e) => setBindPhoneInput(e.target.value)}
+                      placeholder="请输入手机号"
+                      maxLength={11}
+                      className="flex-1 h-9 px-3 bg-rice-50 border border-ink-900/10 rounded-md text-sm focus:border-cinnabar focus-ring transition-all"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => void handleSendOtp()}
+                      disabled={otpSending || !bindPhoneInput.trim()}
+                      className="px-3 h-9 text-sm bg-cinnabar hover:bg-cinnabar-dark text-white rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap flex items-center gap-1.5"
+                    >
+                      {otpSending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                      发送验证码
+                    </button>
+                    <button
+                      type="button"
+                      onClick={cancelBind}
+                      className="px-3 h-9 text-sm bg-ink-900/5 hover:bg-ink-900/10 text-ink-700 rounded-md transition-colors"
+                    >
+                      取消
+                    </button>
+                  </div>
+                )}
+                {/* otp-sent / verifying:输入验证码并绑定 */}
+                {(bindStep === 'otp-sent' || bindStep === 'verifying') && (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="tel"
+                        value={bindPhoneInput}
+                        onChange={() => {}}
+                        disabled
+                        className="flex-1 h-9 px-3 bg-rice-100 border border-ink-900/10 rounded-md text-sm text-ink-500 cursor-not-allowed"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => void handleSendOtp()}
+                        disabled={otpSending || otpCountdown > 0}
+                        className="px-3 h-9 text-sm bg-ink-900/5 hover:bg-ink-900/10 text-ink-700 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                      >
+                        {otpCountdown > 0 ? `${otpCountdown}s 后重发` : '重发验证码'}
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={bindOtpInput}
+                        onChange={(e) => setBindOtpInput(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                        placeholder="请输入 6 位验证码"
+                        maxLength={6}
+                        className="flex-1 h-9 px-3 bg-rice-50 border border-ink-900/10 rounded-md text-sm focus:border-cinnabar focus-ring transition-all tracking-widest"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => void handleBindPhone()}
+                        disabled={bindVerifying || bindOtpInput.length !== 6}
+                        className="px-3 h-9 text-sm bg-cinnabar hover:bg-cinnabar-dark text-white rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap flex items-center gap-1.5"
+                      >
+                        {bindVerifying && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                        确认绑定
+                      </button>
+                      <button
+                        type="button"
+                        onClick={cancelBind}
+                        disabled={bindVerifying}
+                        className="px-3 h-9 text-sm bg-ink-900/5 hover:bg-ink-900/10 text-ink-700 rounded-md transition-colors disabled:opacity-50"
+                      >
+                        取消
+                      </button>
+                    </div>
+                  </div>
                 )}
               </Field>
 
@@ -792,9 +958,27 @@ export default function SettingsPage() {
                   { desc: '跳转情绪画布', keys: ['5'] },
                   { desc: '跳转历史记录', keys: ['6'] },
                   { desc: '跳转成长曲线', keys: ['7'] },
+                  { desc: '跳转 AI 生成', keys: ['8'] },
                   { desc: '跳转设置', keys: ['0'] },
                   { desc: '新建诊断', keys: ['N'] },
                   { desc: '折叠 / 展开侧栏', keys: ['B'] },
+                ]}
+              />
+              <ShortcutGroup
+                title="诊断页操作"
+                items={[
+                  { desc: '重新分析', keys: ['R'] },
+                  { desc: '撤销到上传前', keys: ['⌘', 'Z'] },
+                  { desc: '撤销到上传前（备选）', keys: ['Ctrl', 'Z'] },
+                ]}
+              />
+              <ShortcutGroup
+                title="画布页操作"
+                items={[
+                  { desc: '切换笔刷', keys: ['B'] },
+                  { desc: '切换橡皮', keys: ['E'] },
+                  { desc: '撤销', keys: ['Ctrl', 'Z'] },
+                  { desc: '重做', keys: ['Ctrl', 'Shift', 'Z'] },
                 ]}
               />
               <ShortcutGroup

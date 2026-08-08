@@ -1,34 +1,45 @@
 import { useState, useEffect } from 'react';
 import { ArrowRight, X, ExternalLink, Heart, Globe, BookMarked, Brush, PenTool, Box, Layers, Loader2, ImageOff } from 'lucide-react';
-import { loadBuiltinArtworks, styleCategories, resolveArtworkThumbUrl, type ArtworkItem } from '../services/artworksDatabase';
+import { loadBuiltinArtworks, styleCategories, resolveArtworkThumbUrl, withAppBase, type ArtworkItem } from '../services/artworksDatabase';
 import { artworkImage } from '../services/artworkImage';
 import { SkeletonBox, SkeletonStyle } from '../components/PageSkeleton';
 import { useToast } from '../components/ToastProvider';
 
+/* 四大创作形式封面:真实公有领域藏品(Wikimedia Commons / Google Art Project),
+ * 加载失败时回退到本地生成的 SVG 占位图,保证永不错裂。
+ *   绘画   — 梵高《罗纳河上的星夜》(Google Art Project)
+ *   设计   — William Morris 孔雀织锦面板
+ *   产品   — 明嘉靖五彩鱼藻纹盖罐
+ *   雕塑   — 卢浮宫《狄安娜与鹿》喷泉雕塑
+ */
 const styleConfigs = {
   painting: {
     name: '绘画',
     icon: Brush,
     description: '中国画与西方绘画的经典流派',
-    coverImage: artworkImage('painting-styles-cover', { size: 'landscape_4_3', category: 'painting', title: '绘画' }),
+    coverImage: withAppBase('/images/artworks-real/full/wm-bdfa9e96f2.jpg'),
+    coverFallback: artworkImage('painting-styles-cover', { size: 'landscape_4_3', category: 'painting', title: '绘画' }),
   },
   design: {
     name: '设计',
     icon: PenTool,
     description: '视觉传达与平面设计流派',
-    coverImage: artworkImage('design-styles-cover', { size: 'landscape_4_3', category: 'design', title: '设计' }),
+    coverImage: withAppBase('/images/artworks-real/full/wm-73f07c6cce.jpg'),
+    coverFallback: artworkImage('design-styles-cover', { size: 'landscape_4_3', category: 'design', title: '设计' }),
   },
   product: {
     name: '产品设计',
     icon: Box,
     description: '工业设计与家具设计经典',
-    coverImage: artworkImage('product-styles-cover', { size: 'landscape_4_3', category: 'product', title: '产品设计' }),
+    coverImage: withAppBase('/images/artworks-real/full/wm-56455993d3.jpg'),
+    coverFallback: artworkImage('product-styles-cover', { size: 'landscape_4_3', category: 'product', title: '产品设计' }),
   },
   sculpture: {
     name: '雕塑',
     icon: Layers,
     description: '古今中外的雕塑艺术杰作',
-    coverImage: artworkImage('sculpture-styles-cover', { size: 'landscape_4_3', category: 'sculpture', title: '雕塑' }),
+    coverImage: withAppBase('/images/artworks-real/full/wm-c612851da4.jpg'),
+    coverFallback: artworkImage('sculpture-styles-cover', { size: 'landscape_4_3', category: 'sculpture', title: '雕塑' }),
   },
 };
 
@@ -153,12 +164,20 @@ export default function StylesPage() {
                         <img
                           src={config.coverImage}
                           alt={config.name}
-                          loading="lazy"
+                          loading="eager"
                           className={`w-full h-full object-cover group-hover:scale-105 transition-all duration-500 ${
                             coverLoadStates[key] === 'loaded' ? 'opacity-100' : 'opacity-0'
                           }`}
                           onLoad={() => handleCoverLoad(key)}
-                          onError={() => handleCoverError(key)}
+                          onError={(e) => {
+                            // 真实封面失败时回退到内联 SVG 占位(零网络),仍失败才置错误态
+                            const img = e.currentTarget;
+                            if (img.src !== config.coverFallback) {
+                              img.src = config.coverFallback;
+                              return;
+                            }
+                            handleCoverError(key);
+                          }}
                         />
                       )}
                       <div className="absolute inset-0 bg-gradient-to-t from-ink-900/70 via-ink-900/20 to-transparent" />

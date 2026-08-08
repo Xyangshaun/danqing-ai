@@ -4,7 +4,7 @@
 //
 // 覆盖范围:
 //   1. 分词器(中文二元 / 英文单词 / 混合)
-//   2. 种子数据加载(每租户 12 条作品图片,10 published + 1 draft + 1 archived)
+//   2. 种子数据加载(每租户 22 条真实藏品图片,20 published + 1 draft + 1 archived)
 //   3. 关键词搜索(召回 / 相关性排序 / score 归一化)
 //   4. 关键词联想补全(前缀匹配 / 学生权限过滤)
 //   5. 筛选(标签 AND / 分类 / 状态)
@@ -57,28 +57,28 @@ describe('tokenize 分词器', () => {
 // 2. 种子数据
 // ============================================================
 describe('种子数据加载', () => {
-  it('首次访问应自动注入 12 条种子图片(10 published + 1 draft + 1 archived)', () => {
+  it('首次访问应自动注入 22 条种子图片(20 published + 1 draft + 1 archived)', () => {
     // 默认搜索仅返回 published(与 knowledge.service 行为一致:status 默认 published)
     const published = imageSearchService.search(TENANT_A, 'admin', {});
-    expect(published.total).toBe(10);
-    // admin 显式按状态查询可见全部 12 条
+    expect(published.total).toBe(20);
+    // admin 显式按状态查询可见全部 22 条
     const draft = imageSearchService.search(TENANT_A, 'admin', { status: 'draft' });
     const archived = imageSearchService.search(TENANT_A, 'admin', { status: 'archived' });
     expect(draft.total).toBe(1);
     expect(archived.total).toBe(1);
-    // 合计 12
-    expect(published.total + draft.total + archived.total).toBe(12);
+    // 合计 22
+    expect(published.total + draft.total + archived.total).toBe(22);
   });
 
-  it('默认搜索(admin 无 status)应仅返回 published(10 条,与 knowledge 行为一致)', () => {
+  it('默认搜索(admin 无 status)应仅返回 published(20 条,与 knowledge 行为一致)', () => {
     const result = imageSearchService.search(TENANT_A, 'admin', {});
-    expect(result.total).toBe(10);
+    expect(result.total).toBe(20);
     expect(result.items.every((i) => i.status === 'published')).toBe(true);
   });
 
-  it('默认搜索(student)应仅返回 published(10 条,draft/archived 各1条被强制过滤)', () => {
+  it('默认搜索(student)应仅返回 published(20 条,draft/archived 各1条被强制过滤)', () => {
     const result = imageSearchService.search(TENANT_A, 'student', {});
-    expect(result.total).toBe(10);
+    expect(result.total).toBe(20);
     expect(result.items.every((i) => i.status === 'published')).toBe(true);
   });
 });
@@ -90,8 +90,8 @@ describe('关键词搜索', () => {
   it('搜索"素描"应召回素描相关条目并按相关性排序', () => {
     const result = imageSearchService.search(TENANT_A, 'admin', { q: '素描' });
     expect(result.total).toBeGreaterThanOrEqual(3);
-    // 标题含"素描"的条目应排在最前
-    expect(result.items[0]?.title).toContain('素描');
+    // 标签含"素描"的条目应排在最前(标签权重×4 + 精确标签加成,高于仅分类命中的条目)
+    expect(result.items[0]?.tags).toContain('素描');
     // score 应归一化到 0-1,首条为 1
     expect(result.items[0]?.score).toBe(1);
     for (const item of result.items) {
@@ -100,23 +100,26 @@ describe('关键词搜索', () => {
     }
   });
 
-  it('短语"素描头像"应精确命中标题并获得最高分', () => {
-    const result = imageSearchService.search(TENANT_A, 'admin', { q: '素描头像' });
+  it('短语"自画像"应精确命中标题并获得最高分', () => {
+    const result = imageSearchService.search(TENANT_A, 'admin', { q: '自画像' });
     expect(result.total).toBeGreaterThanOrEqual(1);
-    expect(result.items[0]?.title).toBe('素描头像示范');
+    expect(result.items[0]?.title).toContain('自画像');
+    expect(result.items[0]?.score).toBe(1);
   });
 
-  it('搜索"色彩"应命中色彩静物相关条目', () => {
+  it('搜索"色彩"应命中色彩相关条目', () => {
     const result = imageSearchService.search(TENANT_A, 'admin', { q: '色彩' });
     expect(result.total).toBeGreaterThanOrEqual(2);
-    const titles = result.items.map((i) => i.title);
-    expect(titles.some((t) => t.includes('色彩'))).toBe(true);
+    // 命中条目的标签或分类应含"色彩"(标题为中英文组合,不保证含该词)
+    expect(
+      result.items.every((i) => i.tags.includes('色彩') || i.category.includes('色彩')),
+    ).toBe(true);
   });
 
-  it('搜索"透视"应命中透视相关条目', () => {
-    const result = imageSearchService.search(TENANT_A, 'admin', { q: '透视' });
+  it('搜索"构图"应命中构图相关条目', () => {
+    const result = imageSearchService.search(TENANT_A, 'admin', { q: '构图' });
     expect(result.total).toBeGreaterThanOrEqual(1);
-    expect(result.items[0]?.title).toContain('透视');
+    expect(result.items[0]?.tags).toContain('构图');
   });
 
   it('无匹配关键词应返回空结果', () => {
@@ -126,9 +129,9 @@ describe('关键词搜索', () => {
     expect(result.hasMore).toBe(false);
   });
 
-  it('空关键词应返回全部 published 条目(admin:10 条,按更新时间排序)', () => {
+  it('空关键词应返回全部 published 条目(admin:20 条,按更新时间排序)', () => {
     const result = imageSearchService.search(TENANT_A, 'admin', { q: '' });
-    expect(result.total).toBe(10);
+    expect(result.total).toBe(20);
     // 空查询不返回 score
     expect(result.items[0]?.score).toBeUndefined();
   });
@@ -167,13 +170,13 @@ describe('关键词联想补全', () => {
   });
 
   it('学生角色应过滤掉仅来自 draft/archived 图片的 token', () => {
-    // "草稿"标签仅出现在 draft 状态的"校考创意速写草稿"中
-    const adminResult = imageSearchService.suggest(TENANT_A, 'admin', { q: '草' });
-    const studentResult = imageSearchService.suggest(TENANT_A, 'student', { q: '草' });
-    // admin 能看到"草稿"
-    expect(adminResult.suggestions.some((s) => s === '草稿')).toBe(true);
+    // "铜像"标签仅出现在 draft 状态的"海鸥少女像"中
+    const adminResult = imageSearchService.suggest(TENANT_A, 'admin', { q: '铜' });
+    const studentResult = imageSearchService.suggest(TENANT_A, 'student', { q: '铜' });
+    // admin 能看到"铜像"
+    expect(adminResult.suggestions.some((s) => s === '铜像')).toBe(true);
     // student 不应看到仅来自 draft 的 token
-    expect(studentResult.suggestions.some((s) => s === '草稿')).toBe(false);
+    expect(studentResult.suggestions.some((s) => s === '铜像')).toBe(false);
   });
 });
 
@@ -218,30 +221,36 @@ describe('筛选', () => {
 // 6. 分页
 // ============================================================
 describe('分页', () => {
-  it('应正确分页(pageSize=4,共10条 published → 3页:4+4+2)', () => {
-    const page1 = imageSearchService.search(TENANT_A, 'admin', { page: 1, pageSize: 4 });
-    expect(page1.items).toHaveLength(4);
+  it('应正确分页(pageSize=6,共20条 published → 4页:6+6+6+2)', () => {
+    const page1 = imageSearchService.search(TENANT_A, 'admin', { page: 1, pageSize: 6 });
+    expect(page1.items).toHaveLength(6);
     expect(page1.hasMore).toBe(true);
     expect(page1.page).toBe(1);
-    expect(page1.pageSize).toBe(4);
+    expect(page1.pageSize).toBe(6);
 
-    const page2 = imageSearchService.search(TENANT_A, 'admin', { page: 2, pageSize: 4 });
-    expect(page2.items).toHaveLength(4);
+    const page2 = imageSearchService.search(TENANT_A, 'admin', { page: 2, pageSize: 6 });
+    expect(page2.items).toHaveLength(6);
     expect(page2.hasMore).toBe(true);
 
-    const page3 = imageSearchService.search(TENANT_A, 'admin', { page: 3, pageSize: 4 });
-    expect(page3.items).toHaveLength(2);
-    expect(page3.hasMore).toBe(false);
+    const page3 = imageSearchService.search(TENANT_A, 'admin', { page: 3, pageSize: 6 });
+    expect(page3.items).toHaveLength(6);
+    expect(page3.hasMore).toBe(true);
 
-    // 三页无重复
-    const ids = new Set([...page1.items, ...page2.items, ...page3.items].map((i) => i.id));
-    expect(ids.size).toBe(10);
+    const page4 = imageSearchService.search(TENANT_A, 'admin', { page: 4, pageSize: 6 });
+    expect(page4.items).toHaveLength(2);
+    expect(page4.hasMore).toBe(false);
+
+    // 四页无重复
+    const ids = new Set(
+      [...page1.items, ...page2.items, ...page3.items, ...page4.items].map((i) => i.id),
+    );
+    expect(ids.size).toBe(20);
   });
 
   it('超出页码范围应返回空列表', () => {
     const result = imageSearchService.search(TENANT_A, 'admin', { page: 99, pageSize: 5 });
     expect(result.items).toEqual([]);
-    expect(result.total).toBe(10);
+    expect(result.total).toBe(20);
   });
 });
 
@@ -359,14 +368,14 @@ describe('CRUD', () => {
 describe('角色权限强制', () => {
   it('student 即使传 status=draft 也应被强制为 published', () => {
     const result = imageSearchService.search(TENANT_A, 'student', { status: 'draft' });
-    // student 被强制为 published,返回 10 条而非 1 条 draft
-    expect(result.total).toBe(10);
+    // student 被强制为 published,返回 20 条而非 1 条 draft
+    expect(result.total).toBe(20);
     expect(result.items.every((i) => i.status === 'published')).toBe(true);
   });
 
   it('student 即使传 status=archived 也应被强制为 published', () => {
     const result = imageSearchService.search(TENANT_A, 'student', { status: 'archived' });
-    expect(result.total).toBe(10);
+    expect(result.total).toBe(20);
     expect(result.items.every((i) => i.status === 'published')).toBe(true);
   });
 

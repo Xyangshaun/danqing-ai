@@ -83,6 +83,11 @@ const ArtworkCard = memo(function ArtworkCard({
   const artworkImageUrl = useArtworkImage(artwork, 'thumb');
   const artworkFallbackUrl = useMemo(() => resolveArtworkFallbackUrl(artwork), [artwork]);
   const { imgRef, loadedSrc, isLoaded, isError } = useLazyImage(artworkImageUrl, { eager, fallbackSrc: artworkFallbackUrl });
+  // 自然宽高比:缩略图为保比例生成(宽640高自适应),容器按 thumbW/thumbH 定比例,
+  // img object-cover 恰好铺满 → 无裁剪、无白边、无 CLS;缺尺寸信息时回退 16:9
+  const aspectRatio = artwork.thumbW && artwork.thumbH
+    ? `${artwork.thumbW} / ${artwork.thumbH}`
+    : '16 / 9';
 
   return (
     <div
@@ -91,7 +96,9 @@ const ArtworkCard = memo(function ArtworkCard({
       }`}
       onClick={() => onSelect(artwork)}
     >
-      <div className={`relative bg-ink-100 overflow-hidden ${compact ? 'min-h-[120px]' : 'min-h-[180px]'}`}>
+      {/* 图片容器:按缩略图自然宽高比(aspect-ratio),img object-cover 铺满,
+          占位/加载/兜底全程零布局跳动 */}
+      <div className="relative bg-ink-100 overflow-hidden" style={{ aspectRatio }}>
         {!isLoaded && !isError && (
           <SkeletonBox className="absolute inset-0 z-10" />
         )}
@@ -106,7 +113,7 @@ const ArtworkCard = memo(function ArtworkCard({
             src={loadedSrc}
             alt={artwork.title}
             loading={eager ? 'eager' : 'lazy'}
-            className={`w-full h-auto block transition-all duration-500 ${
+            className={`absolute inset-0 w-full h-full object-cover transition-all duration-500 ${
               isLoaded ? 'opacity-100 group-hover:scale-105' : 'opacity-0'
             }`}
           />
@@ -272,6 +279,7 @@ export default function MaterialsPage() {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [selectedArtwork, setSelectedArtwork] = useState<ArtworkItem | null>(null);
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
+  const [showAllMainTags, setShowAllMainTags] = useState(false);
   const [showAllTags, setShowAllTags] = useState(false);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [groupBy, setGroupBy] = useState<'none' | 'style' | 'era' | 'region'>('none');
@@ -456,8 +464,15 @@ export default function MaterialsPage() {
       .map(([tag, count]) => ({ tag, count }));
   }, [tagCounts]);
 
-  // 显示的标签（折叠时只显示前12个）
-  const displayedTags = showAllTags ? sortedTags : sortedTags.slice(0, 12);
+  // 主次标签分组:count >= 100 为主要标签(分类级别),< 100 为次要标签(长尾)
+  const MAIN_TAG_THRESHOLD = 100;
+  const mainTags = useMemo(() => sortedTags.filter((t) => t.count >= MAIN_TAG_THRESHOLD), [sortedTags]);
+  const minorTags = useMemo(() => sortedTags.filter((t) => t.count < MAIN_TAG_THRESHOLD), [sortedTags]);
+
+  // 主标签默认显示前 15 个,展开后显示全部;次标签默认隐藏
+  const MAIN_TAG_PREVIEW = 15;
+  const displayedMainTags = showAllMainTags ? mainTags : mainTags.slice(0, MAIN_TAG_PREVIEW);
+  const displayedMinorTags = showAllTags ? minorTags : [];
 
   // 统计每个艺术家的作品数量,用于筛选区按作品数排序展示
   const artistCounts = useMemo(() => {
@@ -538,9 +553,9 @@ export default function MaterialsPage() {
     }
   }, [toast]);
 
-  /* 详情弹窗图片懒加载:useLazyImage 在 selectedArtwork 变化时自动加载,
-     弹窗打开时图片在视口内,IntersectionObserver 立即触发加载。
-     弹窗用 full 原图(列表卡片用 thumb 缩略图)。 */
+  /* 详情弹窗图片:eager 直出,跳过 IntersectionObserver 与原生 lazy,
+     配合 fetchPriority="high" 让浏览器把大图请求排到列表缩略图之前,
+     解决弹窗打开时大图排队几十张缩略图导致的长时间转圈。 */
   const selectedArtworkImageUrl = useArtworkImage(selectedArtwork, 'full');
   const selectedArtworkFallbackUrl = useMemo(
     () => (selectedArtwork ? resolveArtworkFallbackUrl(selectedArtwork) : undefined),
@@ -551,7 +566,7 @@ export default function MaterialsPage() {
     loadedSrc: detailLoadedSrc,
     isLoaded: detailIsLoaded,
     isError: detailIsError,
-  } = useLazyImage(selectedArtworkImageUrl, { fallbackSrc: selectedArtworkFallbackUrl });
+  } = useLazyImage(selectedArtworkImageUrl, { eager: true, fallbackSrc: selectedArtworkFallbackUrl });
 
   /* 相关推荐:按「共同标签数 × 10 + 同风格 3 + 同时代 2 + 同地区 1」打分排序,
      排除当前作品,取前 6 件。点击相关作品切换详情,弹窗滚回顶部。 */
@@ -1036,23 +1051,27 @@ export default function MaterialsPage() {
             </div>
           </div>
 
-          {/* 作品标签云 */}
+          {/* 作品标签云 - 主次分组:主标签(count≥100)常驻,次标签可展开 */}
           <div>
             <div className="flex items-center gap-2 mb-2">
               <Tag className="w-4 h-4 text-ink-500" />
               <span className="text-sm font-medium text-ink-700">作品标签</span>
               <span className="text-xs text-ink-400">（可多选）</span>
-              <button
-                onClick={() => setShowAllTags(!showAllTags)}
-                aria-label={showAllTags ? '收起标签' : '展开全部标签'}
-                className="ml-auto text-xs text-cinnabar hover:underline flex items-center gap-1"
-              >
-                {showAllTags ? '收起' : `展开全部 (${sortedTags.length})`}
-                <ChevronDown className={`w-3 h-3 transition-transform ${showAllTags ? 'rotate-180' : ''}`} />
-              </button>
+              {mainTags.length > MAIN_TAG_PREVIEW && (
+                <button
+                  onClick={() => setShowAllMainTags(!showAllMainTags)}
+                  aria-label={showAllMainTags ? '收起主标签' : '展开全部主标签'}
+                  className="ml-auto text-xs text-cinnabar hover:underline flex items-center gap-1"
+                >
+                  {showAllMainTags ? '收起主标签' : `展开主标签 (${mainTags.length})`}
+                  <ChevronDown className={`w-3 h-3 transition-transform ${showAllMainTags ? 'rotate-180' : ''}`} />
+                </button>
+              )}
             </div>
+
+            {/* 主标签 */}
             <div className="flex flex-wrap gap-2">
-              {displayedTags.map(({ tag, count }) => (
+              {displayedMainTags.map(({ tag, count }) => (
                 <TagButton
                   key={tag}
                   label={tag}
@@ -1062,6 +1081,33 @@ export default function MaterialsPage() {
                 />
               ))}
             </div>
+
+            {/* 次标签(长尾) - 默认折叠 */}
+            {minorTags.length > 0 && (
+              <div className="mt-3 pt-3 border-t border-ink-100">
+                <button
+                  onClick={() => setShowAllTags(!showAllTags)}
+                  aria-label={showAllTags ? '收起小标签' : '展开小标签'}
+                  className="text-xs text-ink-500 hover:text-cinnabar flex items-center gap-1 mb-2"
+                >
+                  {showAllTags ? '收起小标签' : `展开小标签 (${minorTags.length})`}
+                  <ChevronDown className={`w-3 h-3 transition-transform ${showAllTags ? 'rotate-180' : ''}`} />
+                </button>
+                {showAllTags && (
+                  <div className="flex flex-wrap gap-2">
+                    {displayedMinorTags.map(({ tag, count }) => (
+                      <TagButton
+                        key={tag}
+                        label={tag}
+                        count={count}
+                        active={selectedTags.has(tag)}
+                        onClick={() => toggleSet(tag, setSelectedTags)}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
@@ -1239,7 +1285,8 @@ export default function MaterialsPage() {
                     ref={detailImgRef}
                     src={detailLoadedSrc}
                     alt={selectedArtwork.title}
-                    loading="lazy"
+                    loading="eager"
+                    fetchPriority="high"
                     className={`w-full h-full object-contain max-h-[60vh] md:max-h-[80vh] transition-opacity duration-500 ${
                       detailIsLoaded ? 'opacity-100' : 'opacity-0'
                     }`}

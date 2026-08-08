@@ -23,11 +23,27 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { searchImages, suggestImages } from '../services/api';
+import { withAppBase } from '../services/artworksDatabase';
 import type {
   ArtType,
   ImageDoc,
   ImageSearchQuery,
 } from '../types/api-contract';
+
+/**
+ * 规范化后端返回的图片 URL(2026-08-08 修复):
+ * 后端种子/条目存储根绝对路径(如 /images/artworks-real/...),
+ * 生产环境应用挂载在 /app 子路径,直接请求根路径会命中官网 SPA 兜底
+ * 返回 text/html 导致图片解码失败(裂图)。此处统一补 base 前缀,
+ * http(s) 外链与 data: URI 不受影响(withAppBase 内部已判空)。
+ */
+function normalizeImageDoc(doc: ImageDoc): ImageDoc {
+  return {
+    ...doc,
+    thumbUrl: withAppBase(doc.thumbUrl),
+    fullUrl: withAppBase(doc.fullUrl),
+  };
+}
 
 /** 搜索防抖(200ms,对应设计文档 §4 表格) */
 const SEARCH_DEBOUNCE_MS = 200;
@@ -313,11 +329,12 @@ export function useImageSearch(
           return;
         }
 
-        const itemCount = resp.items?.length ?? 0;
+        const items = (resp.items ?? []).map(normalizeImageDoc);
+        const itemCount = items.length;
         if (append) {
-          setResults((prev) => [...prev, ...(resp.items ?? [])]);
+          setResults((prev) => [...prev, ...items]);
         } else {
-          setResults(resp.items ?? []);
+          setResults(items);
         }
         setTotal(resp.total ?? 0);
         setHasMore(Boolean(resp.hasMore));

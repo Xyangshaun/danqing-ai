@@ -6,6 +6,7 @@ import { CTASection } from '@/components/ui/CTASection';
 import { JsonLd } from '@/components/seo/JsonLd';
 import { buildMetadata, breadcrumbJsonLd } from '@/lib/seo';
 import { SITE, CTA_LINKS } from '@/lib/site';
+import { ResilientImage } from '@/components/ui/ResilientImage';
 import { BRAND_ART } from '@/lib/artworks';
 
 export const metadata: Metadata = buildMetadata({
@@ -60,8 +61,8 @@ export default function AboutPage() {
             <RevealOnScroll direction="up" delay={0.1}>
               <div className="relative mt-8 overflow-hidden rounded-lg border border-ink-100/40 shadow-ink-lg">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={BRAND_ART}
+                <ResilientImage
+                  localSrc={BRAND_ART}
                   alt="丹青有AI 品牌水墨意象"
                   loading="lazy"
                   className="aspect-square w-full object-cover"

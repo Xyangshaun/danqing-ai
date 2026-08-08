@@ -88,6 +88,8 @@ export function AppLayout() {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
 
       const map: Record<string, string> = {
+        h: '/',
+        H: '/',
         '1': '/analyze',
         '2': '/materials',
         '3': '/styles',
@@ -112,8 +114,9 @@ export function AppLayout() {
         return;
       }
 
-      /* B:切换侧栏折叠状态 */
+      /* B:切换侧栏折叠状态(画布页 B 键用于切换笔刷,跳过避免冲突) */
       if (e.key === 'b' || e.key === 'B') {
+        if (location.pathname === '/canvas') return;
         e.preventDefault();
         setSidebarCollapsed((v) => !v);
         return;
@@ -150,8 +153,8 @@ export function AppLayout() {
       <Header />
 
       <div className="flex-1 flex overflow-hidden">
-        {/* 桌面端:固定侧栏 */}
-        <div className="hidden md:block">
+        {/* 桌面端:固定侧栏(h-full 将 flex-1 高度传递给 aside,保证 Sidebar 内 nav 滚动生效) */}
+        <div className="hidden md:block h-full">
           <Sidebar
             collapsed={sidebarCollapsed}
             onToggle={() => setSidebarCollapsed((v) => !v)}

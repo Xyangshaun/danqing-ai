@@ -47,6 +47,14 @@ const BRUSH_CONFIG: Record<BrushType, { label: string; icon: typeof Pencil; opac
   marker: { label: '马克笔', icon: Circle, opacity: 0.75 },
 };
 
+/* 根据当前主题返回画布背景色 */
+function getCanvasBackground(): string {
+  if (typeof document === 'undefined') return '#fdfcf9';
+  return document.documentElement.getAttribute('data-theme') === 'dark'
+    ? '#0d0d0d'
+    : '#fdfcf9';
+}
+
 export default function EmotionBrushCanvas({
   colorPalette,
   emotionName,
@@ -63,7 +71,20 @@ export default function EmotionBrushCanvas({
   const [redoStack, setRedoStack] = useState<Stroke[]>([]);
   const [currentStroke, setCurrentStroke] = useState<Stroke | null>(null);
   const [showColorPicker, setShowColorPicker] = useState(false);
+  const [canvasBg, setCanvasBg] = useState<string>(getCanvasBackground);
   const lastPointRef = useRef<Point | null>(null);
+
+  /* 监听主题属性变化,同步画布背景色 */
+  useEffect(() => {
+    const observer = new MutationObserver(() => {
+      setCanvasBg(getCanvasBackground());
+    });
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-theme'],
+    });
+    return () => observer.disconnect();
+  }, []);
 
   /* 色板更新时同步当前画笔颜色 */
   useEffect(() => {
@@ -179,8 +200,8 @@ export default function EmotionBrushCanvas({
     if (!ctx) return;
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    /* 背景纸纹 */
-    ctx.fillStyle = '#fdfcf9';
+    /* 背景纸纹:跟随主题切换 */
+    ctx.fillStyle = canvasBg;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     for (const stroke of strokes) {
@@ -189,7 +210,7 @@ export default function EmotionBrushCanvas({
     if (currentStroke) {
       drawStroke(ctx, currentStroke);
     }
-  }, [strokes, currentStroke, drawStroke]);
+  }, [strokes, currentStroke, drawStroke, canvasBg]);
 
   useEffect(() => {
     redraw();
@@ -337,7 +358,7 @@ export default function EmotionBrushCanvas({
       {/* 工具栏 */}
       <div className="border-b border-ink-900/5 p-3 flex flex-wrap items-center gap-3">
         {/* 笔刷类型 */}
-        <div className="flex items-center gap-1 bg-white rounded-lg p-1 border border-ink-900/5">
+        <div className="flex items-center gap-1 bg-rice-50 rounded-lg p-1 border border-ink-900/5">
           {(Object.keys(BRUSH_CONFIG) as BrushType[]).map((type) => {
             const cfg = BRUSH_CONFIG[type];
             const Icon = cfg.icon;
@@ -368,7 +389,7 @@ export default function EmotionBrushCanvas({
         <div className="relative">
           <button
             onClick={() => setShowColorPicker((v) => !v)}
-            className="flex items-center gap-2 px-3 py-2 bg-white rounded-lg border border-ink-900/5 hover:border-ink-200 transition-all"
+            className="flex items-center gap-2 px-3 py-2 bg-rice-50 rounded-lg border border-ink-900/5 hover:border-ink-200 transition-all"
             title="选择颜色"
           >
             <div
@@ -378,7 +399,7 @@ export default function EmotionBrushCanvas({
             <Palette className="w-4 h-4 text-ink-400" />
           </button>
           {showColorPicker && (
-            <div className="absolute top-full left-0 mt-2 z-20 bg-white rounded-xl shadow-overlay p-3 border border-ink-900/5">
+            <div className="absolute top-full left-0 mt-2 z-20 bg-rice-50 rounded-xl shadow-overlay p-3 border border-ink-900/5">
               <p className="text-xs text-ink-500 mb-2">情绪色板</p>
               <div className="flex gap-2 mb-3">
                 {colorPalette.map((c) => (
@@ -410,7 +431,7 @@ export default function EmotionBrushCanvas({
         </div>
 
         {/* 笔刷大小 */}
-        <div className="flex items-center gap-2 bg-white rounded-lg px-2 py-1 border border-ink-900/5">
+        <div className="flex items-center gap-2 bg-rice-50 rounded-lg px-2 py-1 border border-ink-900/5">
           <button onClick={() => adjustSize(-2)} className="p-1 text-ink-400 hover:text-ink-700">
             <Minus className="w-3.5 h-3.5" />
           </button>
@@ -472,7 +493,7 @@ export default function EmotionBrushCanvas({
           width={width}
           height={height}
           className="w-full h-auto block cursor-crosshair touch-none select-none"
-          style={{ background: '#fdfcf9' }}
+          style={{ background: canvasBg }}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}

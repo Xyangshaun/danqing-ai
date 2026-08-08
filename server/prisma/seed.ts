@@ -279,8 +279,146 @@ async function seedAccounts(): Promise<void> {
     });
   }
 
+  // ---------- 5. 教师账号(示范教师,加入丹青示范学院) ----------
+  const teacherEmail = 'teacher@dq.edu';
+  const teacherPasswordHash = await hashPassword('Dq@Teacher2026');
+  await prisma.user.upsert({
+    where: { email: teacherEmail },
+    update: {
+      // 已存在则修正关键字段(不修改密码,避免哈希漂移)
+      tenantId: adminTenantId,
+      authType: 'password',
+      role: 'teacher',
+      name: '示范教师',
+      status: 'active',
+    },
+    create: {
+      id: 'seed-user-teacher',
+      tenantId: adminTenantId,
+      authType: 'password',
+      email: teacherEmail,
+      passwordHash: teacherPasswordHash,
+      name: '示范教师',
+      avatar: '',
+      role: 'teacher',
+      status: 'active',
+    },
+  });
+  await prisma.tenantMember.upsert({
+    where: { userId_tenantId: { userId: 'seed-user-teacher', tenantId: adminTenantId } },
+    update: { role: 'teacher' },
+    create: { userId: 'seed-user-teacher', tenantId: adminTenantId, role: 'teacher' },
+  });
+
+  // ---------- 6. 二级只读管理员(加入丹青示范学院) ----------
+  // 注意:不修改权限模型(role=admin 拥有完整 admin:* 权限),
+  //       "只读"限制由前端隐藏操作按钮实现(轻量方案,用户已确认)
+  const subadminEmail = 'subadmin@dq.edu';
+  const subadminPasswordHash = await hashPassword('Dq@SubAdmin2026');
+  await prisma.user.upsert({
+    where: { email: subadminEmail },
+    update: {
+      tenantId: adminTenantId,
+      authType: 'password',
+      role: 'admin',
+      name: '二级管理员(只读)',
+      status: 'active',
+    },
+    create: {
+      id: 'seed-user-subadmin',
+      tenantId: adminTenantId,
+      authType: 'password',
+      email: subadminEmail,
+      passwordHash: subadminPasswordHash,
+      name: '二级管理员(只读)',
+      avatar: '',
+      role: 'admin',
+      status: 'active',
+    },
+  });
+  await prisma.tenantMember.upsert({
+    where: { userId_tenantId: { userId: 'seed-user-subadmin', tenantId: adminTenantId } },
+    update: { role: 'admin' },
+    create: { userId: 'seed-user-subadmin', tenantId: adminTenantId, role: 'admin' },
+  });
+
+  // ---------- 7. 企业账号(独立租户 + enterprise 订阅) ----------
+  // 租户类型枚举仅 school/college/class/individual,组织级租户统一用 school
+  const enterpriseTenantId = 'seed-tenant-enterprise';
+  await prisma.tenant.upsert({
+    where: { id: enterpriseTenantId },
+    update: {
+      name: '丹青创意科技',
+      type: 'school',
+      plan: 'enterprise',
+      status: 'active',
+      maxSeats: 50,
+    },
+    create: {
+      id: enterpriseTenantId,
+      name: '丹青创意科技',
+      type: 'school',
+      plan: 'enterprise',
+      status: 'active',
+      maxSeats: 50,
+    },
+  });
+
+  const enterpriseEmail = 'enterprise@dq.edu';
+  const enterprisePasswordHash = await hashPassword('Dq@Enterprise2026');
+  await prisma.user.upsert({
+    where: { email: enterpriseEmail },
+    update: {
+      tenantId: enterpriseTenantId,
+      authType: 'password',
+      role: 'owner',
+      name: '企业管理员',
+      status: 'active',
+    },
+    create: {
+      id: 'seed-user-enterprise',
+      tenantId: enterpriseTenantId,
+      authType: 'password',
+      email: enterpriseEmail,
+      passwordHash: enterprisePasswordHash,
+      name: '企业管理员',
+      avatar: '',
+      role: 'owner',
+      status: 'active',
+    },
+  });
+  await prisma.tenantMember.upsert({
+    where: { userId_tenantId: { userId: 'seed-user-enterprise', tenantId: enterpriseTenantId } },
+    update: { role: 'owner' },
+    create: { userId: 'seed-user-enterprise', tenantId: enterpriseTenantId, role: 'owner' },
+  });
+
+  // 企业租户订阅(enterprise,1 年有效期,seats=50;参考院校订阅写法,幂等)
+  const existingEnterpriseSub = await prisma.subscription.findFirst({
+    where: { tenantId: enterpriseTenantId, status: 'active' },
+  });
+  if (!existingEnterpriseSub) {
+    const now = new Date();
+    const periodEnd = new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000); // 1 年
+    await prisma.subscription.create({
+      data: {
+        tenantId: enterpriseTenantId,
+        plan: 'enterprise',
+        status: 'active',
+        periodStart: now,
+        periodEnd,
+        seats: 50,
+      },
+    });
+  }
+
   console.log(
-    '[seed] 预置账号注入完成:1 管理员(admin@dq.edu)+ 5 学生(test1-5@dq.edu),租户=丹青示范学院'
+    '[seed] 预置账号注入完成:\n' +
+      '  - 管理员    admin@dq.edu      (丹青示范学院, admin)\n' +
+      '  - 学生      test1-5@dq.edu    (丹青示范学院, student × 5)\n' +
+      '  - 教师      teacher@dq.edu    (丹青示范学院, teacher)\n' +
+      '  - 二级管理  subadmin@dq.edu   (丹青示范学院, admin, 只读由前端隐藏按钮实现)\n' +
+      '  - 企业      enterprise@dq.edu (丹青创意科技, owner, enterprise 订阅 seats=50)'
   );
 }
 

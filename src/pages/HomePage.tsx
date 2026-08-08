@@ -7,6 +7,10 @@ import {
 } from 'lucide-react';
 import { getAnalysisHistory, getGrowthData } from '../services/data-service';
 import { listDrafts, subscribeDrafts, type Draft } from '../services/draft-service';
+import { listEmotionPresets, type EmotionPreset } from '../services/emotionPresetStore';
+import { listFuseUserPresets, type FuseUserPreset } from '../services/fusePresetStore';
+import { getEmotionById } from '../services/emotionLibrary';
+import { getStyleById, getMethodById, getIntensityById } from '../services/fuseStandards';
 import { useAuth } from '../hooks/useAuth';
 import type { HistoryRecord, GrowthData } from '../types';
 import SmartImage from '../components/SmartImage';
@@ -69,6 +73,74 @@ export default function HomePage() {
    * - 未登录或读取失败时静默不显示该区块 */
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [draftsTick, setDraftsTick] = useState(0);
+
+  /* ====== 我的预设(情绪画布+灵感嫁接) ====== */
+  const [presets, setPresets] = useState<Array<{
+    id: string;
+    name: string;
+    kind: 'emotion' | 'fuse';
+    createdAt: number;
+    summary: string;
+    accent: string; // 颜色主色(用于左侧色条)
+    palette?: string[]; // 情绪画布色板预览
+    link: string; // 点击"直接使用"跳转(情绪画布带auto=1直接生成)
+    viewLink: string; // 仅载入不生成
+  }>>([]);
+
+  useEffect(() => {
+    try {
+      const emotionList = listEmotionPresets().map((p: EmotionPreset) => {
+        const primary = getEmotionById(p.primaryId);
+        const secondary = p.secondaryId ? getEmotionById(p.secondaryId) : null;
+        const palette = p.customPalette && p.customPalette.length
+          ? p.customPalette
+          : (secondary ? [...primary.colorPalette, ...secondary.colorPalette].slice(0, 5) : primary.colorPalette.slice(0, 5));
+        const intensityLevels = [
+          { value: 0.3, label: '淡' },
+          { value: 0.6, label: '中' },
+          { value: 1.0, label: '浓' },
+        ];
+        const intensityLabel = intensityLevels.find((l) => Math.abs(l.value - p.intensity) < 0.2)?.label || '中';
+        const summary = secondary
+          ? `${primary.name} ${Math.round((p.ratio) * 100)}% + ${secondary.name} · 浓度${intensityLabel}`
+          : `${primary.name} · 浓度${intensityLabel}`;
+        return {
+          id: p.id,
+          name: p.name,
+          kind: 'emotion' as const,
+          createdAt: p.createdAt,
+          summary,
+          accent: primary.colorPalette[0] || '#B91C1C',
+          palette,
+          link: `/emotion?preset=${encodeURIComponent(p.id)}&auto=1`,
+          viewLink: `/emotion?preset=${encodeURIComponent(p.id)}`,
+        };
+      });
+      const fuseList = listFuseUserPresets().map((p: FuseUserPreset) => {
+        const style = getStyleById(p.styleId);
+        const method = getMethodById(p.methodId);
+        const intensity = getIntensityById(p.intensityId);
+        const ratioPct = `${Math.round(p.ratio * 100)}%`;
+        return {
+          id: p.id,
+          name: p.name,
+          kind: 'fuse' as const,
+          createdAt: p.createdAt,
+          summary: `${style?.name ?? '风格'} + ${method?.name ?? '手法'} · ${intensity?.name ?? '中浓度'} · 风格${ratioPct}`,
+          accent: '#B45309',
+          link: `/fuse?preset=${encodeURIComponent(p.id)}`,
+          viewLink: `/fuse?preset=${encodeURIComponent(p.id)}`,
+        };
+      });
+      const merged = [...emotionList, ...fuseList]
+        .sort((a, b) => b.createdAt - a.createdAt)
+        .slice(0, 8);
+      setPresets(merged);
+    } catch (err) {
+      console.warn('加载我的预设失败:', err);
+      setPresets([]);
+    }
+  }, []);
 
   const refreshDrafts = useCallback(() => {
     setDraftsTick((t) => t + 1);
@@ -292,6 +364,75 @@ export default function HomePage() {
                         </span>
                         <span className="flex items-center gap-0.5 text-2xs text-cinnabar font-medium opacity-0 group-hover:opacity-100 transition-opacity">
                           继续 <ArrowRight className="w-3 h-3" />
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
+        {/* ========== 我的预设(情绪画布+灵感嫁接) ========== */}
+        {presets.length > 0 && (
+          <section className="animate-fade-in">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Star className="w-4 h-4 text-gold-dark" />
+                <h3 className="font-serif text-base font-semibold text-ink-900">我的预设方案</h3>
+                <span className="text-2xs text-ink-400">一键载入，直接生成</span>
+              </div>
+              <Link to="/emotion" className="text-2xs text-ink-500 hover:text-cinnabar flex items-center gap-0.5 transition-colors">
+                管理预设 <ChevronRight className="w-3 h-3" />
+              </Link>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              {presets.map((preset) => {
+                const KindIcon = preset.kind === 'emotion' ? Heart : Sparkles;
+                const kindLabel = preset.kind === 'emotion' ? '情绪画布' : '灵感嫁接';
+                return (
+                  <div
+                    key={`${preset.kind}-${preset.id}`}
+                    className="group relative bg-rice-50 border border-ink-900/6 rounded-lg overflow-hidden hover:shadow-card-hover hover:-translate-y-0.5 transition-all cursor-pointer"
+                    onClick={() => navigate(preset.link)}
+                  >
+                    {/* 左侧强调色条 */}
+                    <div
+                      className="absolute left-0 top-0 bottom-0 w-1"
+                      style={{ backgroundColor: preset.accent }}
+                    />
+                    {/* 色板预览 (仅情绪画布) */}
+                    {preset.kind === 'emotion' && preset.palette && (
+                      <div className="flex h-10 w-full">
+                        {preset.palette.map((c, i) => (
+                          <div key={i} className="flex-1" style={{ backgroundColor: c }} />
+                        ))}
+                      </div>
+                    )}
+                    {preset.kind === 'fuse' && (
+                      <div className="h-10 bg-gradient-to-r from-gold/30 via-cinnabar/20 to-ink-900/10 flex items-center px-3 gap-2">
+                        <Sparkles className="w-4 h-4 text-gold-dark" />
+                        <span className="text-2xs text-ink-700 font-medium">灵感嫁接 · 融合搭配</span>
+                      </div>
+                    )}
+                    <div className="p-3 pl-4">
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="text-sm font-medium text-ink-900 truncate group-hover:text-cinnabar transition-colors">
+                          {preset.name}
+                        </p>
+                        <span className={`flex-shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-2xs ${
+                          preset.kind === 'emotion' ? 'bg-cinnabar/10 text-cinnabar' : 'bg-gold/15 text-gold-dark'
+                        }`}>
+                          <KindIcon className="w-2.5 h-2.5" />
+                          {kindLabel}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-2xs text-ink-500 line-clamp-2 leading-snug">{preset.summary}</p>
+                      <div className="flex items-center justify-between mt-2.5">
+                        <span className="text-2xs text-ink-400">{formatRelativeTime(preset.createdAt)}</span>
+                        <span className="flex items-center gap-0.5 text-2xs text-cinnabar font-medium opacity-0 group-hover:opacity-100 transition-opacity">
+                          {preset.kind === 'emotion' ? '直接生成' : '载入搭配'} <ArrowRight className="w-3 h-3" />
                         </span>
                       </div>
                     </div>

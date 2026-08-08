@@ -1,20 +1,16 @@
 /**
- * 灵感嫁接 · 融合算法库 (P2)
+ * 灵感嫁接 · 融合算法库 (P2 重构:双层语料库)
  * ===========================================================
- * 为每种融合方法(FuseMethod)编写独立的 prompt 构建算法。
- * 每个算法按「分层组装」思路输出结构化 prompt:
+ * 架构:9 个方法帧(METHOD_FRAMES) × 12 个风格包(STYLE_PACKS)
+ * = 108 种组合的精调 prompt,集中固化、可审查、可快照测试。
  *
- *   构图借鉴   → 结构层(A骨架) + 内容层(B元素) + 风格层
- *   色彩迁移   → 结构层(A明暗) + 色彩层(B色板) + 氛围层
- *   元素融合   → 元素层(A+B) + 关联层(视觉呼应) + 统一层
- *   风格转换   → 主题层(A) + 风格层(B语言) + 技法层
- *   场景杂交   → 空间层(左右并置) + 过渡层 + 光影层
- *   意境交融   → 氛围层(情绪加权) + 光影层 + 色彩层
- *   局部置换   → 主体层(A) + 环境层(B) + 边缘融合层
- *   材质嫁接   → 形态层(A) + 材质层(B) + 光照一致层
- *   时空折叠   → 时空层(A/B时代) + 对照层 + 透视统一层
+ * - 方法帧:按融合方法固化的中文分层指令(结构层/内容层/风格层...),
+ *   含作品描述、配比等运行时插槽
+ * - 风格包:按目标风格固化的画面语言描述(中文主体 + 英文媒介关键词,
+ *   兼顾 GLM 中文理解与模型风格锚定)
+ * - 运行时组装:方法帧 + 风格包 + 配比/强度词 + 质量尾缀
  *
- * 所有算法共享配比 ratio(作品A占比 0-1)与强度 intensity 调节。
+ * 历史版本(英文长句动态拼接)备份于 backup/backup-20260808-1/。
  */
 
 import type { ArtworkItem } from './artworksDatabase';
@@ -30,232 +26,196 @@ export interface FusionContext {
   artwork2: ArtworkItem | null;
 }
 
-export type FusionAlgorithm = (ctx: FusionContext) => string;
+/** 方法帧:根据上下文输出该方法的分层融合指令(中文) */
+export type MethodFrame = (ctx: FusionContext) => string;
 
 /* ===========================================================
  * 共享工具
  * =========================================================== */
 
+/** 作品描述(中文主体,保留英文标题/作者原名) */
 function describeArtwork(item: ArtworkItem | null, fallback: string): string {
   if (!item) return fallback;
-  return `${item.title} by ${item.artist}, ${item.style} style, ${item.era} era, themes: ${item.tags.join(', ')}`;
+  return `《${item.title}》(${item.artist},${item.era},${item.style},主题:${item.tags.join('、')})`;
 }
 
-/** 强度 → 英文修饰词 */
+/** 强度 → 中文修饰词 */
 function intensityWord(value: number): string {
-  if (value <= 0.25) return 'very subtle, gentle, mostly preserving the original character';
-  if (value <= 0.5) return 'balanced, harmonious, equal presence of both';
-  if (value <= 0.75) return 'strong, deeply integrated, prominently featuring both';
-  return 'extreme, radical, complete reimagining';
+  if (value <= 0.25) return '极轻,基本保留原作气质,仅作点缀式融合';
+  if (value <= 0.5) return '均衡,双方和谐共存';
+  if (value <= 0.75) return '强烈,深度互渗,双方特征均鲜明';
+  return '极致,彻底重构,大胆再想象';
 }
 
-/** 配比 → 主导描述 */
+/** 配比 → 主导描述(中文) */
 function dominanceWord(ratio: number): string {
-  if (ratio >= 0.8) return 'artwork A strongly dominant';
-  if (ratio >= 0.6) return 'artwork A leading with artwork B accent';
-  if (ratio >= 0.4) return 'equal balance between A and B';
-  if (ratio >= 0.2) return 'artwork B leading with artwork A accent';
-  return 'artwork B strongly dominant';
-}
-
-function qualitySuffix(): string {
-  return 'High quality, museum-grade artwork, detailed, professional composition, masterpiece quality.';
+  if (ratio >= 0.8) return '作品A强烈主导';
+  if (ratio >= 0.6) return '作品A主导,作品B点缀';
+  if (ratio >= 0.4) return '作品A与作品B均衡';
+  if (ratio >= 0.2) return '作品B主导,作品A点缀';
+  return '作品B强烈主导';
 }
 
 /* ===========================================================
- * 9 种融合方法 × 9 个独立算法
+ * 方法帧层:9 种融合方法的固化分层指令
  * =========================================================== */
 
-/**
- * 构图借鉴:保留 A 构图骨架,B 的内容与风格填入
- * 结构层: A 的构图/视觉重心(ratio 越高越严格)
- * 内容层: B 的元素与色彩
- * 风格层: 目标风格修饰
- */
-export const compositionAlgorithm: FusionAlgorithm = (ctx) => {
-  const structureFidelity = ctx.ratio >= 0.6
-    ? 'Strictly preserve the compositional skeleton, visual weight distribution and focal points of artwork A'
-    : 'Loosely reference the compositional structure of artwork A, allowing creative reinterpretation';
+/** 构图借鉴:A 骨架 + B 内容填入 */
+const compositionFrame: MethodFrame = (ctx) => {
+  const fidelity = ctx.ratio >= 0.6
+    ? '严格保留作品A的构图骨架、视觉重心与疏密开合'
+    : '参考作品A的构图结构,允许创造性重构';
   return [
-    ctx.style.promptModifier,
-    `STRUCTURE LAYER: ${structureFidelity} — ${describeArtwork(ctx.artwork1, 'artwork A')}.`,
-    `CONTENT LAYER: Fill this structure with the subject matter, elements and color language of artwork B — ${describeArtwork(ctx.artwork2, 'artwork B')}.`,
-    `STYLE LAYER: Render in ${ctx.style.name} manner with ${ctx.style.characteristics.join(', ')}.`,
-    `Fusion balance: ${dominanceWord(ctx.ratio)}; intensity: ${intensityWord(ctx.intensity.value)}.`,
-    qualitySuffix(),
-  ].join(' ');
+    `以「构图借鉴」方式融合两件作品。`,
+    `结构层:${fidelity}(作品A:${describeArtwork(ctx.artwork1, '作品A')});`,
+    `内容层:将作品B的题材、元素与色彩语言填入该骨架(作品B:${describeArtwork(ctx.artwork2, '作品B')});`,
+    `风格层:整体以「${ctx.style.name}」手法渲染。`,
+  ].join('');
 };
 
-/**
- * 色彩迁移:A 的明暗结构 + B 的色彩体系
- * 结构层: A 的形体与明暗完全保留
- * 色彩层: B 的色相/饱和度(ratio 控制 A 原色保留度)
- * 氛围层: B 的情绪氛围
- */
-export const colorTransferAlgorithm: FusionAlgorithm = (ctx) => {
-  const originalColorKeep = Math.round((1 - ctx.ratio) * 100);
+/** 色彩迁移:A 明暗结构 + B 色彩体系 */
+const colorTransferFrame: MethodFrame = (ctx) => {
+  const keep = Math.round((1 - ctx.ratio) * 100);
   return [
-    ctx.style.promptModifier,
-    `STRUCTURE LAYER: Keep the exact forms, shapes, light-and-shadow structure of artwork A — ${describeArtwork(ctx.artwork1, 'artwork A')} — do not alter any contours.`,
-    `COLOR LAYER: Re-paint the entire scene using the color palette, hue harmony and saturation rhythm of artwork B — ${describeArtwork(ctx.artwork2, 'artwork B')} — while retaining ${originalColorKeep}% of A's original tonal identity.`,
-    `ATMOSPHERE LAYER: The emotional atmosphere should follow B's mood, filtered through ${ctx.style.name} sensibility (${ctx.style.characteristics.slice(0, 2).join(', ')}).`,
-    `Fusion balance: ${dominanceWord(ctx.ratio)}; intensity: ${intensityWord(ctx.intensity.value)}.`,
-    qualitySuffix(),
-  ].join(' ');
+    `以「色彩迁移」方式融合两件作品。`,
+    `结构层:完整保留作品A的形体轮廓与明暗结构,不作形变(作品A:${describeArtwork(ctx.artwork1, '作品A')});`,
+    `色彩层:整幅改用作品B的色相体系与饱和度节奏重新赋彩,同时保留约${keep}%作品A原始色调(作品B:${describeArtwork(ctx.artwork2, '作品B')});`,
+    `氛围层:整体情绪追随作品B的氛围。`,
+  ].join('');
 };
 
-/**
- * 元素融合:A/B 标志性元素有机组合
- * 元素层: 双方各取标志性元素(ratio 决定谁主导)
- * 关联层: 形状/方向/质感的视觉呼应
- * 统一层: 目标风格统一
- */
-export const elementFusionAlgorithm: FusionAlgorithm = (ctx) => {
-  const lead = ctx.ratio >= 0.5 ? 'A' : 'B';
-  const [leadDesc, supportDesc] = lead === 'A'
-    ? [describeArtwork(ctx.artwork1, 'artwork A'), describeArtwork(ctx.artwork2, 'artwork B')]
-    : [describeArtwork(ctx.artwork2, 'artwork B'), describeArtwork(ctx.artwork1, 'artwork A')];
+/** 元素融合:A/B 标志性元素有机组合 */
+const elementFusionFrame: MethodFrame = (ctx) => {
+  const aLeads = ctx.ratio >= 0.5;
+  const leadDesc = aLeads ? describeArtwork(ctx.artwork1, '作品A') : describeArtwork(ctx.artwork2, '作品B');
+  const supportDesc = aLeads ? describeArtwork(ctx.artwork2, '作品B') : describeArtwork(ctx.artwork1, '作品A');
   return [
-    ctx.style.promptModifier,
-    `ELEMENT LAYER: Extract the most iconic visual elements from both artworks — leading elements from ${lead} (${leadDesc}), supporting elements from the other (${supportDesc}).`,
-    `RELATION LAYER: Weave the two element families together through visual rhymes — echoing shapes, continuing directional flow, complementary textures — so they feel born from one world, not pasted together.`,
-    `UNITY LAYER: Unify everything under ${ctx.style.name} style with ${ctx.style.characteristics.join(', ')}.`,
-    `Fusion balance: ${dominanceWord(ctx.ratio)}; intensity: ${intensityWord(ctx.intensity.value)}.`,
-    qualitySuffix(),
-  ].join(' ');
+    `以「元素融合」方式融合两件作品。`,
+    `元素层:提取双方最具标志性的视觉元素,以${aLeads ? 'A' : 'B'}方元素为主导(${leadDesc}),另一方为辅助(${supportDesc});`,
+    `关联层:通过形状呼应、动势延续与质感互补,将两族元素编织进同一世界,避免拼贴感;`,
+    `统一层:全幅统一于「${ctx.style.name}」。`,
+  ].join('');
 };
 
-/**
- * 风格转换:A 的内容以 B 的艺术语言重新诠释
- * 主题层: A 的主题/内容完整保留
- * 风格层: B 的笔触/色彩/构图法则(ratio 控制转换纯度)
- * 技法层: 目标风格特征
- */
-export const styleTransformationAlgorithm: FusionAlgorithm = (ctx) => {
-  const purity = ctx.ratio >= 0.6
-    ? 'apply B\'s stylistic language thoroughly and authentically'
-    : 'blend B\'s stylistic language with traces of A\'s original manner';
+/** 风格转换:A 内容以 B 的艺术语言重新诠释 */
+const styleTransformationFrame: MethodFrame = (ctx) => {
+  const purity = ctx.ratio >= 0.6 ? '转换彻底而纯正' : '保留少许作品A的原始笔意';
   return [
-    ctx.style.promptModifier,
-    `SUBJECT LAYER: Preserve the complete subject matter and narrative of artwork A — ${describeArtwork(ctx.artwork1, 'artwork A')}.`,
-    `STYLE LAYER: Re-interpret it entirely through the artistic language of artwork B — ${describeArtwork(ctx.artwork2, 'artwork B')} — ${purity}: its brushwork logic, color system, compositional principles.`,
-    `TECHNIQUE LAYER: Final rendering in ${ctx.style.name} style, emphasizing ${ctx.style.characteristics.join(', ')}.`,
-    `Fusion balance: ${dominanceWord(ctx.ratio)}; intensity: ${intensityWord(ctx.intensity.value)}.`,
-    qualitySuffix(),
-  ].join(' ');
+    `以「风格转换」方式融合两件作品。`,
+    `主题层:完整保留作品A的题材与叙事(作品A:${describeArtwork(ctx.artwork1, '作品A')});`,
+    `风格层:以作品B的笔法逻辑、色彩体系与构图法则重新诠释,${purity}(作品B:${describeArtwork(ctx.artwork2, '作品B')});`,
+    `技法层:最终以「${ctx.style.name}」呈现。`,
+  ].join('');
 };
 
-/**
- * 场景杂交:两个场景空间并置 + 过渡带
- * 空间层: 左右/上下分景(ratio 控制分割位置)
- * 过渡层: 中间融合带
- * 光影层: 统一光照与空气感
- */
-export const hybridLandscapeAlgorithm: FusionAlgorithm = (ctx) => {
-  const splitPct = Math.round(ctx.ratio * 100);
-  return [
-    ctx.style.promptModifier,
-    `SPACE LAYER: Compose a split world — the left ${splitPct}% of the canvas shows the scene of artwork A (${describeArtwork(ctx.artwork1, 'artwork A')}), the right ${100 - splitPct}% shows the scene of artwork B (${describeArtwork(ctx.artwork2, 'artwork B')}).`,
-    `TRANSITION LAYER: Between the two worlds, design a gradual, poetic transition zone where forms, colors and atmospheres of both sides interpenetrate and dissolve into each other.`,
-    `LIGHT LAYER: Unify the whole canvas with consistent light direction and atmospheric perspective, in ${ctx.style.name} style (${ctx.style.characteristics.slice(0, 2).join(', ')}).`,
-    `Fusion balance: ${dominanceWord(ctx.ratio)}; intensity: ${intensityWord(ctx.intensity.value)}.`,
-    qualitySuffix(),
-  ].join(' ');
-};
-
-/**
- * 意境交融:情绪氛围加权混合
- * 氛围层: A 情绪与 B 情绪按 ratio 加权
- * 光影层: 服务氛围的光影设计
- * 色彩层: 情绪引导的色彩倾向
- */
-export const moodBlendingAlgorithm: FusionAlgorithm = (ctx) => {
+/** 场景杂交:两个场景空间并置 + 过渡带 */
+const hybridLandscapeFrame: MethodFrame = (ctx) => {
   const aPct = Math.round(ctx.ratio * 100);
   return [
-    ctx.style.promptModifier,
-    `ATMOSPHERE LAYER: Blend the emotional essence of both artworks — ${aPct}% of artwork A's mood (${describeArtwork(ctx.artwork1, 'artwork A')}) interwoven with ${100 - aPct}% of artwork B's feeling (${describeArtwork(ctx.artwork2, 'artwork B')}). Prioritize emotional resonance over literal depiction.`,
-    `LIGHT LAYER: Design lighting that carries this blended emotion — direction, softness, temperature all serving the atmosphere.`,
-    `COLOR LAYER: Let the blended emotion guide a coherent color temperature and tonal range, expressed through ${ctx.style.name} style with ${ctx.style.characteristics.join(', ')}.`,
-    `Fusion balance: ${dominanceWord(ctx.ratio)}; intensity: ${intensityWord(ctx.intensity.value)}.`,
-    qualitySuffix(),
-  ].join(' ');
+    `以「场景杂交」方式融合两件作品。`,
+    `空间层:画面约左${aPct}%呈现作品A的场景(${describeArtwork(ctx.artwork1, '作品A')}),右${100 - aPct}%呈现作品B的场景(${describeArtwork(ctx.artwork2, '作品B')});`,
+    `过渡层:两个世界之间设计渐进诗意的过渡带,形态、色彩与氛围互相渗透溶解;`,
+    `光影层:全幅统一光源方向与空气透视。`,
+  ].join('');
 };
 
-/**
- * 局部置换:A 主体 + B 环境
- * 主体层: A 的主体完整突出
- * 环境层: B 的背景/氛围替换 A 的背景(ratio 控制置换范围)
- * 边缘层: 主体与环境的融合处理
- */
-export const regionSwapAlgorithm: FusionAlgorithm = (ctx) => {
-  const envCoverage = Math.round((1 - ctx.ratio) * 100);
+/** 意境交融:情绪氛围加权混合 */
+const moodBlendingFrame: MethodFrame = (ctx) => {
+  const aPct = Math.round(ctx.ratio * 100);
   return [
-    ctx.style.promptModifier,
-    `SUBJECT LAYER: The main subject of artwork A (${describeArtwork(ctx.artwork1, 'artwork A')}) stays intact, sharp and visually dominant.`,
-    `ENVIRONMENT LAYER: Replace A's background and secondary regions (about ${envCoverage}% of the canvas) with the environment, spatial depth and ambient world of artwork B (${describeArtwork(ctx.artwork2, 'artwork B')}).`,
-    `EDGE LAYER: Blend the subject into its new environment with natural edge transitions — reflected ambient light on the subject, atmospheric haze at the boundary — rendered in ${ctx.style.name} style.`,
-    `Fusion balance: ${dominanceWord(ctx.ratio)}; intensity: ${intensityWord(ctx.intensity.value)}.`,
-    qualitySuffix(),
-  ].join(' ');
+    `以「意境交融」方式融合两件作品。`,
+    `氛围层:作品A的情绪占${aPct}%(${describeArtwork(ctx.artwork1, '作品A')}),作品B的感受占${100 - aPct}%(${describeArtwork(ctx.artwork2, '作品B')}),二者交织,重意境共鸣而非如实再现;`,
+    `光影层:光影的方向、柔硬与冷暖均服务于混合情绪;`,
+    `色彩层:由混合情绪引导统一的色温与调性。`,
+  ].join('');
 };
 
-/**
- * 材质嫁接:A 形态 + B 材质肌理
- * 形态层: A 的轮廓与结构
- * 材质层: B 的表面肌理(ratio 控制覆盖度)
- * 光照层: 统一光照保持体积
- */
-export const materialGraftAlgorithm: FusionAlgorithm = (ctx) => {
+/** 局部置换:A 主体 + B 环境 */
+const regionSwapFrame: MethodFrame = (ctx) => {
+  const env = Math.round((1 - ctx.ratio) * 100);
+  return [
+    `以「局部置换」方式融合两件作品。`,
+    `主体层:作品A的主体保持完整、清晰、视觉主导(${describeArtwork(ctx.artwork1, '作品A')});`,
+    `环境层:用作品B的环境、空间纵深与氛围替换作品A约${env}%的背景区域(${describeArtwork(ctx.artwork2, '作品B')});`,
+    `边缘层:主体与新环境自然衔接,加上环境反射光与边界雾气。`,
+  ].join('');
+};
+
+/** 材质嫁接:A 形态 + B 材质肌理 */
+const materialGraftFrame: MethodFrame = (ctx) => {
   const coverage = Math.round(ctx.ratio * 100);
   return [
-    ctx.style.promptModifier,
-    `FORM LAYER: Preserve the silhouettes, structural contours and spatial arrangement of artwork A — ${describeArtwork(ctx.artwork1, 'artwork A')}.`,
-    `MATERIAL LAYER: Re-skin these forms with the material texture and tactile surface quality of artwork B — ${describeArtwork(ctx.artwork2, 'artwork B')} — covering about ${coverage}% of all surfaces (glaze, grain, weave, patina... as B dictates).`,
-    `LIGHT LAYER: Keep a single consistent light source so the new materials read with believable volume and sheen, finished in ${ctx.style.name} style (${ctx.style.characteristics.slice(0, 2).join(', ')}).`,
-    `Fusion balance: ${dominanceWord(ctx.ratio)}; intensity: ${intensityWord(ctx.intensity.value)}.`,
-    qualitySuffix(),
-  ].join(' ');
+    `以「材质嫁接」方式融合两件作品。`,
+    `形态层:保留作品A的轮廓剪影与结构关系(${describeArtwork(ctx.artwork1, '作品A')});`,
+    `材质层:以作品B的材质肌理(釉面、纹理、织感、包浆等,依作品B而定)覆盖约${coverage}%的表面(${describeArtwork(ctx.artwork2, '作品B')});`,
+    `光照层:保持单一统一光源,使新材质呈现可信的体积感与光泽。`,
+  ].join('');
+};
+
+/** 时空折叠:同一画面中并置两个时代 */
+const timeFoldFrame: MethodFrame = (ctx) => {
+  const aPct = Math.round(ctx.ratio * 100);
+  return [
+    `以「时空折叠」方式融合两件作品。`,
+    `时空层:同一场景中两个时代共存,${aPct}%取自作品A的时代(${describeArtwork(ctx.artwork1, '作品A')}),${100 - aPct}%取自作品B的时代(${describeArtwork(ctx.artwork2, '作品B')});`,
+    `对照层:营造古今之间的诗意对话,时代衔接处应有意为之、意味深长;`,
+    `透视层:两个时空共享统一的透视与空间逻辑。`,
+  ].join('');
 };
 
 /**
- * 时空折叠:同一画面中并置两个时代
- * 时空层: A 的时代符号 + B 的时代符号
- * 对照层: 同空间的古今对话(ratio 控制古今比例)
- * 透视层: 统一空间透视
+ * 方法帧注册表(methodId → 帧函数)
+ * 覆盖 fuseStandards.fuseMethods 全部 9 个方法
  */
-export const timeFoldAlgorithm: FusionAlgorithm = (ctx) => {
-  const aEraPct = Math.round(ctx.ratio * 100);
-  return [
-    ctx.style.promptModifier,
-    `TIME LAYER: One continuous scene where two eras coexist — ${aEraPct}% drawn from artwork A's time (${describeArtwork(ctx.artwork1, 'artwork A')}), ${100 - aEraPct}% from artwork B's era (${describeArtwork(ctx.artwork2, 'artwork B')}).`,
-    `DIALOGUE LAYER: Create a poetic conversation between the two times — an ancient path continuing into a modern city, a traditional figure lit by contemporary neon — the seam between eras should feel intentional and meaningful.`,
-    `PERSPECTIVE LAYER: Both timelines share one unified perspective and spatial logic, rendered in ${ctx.style.name} style with ${ctx.style.characteristics.join(', ')}.`,
-    `Fusion balance: ${dominanceWord(ctx.ratio)}; intensity: ${intensityWord(ctx.intensity.value)}.`,
-    qualitySuffix(),
-  ].join(' ');
+export const METHOD_FRAMES: Record<string, MethodFrame> = {
+  composition: compositionFrame,
+  'color-transfer': colorTransferFrame,
+  'element-fusion': elementFusionFrame,
+  'style-transformation': styleTransformationFrame,
+  'hybrid-landscape': hybridLandscapeFrame,
+  'mood-blending': moodBlendingFrame,
+  'region-swap': regionSwapFrame,
+  'material-graft': materialGraftFrame,
+  'time-fold': timeFoldFrame,
 };
 
 /* ===========================================================
- * 算法注册表 + 统一入口
+ * 风格包层:12 种目标风格的固化画面语言
+ * (中文主体描述 + 英文媒介关键词锚定模型风格)
  * =========================================================== */
 
-export const FUSION_ALGORITHMS: Record<string, FusionAlgorithm> = {
-  composition: compositionAlgorithm,
-  'color-transfer': colorTransferAlgorithm,
-  'element-fusion': elementFusionAlgorithm,
-  'style-transformation': styleTransformationAlgorithm,
-  'hybrid-landscape': hybridLandscapeAlgorithm,
-  'mood-blending': moodBlendingAlgorithm,
-  'region-swap': regionSwapAlgorithm,
-  'material-graft': materialGraftAlgorithm,
-  'time-fold': timeFoldAlgorithm,
+export const STYLE_PACKS: Record<string, string> = {
+  ink: '中国水墨写意画风(ink wash / sumi-e),宣纸纹理,浓淡干湿的笔墨变化,大量留白,写意传神',
+  oil: '古典油画风(classical oil painting),厚涂笔触,戏剧性明暗对比,色彩浓郁有层次,博物馆级质感',
+  watercolor: '透明水彩画风(watercolor),湿画法色彩自然流淌,水痕肌理清晰,纸张纹理可见,轻盈通透',
+  minimal: '极简主义画风(minimalist),几何抽象构成,大面积留白,平涂纯色,线条干净克制',
+  cyberpunk: '赛博朋克风(cyberpunk),霓虹灯光,未来都市夜景,高对比色彩,全息元素,雨夜氛围',
+  'art-nouveau': '新艺术运动风(art nouveau),流动有机曲线,花卉藤蔓纹样,装饰性极强,线条优雅',
+  'japanese-ukiyoe': '浮世绘木版画风(ukiyo-e),平涂色块,有力轮廓线,木纹质感,经典日式构图',
+  surrealism: '超现实主义画风(surrealism),梦幻意象与错位并置,象征隐喻,漂浮元素,潜意识图景',
+  dunhuang: '敦煌壁画风(dunhuang fresco),矿物石色(石绿、朱砂、赭石),飞天飘带与藻井纹样,斑驳壁画肌理',
+  'song-academy': '宋代院体工笔画风(gongbi academy painting),精工细笔,典雅设色,绢本质感,格物写生',
+  'blue-white': '青花瓷画风(blue-and-white porcelain),钴蓝分水,白瓷底色,缠枝莲纹,釉面光泽',
+  papercut: '民间剪纸风(papercut),镂空通透,大红纯色,对称构图,吉祥民俗纹样',
 };
 
+/* ===========================================================
+ * 统一构建入口
+ * =========================================================== */
+
 /**
- * 统一构建入口:按方法 id 调度对应算法
- * 未知方法回退到元素融合算法
+ * 组装融合 prompt:方法帧 + 风格包 + 配比/强度 + 质量尾缀
+ * 未知方法回退到元素融合帧;未知风格回退到 fuseStandards 的 promptModifier
  */
 export function buildFusionPrompt(ctx: FusionContext): string {
-  const algorithm = FUSION_ALGORITHMS[ctx.method.id] ?? elementFusionAlgorithm;
-  return algorithm(ctx);
+  const frame = METHOD_FRAMES[ctx.method.id] ?? elementFusionFrame;
+  const stylePack =
+    STYLE_PACKS[ctx.style.id] ??
+    `${ctx.style.name}画风(${ctx.style.promptModifier}),${ctx.style.characteristics.join('、')}`;
+  return [
+    frame(ctx),
+    `风格要求:${stylePack}。`,
+    `融合配比:${dominanceWord(ctx.ratio)};融合强度:${intensityWord(ctx.intensity.value)}。`,
+    '画面质量:高品质、博物馆级、构图专业、细节丰富。',
+  ].join('');
 }

@@ -548,3 +548,41 @@ stateDiagram-v2
 > 对应契约见 api-contract.ts §3.18（DOC-2026-08-010/011）。
 
 ---
+
+## 9. M-4 增补需求（2026-08-08）
+
+### 9.1 用户在线状态双后台同步（P-09）
+
+**需求**：用户通过飞书 OAuth（及其余 5 条登录路径）登录成功后，用户信息需在两个后台实时可见：
+
+| 后台 | 角色 | 查看内容 |
+|---|---|---|
+| 管理后台（admin-dashboard，`admin/`） | 管理员 | 已登录/注册用户列表、在线状态、登录时间 |
+| 开发者后台（本期 = admin 内 `dev/*` 模块） | 开发者 | 用户实时状态（在线/离线、最后活跃时间、当前会话） |
+
+**架构决策（仲裁结论，详见 tech_arch.md §13）**：
+
+1. **用户同步 = 已实现**：登录写库（`users.lastLoginAt` + `sessions`）已存在，本期不新增同步链路，仅建设**查询与实时状态能力**。
+2. **开发者后台形态**：本期复用 admin 现有 `dev/*` 模块增强（不新建独立端）；独立 `dev-dashboard/` + ApiKey 鉴权列入 M-5 演进。
+3. **实时状态方案**：Redis 心跳（`presence:user:{userId}` 300s 滑动 TTL + `presence:online` ZSET）+ 后台 30s 轮询；WebSocket 推送列入 M-5 演进。
+4. **三态语义（全端统一）**：`online`（近 5 分钟活跃）/ `idle`（会话有效不活跃）/ `offline`（无有效会话）。
+
+**功能点**：
+
+| 编号 | 功能 | 端 | 说明 |
+|---|---|---|---|
+| P-09-F1 | 用户列表新增"在线状态"列与筛选 | admin `pages/user/list.tsx` | 调用新增 `GET /api/admin/presence/users?ids=` 批量合并 |
+| P-09-F2 | 开发者视图账号清单升级三态 + 30s 自动刷新 | admin `pages/dev/accounts.tsx` | `GET /api/admin/dev/accounts` 响应追加 `presenceState` |
+| P-09-F3 | 在线用户实时清单 | admin dev 模块 | 新增 `GET /api/admin/presence/online` |
+| P-09-F4 | 登录/登出/请求心跳埋点 | server | `presence.service` 新增；authMiddleware 被动 touch（60s 节流） |
+
+**非目标（本期不做）**：WebSocket 推送、独立开发者后台端、移动端 presence 展示、presence 数据长期持久化（Redis 即真相，TTL 自然过期）。
+
+**验收标准**：
+
+- 飞书登录成功 ≤5s 内，管理后台用户列表与开发者视图可见该用户 `online`。
+- 关闭浏览器（无请求）5 分钟后状态自动转为 `idle`；登出后立即转 `offline`。
+- 所有新接口响应格式符合 `{code, message, data, traceId}`；权限复用 `admin:user:read` / `admin:stats:read`，越权返回 403。
+- 数据模型零迁移（无 Prisma schema 变更）。
+
+---

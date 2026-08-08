@@ -3,6 +3,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useReducedMotion } from 'framer-motion';
 import paintingMeta from '@/lib/painting-meta.json';
+import { ResilientImage } from '@/components/ui/ResilientImage';
 
 /**
  * VideoIntro · v8 宣纸长卷 · 一河两岸
@@ -407,7 +408,10 @@ function IntroPaintings({ active }: { active: boolean }) {
   }, [active]);
 
   return (
-    <div ref={wrapperRef} className="absolute inset-0 z-[1] pointer-events-none overflow-hidden">
+    <div
+      ref={wrapperRef}
+      className="intro-paintings-layer absolute inset-0 z-[1] pointer-events-none overflow-hidden"
+    >
       {INTRO_PAINTINGS.map((p, i) => {
         const shape = SHAPE_STYLES[p.shape];
         const ratio = getRatio(p.src, paintingMeta as Meta);
@@ -428,14 +432,21 @@ function IntroPaintings({ active }: { active: boolean }) {
               WebkitMaskImage: shape.mask,
             } as React.CSSProperties}
           >
-            <img
-              src={p.src}
+            <ResilientImage
+              localSrc={p.src}
               alt={p.alt}
               className="intro-painting-enter w-full h-full object-cover"
-              style={{ animationDelay: `${250 + i * 55}ms` }}
+              style={{ animationDelay: `${250 + i * 55}ms` } as React.CSSProperties}
               draggable={false}
               loading="eager"
-              decoding="sync"
+              decoding="async"
+              onTotalFailure={(el) => {
+                // 所有来源(CDN+本地,webp+jpg)都失败时隐藏该画作,避免破碎占位框
+                const painting = el?.closest(
+                  '.intro-painting'
+                ) as HTMLElement | null;
+                if (painting) painting.style.display = 'none';
+              }}
             />
           </div>
         );
@@ -486,6 +497,14 @@ export function VideoIntro({ onComplete }: { onComplete: () => void }) {
   }, [onComplete]);
 
   const reducedClass = prefersReduced ? 'intro-reduced' : '';
+
+  // 用户点击"跳过":立即播放退出淡出,短暂后完成开屏(bypass 剩余动画与计时)
+  const handleSkip = () => {
+    if (doneRef.current) return;
+    doneRef.current = true;
+    setExiting(true);
+    window.setTimeout(onComplete, 350);
+  };
 
   return (
     <>
@@ -575,12 +594,27 @@ export function VideoIntro({ onComplete }: { onComplete: () => void }) {
           animation: none !important;
         }
 
+        /* 手机端适配:整个画作层等比向中心收拢(S 形两岸缩放后中央品牌区仍保持留白),
+           同时边缘画作不再溢出小屏;桌面端不缩放 */
+        @media (max-width: 767px) {
+          .intro-paintings-layer {
+            transform: scale(0.72);
+            transform-origin: center center;
+          }
+        }
+
         .intro-layer {
           opacity: 0;
           animation: intro-fade-in 0.5s cubic-bezier(0.22, 1, 0.36, 1) forwards;
         }
         .intro-layer-left  { animation-name: intro-fade-in; }
         .intro-layer-right { animation-name: intro-fade-in; }
+
+        /* 跳过按钮:稍晚淡入,右侧浮出 */
+        .intro-skip {
+          opacity: 0;
+          animation: intro-fade-in 0.5s ease 0.9s forwards;
+        }
 
         .intro-stroke {
           stroke-dasharray: 1000;
@@ -697,6 +731,15 @@ export function VideoIntro({ onComplete }: { onComplete: () => void }) {
           </div>
         </div>
 
+        {/* 跳过按钮:稍晚淡入,点击立即退出开屏进入首页 */}
+        <button
+          type="button"
+          onClick={handleSkip}
+          className="intro-skip absolute top-4 right-4 sm:top-5 sm:right-6 z-[4] rounded-full border border-ink-100/60 bg-paper-50/70 px-3.5 py-1.5 text-[11px] sm:text-xs font-medium tracking-[0.12em] text-ink-700/80 shadow-ink-sm backdrop-blur-md transition-colors hover:bg-paper-100/90 hover:text-ink-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-cinnabar-400/60"
+        >
+          跳过
+        </button>
+
         {/* 中部主体:笔触 + 品牌 + 副标 + 题跋线 + 朱砂方印 */}
         <div className="absolute inset-0 z-[3] flex flex-col items-center justify-center px-4">
           <div className="relative w-[70vw] max-w-[800px]">
@@ -727,7 +770,7 @@ export function VideoIntro({ onComplete }: { onComplete: () => void }) {
             </svg>
           </div>
 
-          <h1 className="intro-brand mt-6 text-5xl sm:text-6xl md:text-7xl font-bold tracking-[0.3em] sm:tracking-[0.4em] text-ink-900">
+          <h1 className="intro-brand mt-6 text-4xl sm:text-6xl md:text-7xl font-bold tracking-[0.3em] sm:tracking-[0.4em] text-ink-900">
             丹青有AI
           </h1>
 

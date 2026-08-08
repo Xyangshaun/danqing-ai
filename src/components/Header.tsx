@@ -1064,6 +1064,7 @@ export default function Header() {
                   <div className="space-y-1.5">
                     {[
                       { desc: '命令面板', keys: '⌘K / Ctrl+K' },
+                      { desc: '工作台', keys: 'H' },
                       { desc: '跳转模块', keys: '1-7' },
                       { desc: '跳转设置', keys: '0' },
                       { desc: '新建诊断', keys: 'N' },

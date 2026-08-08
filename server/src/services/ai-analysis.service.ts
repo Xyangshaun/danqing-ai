@@ -133,6 +133,144 @@ export async function runHybridAnalysis(
 }
 
 // ============================================================
+// 1.5 两阶段分析入口(方案 A:3s SLA 修复)
+//
+// 设计动机:
+//   原顺序编排 Jimp(~500ms)+ AI(~2s)在 AI 慢响应/网络抖动场景极易突破 3s SLA。
+//   方案 A 拆为两阶段:
+//     阶段 1(同步,/analyses/upload):仅 Jimp + 模板建议(aiEnhanced=false)→ 必 < 1s
+//     阶段 2(用户主动触发,POST /analyses/:id/ai-enhance):读已存 Jimp result →
+//           提取指标 → 调 AI 增强 → 覆盖写回 DB
+//   两阶段解耦后,阶段 1 SLA 由 Jimp 单独保证(~500ms),AI 时延不再阻塞创建接口。
+// ============================================================
+
+/**
+ * 阶段 1:本地分析(仅 Jimp + 模板建议)
+ *
+ * 职责:
+ *   - 执行 Jimp 像素分析(始终执行,作为客观指标来源)
+ *   - AI 不被调用(aiMeta.aiSuccess=false, aiFailureReason='AI_DISABLED')
+ *   - 通过 createFallbackAIVisionResult 生成基于指标阈值的模板建议,
+ *     确保 professionalSuggestions 始终存在(前端可立即渲染)
+ *   - 返回 HybridAnalysisResult(aiEnhanced=false),结构与混合分析一致,便于阶段 2 直接复用
+ *
+ * 调用方:analysis.service.ts runAnalysis(替代原 if (env().aiEnabled) runHybridAnalysis 分支)
+ *
+ * @returns HybridAnalysisResult(aiEnhanced=false, aiVisionResult=模板建议)
+ */
+export async function runLocalAnalysis(
+  req: HybridAnalysisRequest,
+): Promise<HybridAnalysisResult> {
+  const cfg = env();
+  const model = cfg.aiApiModel;
+
+  logger.debug(
+    { aiEnabled: cfg.aiEnabled, hasKey: cfg.aiApiKey.length > 0 },
+    '[ai-analysis] phase 1: local Jimp analysis with template suggestions',
+  );
+
+  const jimpResult = await safeJimpAnalyze(req.imageSource, req.artType);
+  const jimpMetrics = extractJimpMetricsFromResult(jimpResult);
+  const fallbackVision = createFallbackAIVisionResult(jimpMetrics, req.artType);
+  return wrapAsHybridResultWithFallback(jimpResult, createDisabledAIMeta(model), fallbackVision);
+}
+
+/**
+ * AI 增强请求参数(阶段 2)
+ */
+export interface AIEnhanceRequest {
+  /** 分析记录 ID(用于日志关联) */
+  analysisId: string;
+  /** 图片源:本地文件路径或 URL(需重新传给 AI) */
+  imageSource: string;
+  /** 作品类型 */
+  artType: ArtType;
+  /** 作品标题(可选,注入 AI prompt) */
+  title?: string;
+  /** 备注(可选,如教师布置的作业要求) */
+  remark?: string;
+  /** 阶段 1 持久化的 HybridAnalysisResult(Jimp-only,aiEnhanced=false) */
+  storedResult: HybridAnalysisResult;
+  /** 阶段 1 Jimp 耗时(来自 analysis.durationMs,用于可观测性透传) */
+  jimpDurationMs: number;
+}
+
+/**
+ * 阶段 2:AI 增强(读已存 Jimp result → 调 AI → 合并)
+ *
+ * 职责:
+ *   - 从 storedResult(阶段 1 落库的 HybridAnalysisResult)提取 Jimp 客观指标
+ *   - 构造 AI 请求(注入 Jimp 指标,与 runHybridAnalysis 一致)
+ *   - 调用 AI 视觉分析(超时 2.5s 切断)
+ *   - 合并结果(应用 score_adjustments,delta ±5)
+ *
+ * 与 runHybridAnalysis 的差异:
+ *   - 不重新执行 Jimp(复用阶段 1 结果,节省 ~500ms)
+ *   - jimpDurationMs 由调用方传入(来自阶段 1 持久化的 analysis.durationMs)
+ *   - AI 失败时仍返回 HybridAnalysisResult(aiEnhanced=false + 模板建议),
+ *     由上层 analysis.service.ts.aiEnhanceAnalysis 决定是否抛 BusinessError
+ *
+ * 幂等性:
+ *   - 若 storedResult.aiEnhanced === true,直接返回 storedResult(不重复调 AI)
+ *   - 上层 aiEnhanceAnalysis 也会做幂等校验,此处为双保险
+ *
+ * @returns HybridAnalysisResult(AI 成功:aiEnhanced=true;AI 失败:aiEnhanced=false + 模板建议)
+ */
+export async function runAIEnhance(req: AIEnhanceRequest): Promise<HybridAnalysisResult> {
+  const cfg = env();
+  const model = cfg.aiApiModel;
+
+  // 幂等:已 AI 增强则直接返回
+  if (req.storedResult.aiEnhanced === true) {
+    logger.debug(
+      { analysisId: req.analysisId },
+      '[ai-analysis] phase 2: already AI-enhanced, skip',
+    );
+    return req.storedResult;
+  }
+
+  // 提取阶段 1 的 Jimp 客观指标(用于注入 AI prompt)
+  const jimpMetrics = extractJimpMetricsFromResult(req.storedResult);
+
+  // 构造 AI 请求
+  const aiReq: AIVisionRequest = {
+    imageSource: req.imageSource,
+    artType: req.artType,
+    jimpMetrics,
+    title: req.title,
+    remark: req.remark,
+  };
+
+  // 调用 AI 视觉分析(超时 2.5s 切断)
+  const aiCallResult = await analyzeWithAI(aiReq);
+
+  // 合并结果(storedResult 作为 jimpResult 传入,其 aiEnhanced/aiMeta/aiVisionResult 字段
+  // 会被 mergeResults 返回的新值覆盖)
+  const merged = mergeResults(
+    req.storedResult,
+    aiCallResult,
+    req.artType,
+    model,
+    req.jimpDurationMs,
+    jimpMetrics,
+  );
+
+  logger.info(
+    {
+      analysisId: req.analysisId,
+      artType: req.artType,
+      aiEnhanced: merged.aiEnhanced,
+      jimpDurationMs: req.jimpDurationMs,
+      aiDurationMs: merged.aiMeta.aiDurationMs,
+      aiFailureReason: merged.aiMeta.aiFailureReason,
+    },
+    '[ai-analysis] phase 2: AI enhance completed',
+  );
+
+  return merged;
+}
+
+// ============================================================
 // 2. Jimp 安全调用(异常时返回 fallback)
 // ============================================================
 

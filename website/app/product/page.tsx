@@ -6,6 +6,7 @@ import { RevealOnScroll } from '@/components/ui/RevealOnScroll';
 import { CTASection } from '@/components/ui/CTASection';
 import { JsonLd } from '@/components/seo/JsonLd';
 import { buildMetadata, breadcrumbJsonLd } from '@/lib/seo';
+import { ResilientImage } from '@/components/ui/ResilientImage';
 import { BRAND_ART } from '@/lib/artworks';
 
 export const metadata: Metadata = buildMetadata({
@@ -168,8 +169,8 @@ export default function ProductPage() {
             {/* 品牌画作配图 */}
             <div className="relative mt-8 overflow-hidden rounded-lg border border-ink-100/40 shadow-ink-lg">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={BRAND_ART}
+              <ResilientImage
+                localSrc={BRAND_ART}
                 alt="灵感融合 · 丹青水墨意象"
                 loading="lazy"
                 className="aspect-[16/9] w-full object-cover"

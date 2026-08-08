@@ -922,3 +922,225 @@
     scroll-behavior: auto !important;
   }
 }
+
+/* ============================================================
+   暗色主题(ink) — 与业务应用 /app 共享 localStorage 主题
+   由 layout.tsx 内联脚本设置 html[data-theme="dark"]
+   原理:paper(亮背景)→暗背景,ink(暗文字)→亮文字
+   ============================================================ */
+
+/* ---- 全局 body 背景 + 文字 ---- */
+[data-theme="dark"] body {
+  background-color: #1a1a1a;
+  color: #f5f2eb;
+}
+
+/* ---- 画纸纹理背景层:暗色模式下替换为暗色基底 ---- */
+[data-theme="dark"] .paper-base {
+  background-color: #1a1a1a;
+  background-image:
+    repeating-linear-gradient(0deg, transparent 0, transparent 11px, rgba(200, 180, 130, 0.015) 11px, rgba(200, 180, 130, 0.015) 12px),
+    repeating-linear-gradient(90deg, transparent 0, transparent 17px, rgba(180, 160, 110, 0.01) 17px, rgba(180, 160, 110, 0.01) 18px);
+}
+[data-theme="dark"] .paper-noise { opacity: 0.25; }
+[data-theme="dark"] .paper-wash-tl {
+  background: radial-gradient(ellipse 70% 50% at 12% 8%, rgba(46, 92, 110, 0.12) 0%, rgba(46, 92, 110, 0.05) 30%, transparent 65%);
+}
+[data-theme="dark"] .paper-wash-br {
+  background: radial-gradient(ellipse 65% 55% at 88% 92%, rgba(201, 169, 97, 0.12) 0%, rgba(168, 133, 74, 0.05) 30%, transparent 65%);
+}
+[data-theme="dark"] .paper-vignette-top {
+  background: radial-gradient(ellipse 140% 70% at 50% 0%, rgba(0, 0, 0, 0.3) 0%, rgba(0, 0, 0, 0.15) 18%, rgba(0, 0, 0, 0.05) 38%, transparent 62%);
+}
+[data-theme="dark"] .paper-vignette-bot {
+  background: radial-gradient(ellipse 140% 70% at 50% 100%, rgba(0, 0, 0, 0.35) 0%, rgba(0, 0, 0, 0.15) 18%, rgba(0, 0, 0, 0.05) 38%, transparent 62%);
+}
+
+/* ---- paper 背景类 → 暗色背景 ---- */
+[data-theme="dark"] .bg-paper-50 { background-color: #232323; }
+[data-theme="dark"] .bg-paper-100 { background-color: #1a1a1a; }
+[data-theme="dark"] .bg-paper-200 { background-color: #2a2a2a; }
+[data-theme="dark"] .bg-paper-300 { background-color: #333333; }
+[data-theme="dark"] .bg-paper { background-color: #232323; }
+
+/* ---- paper 透明度变体(导航栏/卡片玻璃效果) ---- */
+[data-theme="dark"] .bg-paper-50\/70 { background-color: rgba(35, 35, 35, 0.7); }
+[data-theme="dark"] .bg-paper-50\/85 { background-color: rgba(35, 35, 35, 0.85); }
+[data-theme="dark"] .bg-paper-50\/60 { background-color: rgba(35, 35, 35, 0.6); }
+[data-theme="dark"] .bg-paper-200\/40 { background-color: rgba(42, 42, 42, 0.4); }
+[data-theme="dark"] .bg-paper-200\/60 { background-color: rgba(42, 42, 42, 0.6); }
+
+/* ---- ink 文字 → 亮色文字 ---- */
+[data-theme="dark"] .text-ink { color: #f5f2eb; }
+[data-theme="dark"] .text-ink-900 { color: #f5f2eb; }
+[data-theme="dark"] .text-ink-800 { color: #e5e5e5; }
+[data-theme="dark"] .text-ink-700 { color: #d4d4d4; }
+[data-theme="dark"] .text-ink-600 { color: #b0b0b0; }
+[data-theme="dark"] .text-ink-500 { color: #a3a3a3; }
+[data-theme="dark"] .text-ink-400 { color: #8a8a8a; }
+
+/* ---- ink hover 文字 → 亮色 ---- */
+[data-theme="dark"] .hover\:text-ink-800:hover { color: #e5e5e5; }
+[data-theme="dark"] .hover\:text-ink-900:hover { color: #f5f2eb; }
+
+/* ---- ink 背景(按钮等) → 暗色稍浅 ---- */
+[data-theme="dark"] .bg-ink-900 { background-color: #2d2d2d; }
+[data-theme="dark"] .bg-ink-900\/30 { background-color: rgba(0, 0, 0, 0.5); }
+[data-theme="dark"] .bg-ink-900\/40 { background-color: rgba(0, 0, 0, 0.6); }
+
+/* ---- 边框:ink → 亮色低透明度 ---- */
+[data-theme="dark"] .border-ink-100 { border-color: rgba(245, 242, 235, 0.06); }
+[data-theme="dark"] .border-ink-200 { border-color: rgba(245, 242, 235, 0.08); }
+[data-theme="dark"] .border-ink-300 { border-color: rgba(245, 242, 235, 0.12); }
+[data-theme="dark"] .border-ink-100\/80 { border-color: rgba(245, 242, 235, 0.08); }
+[data-theme="dark"] .border-ink-100\/60 { border-color: rgba(245, 242, 235, 0.06); }
+[data-theme="dark"] .border-ink-100\/40 { border-color: rgba(245, 242, 235, 0.04); }
+[data-theme="dark"] .border-ink-200\/80 { border-color: rgba(245, 242, 235, 0.10); }
+
+/* ---- hover 背景:paper → 暗色 ---- */
+[data-theme="dark"] .hover\:bg-paper-50:hover { background-color: #2a2a2a; }
+[data-theme="dark"] .hover\:bg-paper-200:hover { background-color: #333333; }
+
+/* ---- 标题文字 ---- */
+[data-theme="dark"] h1,
+[data-theme="dark"] h2,
+[data-theme="dark"] h3,
+[data-theme="dark"] h4 { color: #f5f2eb; }
+
+/* ---- 正文段落 ---- */
+[data-theme="dark"] p { color: #b0b0b0; }
+
+/* ---- 选区 ---- */
+[data-theme="dark"] ::selection {
+  background-color: rgba(200, 57, 46, 0.35);
+  color: #f5f2eb;
+}
+
+/* ---- 滚动条 ---- */
+[data-theme="dark"] ::-webkit-scrollbar-track { background: #1a1a1a; }
+[data-theme="dark"] ::-webkit-scrollbar-thumb {
+  background: #404040;
+  border-color: #1a1a1a;
+}
+[data-theme="dark"] ::-webkit-scrollbar-thumb:hover { background: #525252; }
+
+/* ---- 渐变文字:墨黑渐变 → 亮色渐变 ---- */
+[data-theme="dark"] .text-gradient-ink {
+  background-image: linear-gradient(180deg, #f5f2eb 0%, #d4d4d4 70%, #a3a3a3 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+[data-theme="dark"] .stat-number {
+  background-image: linear-gradient(180deg, #f5f2eb 0%, #d4d4d4 60%, #a3a3a3 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* ---- ink-card 卡片:暗色玻璃质感 ---- */
+[data-theme="dark"] .ink-card {
+  border-color: rgba(245, 242, 235, 0.08);
+  background-image:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, transparent 50%),
+    linear-gradient(180deg, rgba(35, 35, 35, 0.95) 0%, rgba(31, 31, 31, 0.85) 100%);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.06) inset,
+    0 1px 2px rgba(0, 0, 0, 0.2),
+    0 6px 18px rgba(0, 0, 0, 0.3),
+    0 22px 48px -18px rgba(0, 0, 0, 0.4);
+}
+[data-theme="dark"] .ink-card::after {
+  background: radial-gradient(ellipse 60% 100% at 50% 50%, rgba(0, 0, 0, 0.3) 0%, transparent 70%);
+}
+[data-theme="dark"] .ink-card:hover {
+  border-color: rgba(201, 169, 97, 0.25);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.08) inset,
+    0 2px 4px rgba(0, 0, 0, 0.2),
+    0 14px 36px rgba(0, 0, 0, 0.35),
+    0 32px 64px -20px rgba(0, 0, 0, 0.45),
+    0 0 0 1px rgba(201, 169, 97, 0.15);
+}
+
+/* ---- glass-card 玻璃卡片 ---- */
+[data-theme="dark"] .glass-card {
+  border-color: rgba(245, 242, 235, 0.06);
+  background-color: rgba(35, 35, 35, 0.6);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.06) inset,
+    0 4px 16px rgba(0, 0, 0, 0.2);
+}
+[data-theme="dark"] .glass-card:hover {
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.08) inset,
+    0 8px 28px rgba(0, 0, 0, 0.3),
+    0 0 0 1px rgba(201, 169, 97, 0.12);
+}
+
+/* ---- btn-secondary 次按钮 ---- */
+[data-theme="dark"] .btn-secondary {
+  border-color: rgba(245, 242, 235, 0.10);
+  background-color: rgba(35, 35, 35, 0.7);
+  color: #d4d4d4;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.06) inset,
+    0 1px 2px rgba(0, 0, 0, 0.2);
+}
+[data-theme="dark"] .btn-secondary:hover {
+  border-color: rgba(245, 242, 235, 0.15);
+  background-color: rgba(42, 42, 42, 0.9);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.08) inset,
+    0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+/* ---- btn-gold 金色按钮 ---- */
+[data-theme="dark"] .btn-gold {
+  border-color: rgba(201, 169, 97, 0.4);
+  background-color: rgba(201, 169, 97, 0.08);
+  color: #dcc06b;
+}
+
+/* ---- prose-cn 文章排版 ---- */
+[data-theme="dark"] .prose-cn h2 { color: #f5f2eb; }
+[data-theme="dark"] .prose-cn h3 { color: #e5e5e5; }
+[data-theme="dark"] .prose-cn p { color: #b0b0b0; }
+[data-theme="dark"] .prose-cn ul li { color: #b0b0b0; }
+[data-theme="dark"] .prose-cn ol li { color: #b0b0b0; }
+[data-theme="dark"] .prose-cn blockquote {
+  border-left-color: #c9a961;
+  background-color: rgba(42, 42, 42, 0.4);
+  color: #d4d4d4;
+}
+[data-theme="dark"] .prose-cn strong { color: #f5f2eb; }
+
+/* ---- ink-progress 进度条 ---- */
+[data-theme="dark"] .ink-progress { background: rgba(245, 242, 235, 0.08); }
+
+/* ---- ink-wash-bg 水墨晕染 ---- */
+[data-theme="dark"] .ink-wash-bg {
+  background-image: radial-gradient(ellipse 80% 60% at 50% 0%, rgba(0, 0, 0, 0.15) 0%, transparent 70%);
+}
+
+/* ---- grid-bg 科技网格 ---- */
+[data-theme="dark"] .grid-bg {
+  background-image:
+    linear-gradient(to right, rgba(245, 242, 235, 0.04) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(245, 242, 235, 0.04) 1px, transparent 1px);
+}
+
+/* ---- ink-loader 加载动画 ---- */
+[data-theme="dark"] .ink-loader { background-color: #1a1a1a; }
+
+/* ---- text-stroke-ink 文字描边 ---- */
+[data-theme="dark"] .text-stroke-ink { -webkit-text-stroke: 1px rgba(245, 242, 235, 0.3); }
+
+/* ---- focus 跳转链接 ---- */
+[data-theme="dark"] .focus\:bg-paper-50:focus {
+  background-color: #232323;
+  color: #f5f2eb;
+}
+
+/* ---- 金色装饰线保持品牌色 ---- */
+/* cinnabar/gold/stone 品牌色在暗色模式下保持不变,确保品牌一致性 */

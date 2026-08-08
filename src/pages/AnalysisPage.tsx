@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { Upload, Eye, Palette, Sparkles, CheckCircle2, Loader2, ArrowRight, PenTool, Layers, Box, Brush, Download, Share2, Cpu, Cloud, Zap, Type, Gem, Settings, Move, Scan, Brain, FileText, Image as ImageIcon, RefreshCw } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
+import { Upload, Eye, Palette, Sparkles, CheckCircle2, Loader2, ArrowRight, PenTool, Layers, Box, Brush, Download, Share2, Cpu, Cloud, Zap, Type, Gem, Settings, Move, Scan, Brain, FileText, Image as ImageIcon, RefreshCw, History as HistoryIcon } from 'lucide-react';
 import type { AnalysisResult, PaintingAnalysis, DesignAnalysis, ProductAnalysis, SculptureAnalysis, ProfessionalSuggestion, SuggestionPriority } from '../types';
 import { saveAnalysis } from '../services/data-service';
 import { createDraft, deleteDraft, updateDraft, getDraft } from '../services/draft-service';
@@ -7,7 +8,7 @@ import { useAuth } from '../hooks/useAuth';
 import HeatmapCanvas from '../components/HeatmapCanvas';
 import SmartImage from '../components/SmartImage';
 import { useToast } from '../components/ToastProvider';
-import { smartAnalyze, type AnalysisDecision } from '../services/smartAnalysisEngine';
+import { smartAnalyze, aiEnhanceAnalysis, type AnalysisDecision } from '../services/smartAnalysisEngine';
 import PresetSelector from '../components/PresetSelector';
 import RequestReviewSection from '../components/RequestReviewSection';
 
@@ -98,6 +99,22 @@ const artTypes: { id: ArtTypeLocal; name: string; icon: React.ComponentType<{ cl
   { id: 'product', name: '产品设计', icon: Box, desc: '工业设计、产品造型、家具设计等' },
   { id: 'sculpture', name: '雕塑', icon: Layers, desc: '雕塑、陶艺、装置艺术等' },
 ];
+
+/* 用户上次选择的创作类型持久化键(localStorage),实现"下次诊断直接选上次" */
+const LAST_ART_TYPE_KEY = 'danqing-last-art-type';
+const VALID_ART_TYPES: ArtTypeLocal[] = ['painting', 'design', 'product', 'sculpture'];
+function isValidArtType(v: unknown): v is ArtTypeLocal {
+  return typeof v === 'string' && (VALID_ART_TYPES as string[]).includes(v);
+}
+function readLastArtType(): ArtTypeLocal | null {
+  try {
+    const v = localStorage.getItem(LAST_ART_TYPE_KEY);
+    return isValidArtType(v) ? v : null;
+  } catch { return null; }
+}
+function writeLastArtType(t: ArtTypeLocal) {
+  try { localStorage.setItem(LAST_ART_TYPE_KEY, t); } catch { /* ignore */ }
+}
 
 const ANALYSIS_CONFIG: Record<ArtTypeLocal, { dimensions: { label: string; icon: React.ComponentType<{ className?: string }>; color: string; barColor: string }[] }> = {
   painting: {
@@ -455,15 +472,29 @@ export default function AnalysisPage() {
   const toastRef = useRef(toast);
   toastRef.current = toast;
   const { user, tenant } = useAuth();
+  const [searchParams] = useSearchParams();
   const [step, setStep] = useState<Step>('upload');
   const [imageUrl, setImageUrl] = useState<string>('');
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [progress, setProgress] = useState(0);
   const [detailIndex, setDetailIndex] = useState(0);
-  const [selectedArtType, setSelectedArtType] = useState<ArtTypeLocal>('painting');
+  /* 上次诊断方案记忆:URL ?type= 优先级最高(侧栏快捷入口),其次 localStorage 上次选择,最后默认绘画 */
+  const [selectedArtType, setSelectedArtType] = useState<ArtTypeLocal>(() => {
+    try {
+      /* 初次渲染时 react-router 的 searchParams 还未取到,用 window.location 兜底 */
+      const hash = window.location.hash || '';
+      const qIdx = hash.indexOf('?');
+      const urlType = qIdx >= 0 ? new URLSearchParams(hash.slice(qIdx + 1)).get('type') : null;
+      if (isValidArtType(urlType)) return urlType;
+      const last = readLastArtType();
+      return last ?? 'painting';
+    } catch { return 'painting'; }
+  });
   const [analysisDecision, setAnalysisDecision] = useState<AnalysisDecision | null>(null);
   const [analysisDuration, setAnalysisDuration] = useState<number | null>(null);
   const [showTypeSwitcher, setShowTypeSwitcher] = useState(false);
+  /* AI 深度增强分析 loading(阶段 2:仅当结果未 aiEnhanced 时显示按钮) */
+  const [aiEnhanceLoading, setAiEnhanceLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const fileRef = useRef<File | null>(null);
   const startTimeRef = useRef<number | null>(null);
@@ -502,6 +533,33 @@ export default function AnalysisPage() {
     // 仅在挂载时执行一次
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /* URL ?type= 参数变化时同步选择(侧栏快捷入口 /analyze?type=xxx 生效) */
+  useEffect(() => {
+    const t = searchParams.get('type');
+    if (isValidArtType(t) && t !== selectedArtType && step === 'upload') {
+      setSelectedArtType(t);
+    }
+    // 只在 URL 参数实际变化时触发
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
+  /* 监听命令面板派发的 switch-art-type 事件,实时切换类型 */
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ artType?: unknown }>).detail;
+      if (isValidArtType(detail?.artType) && step === 'upload') {
+        setSelectedArtType(detail.artType);
+      }
+    };
+    window.addEventListener('switch-art-type', handler);
+    return () => window.removeEventListener('switch-art-type', handler);
+  }, [step]);
+
+  /* 用户选择创作类型后,持久化到 localStorage,下次进入默认选中 */
+  useEffect(() => {
+    writeLastArtType(selectedArtType);
+  }, [selectedArtType]);
 
   /**
    * 图片加载完成后:创建草稿 + 进入分析
@@ -737,6 +795,24 @@ export default function AnalysisPage() {
     startTimeRef.current = null;
   };
 
+  /* 阶段 2:对已有分析结果触发 AI 深度增强分析。
+   * 仅当当前结果未 aiEnhanced 且携带后端记录 id 时可用。
+   * 成功:替换 result 并 toast;失败:toast 错误,本地结果不被覆盖。 */
+  const handleAiEnhance = async () => {
+    if (!result || !result.id || result.aiEnhanced === true || aiEnhanceLoading) return;
+    setAiEnhanceLoading(true);
+    try {
+      const enhanced = await aiEnhanceAnalysis(result.id, selectedArtType);
+      setResult(enhanced);
+      toast.success('AI 深度分析完成', '已融合视觉模型增强诊断');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'AI 深度分析失败，请稍后重试';
+      toast.error('AI 深度分析失败', message);
+    } finally {
+      setAiEnhanceLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-rice-200 ink-texture pt-20 pb-20">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -777,6 +853,33 @@ export default function AnalysisPage() {
                   );
                 })}
               </div>
+              {/* 上次选择记忆提示 */}
+              {readLastArtType() !== null && (() => {
+                const last = readLastArtType();
+                const lastArt = artTypes.find((a) => a.id === last);
+                if (!lastArt || lastArt.id === selectedArtType) return null;
+                return (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedArtType(lastArt.id)}
+                    className="mt-3 w-full flex items-center justify-center gap-2 py-2 px-3 text-xs text-ink-600 bg-gold/5 hover:bg-gold/10 border border-gold/20 rounded-lg transition-colors group"
+                  >
+                    <HistoryIcon className="w-3.5 h-3.5 text-gold-dark" />
+                    <span>上次诊断使用 <span className="font-semibold text-gold-dark">{lastArt.name}</span>，点击切回</span>
+                    <ArrowRight className="w-3 h-3 text-ink-400 group-hover:text-gold-dark group-hover:translate-x-0.5 transition-all" />
+                  </button>
+                );
+              })()}
+              {(() => {
+                const current = artTypes.find((a) => a.id === selectedArtType);
+                if (!current) return null;
+                return (
+                  <p className="mt-2 text-center text-2xs text-ink-400">
+                    已为你选中 <span className="text-cinnabar font-medium">{current.name}</span>
+                    {readLastArtType() === selectedArtType && <> · 记住你的选择</>}
+                  </p>
+                );
+              })()}
             </div>
 
             <div className="mb-6">
@@ -1058,6 +1161,25 @@ export default function AnalysisPage() {
                       分析耗时 <span className="font-mono tabular-nums">{(analysisDuration / 1000).toFixed(1)}s</span>
                     </span>
                   </div>
+                )}
+                {/* 阶段 2:AI 深度分析触发按钮(仅当结果未增强且携带后端 id 时显示) */}
+                {result.aiEnhanced !== true && result.id && (
+                  <button
+                    type="button"
+                    onClick={handleAiEnhance}
+                    disabled={aiEnhanceLoading}
+                    className="inline-flex items-center gap-1.5 px-3 py-1 bg-cinnabar/10 border border-cinnabar/30 rounded-full transition-colors hover:bg-cinnabar/20 disabled:opacity-60 disabled:cursor-not-allowed"
+                    title="调用 AI 视觉模型对当前结果进行深度增强分析"
+                  >
+                    {aiEnhanceLoading ? (
+                      <Loader2 className="w-3 h-3 text-cinnabar animate-spin" />
+                    ) : (
+                      <Brain className="w-3 h-3 text-cinnabar" />
+                    )}
+                    <span className="text-xs font-medium text-cinnabar">
+                      {aiEnhanceLoading ? 'AI 分析中…' : 'AI 深度分析'}
+                    </span>
+                  </button>
                 )}
                 {/* Phase F1:可观测性元信息徽章 */}
                 {result.aiEnhanced === true && (

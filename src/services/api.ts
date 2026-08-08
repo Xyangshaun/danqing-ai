@@ -481,6 +481,10 @@ import type {
   MarkAllNotificationsReadResponse,
   UpdateProfileRequest,
   UserProfile,
+  PhoneOtpRequest,
+  PhoneOtpResponse,
+  PhoneBindRequest,
+  PhoneBindResponse,
 } from '../types/api-contract';
 
 /** GET /presets - 列出当前用户可见的评分预设 */
@@ -540,6 +544,16 @@ export type { Notification } from '../types/api-contract';
 /** PATCH /users/profile - 更新当前用户资料(name/avatar/email/phone) */
 export function updateUserProfile(body: UpdateProfileRequest): Promise<UserProfile> {
   return patch<UserProfile>('/users/profile', body);
+}
+
+/** POST /auth/phone/otp - 发送手机验证码(bind 场景需鉴权) */
+export function sendPhoneOtp(body: PhoneOtpRequest): Promise<PhoneOtpResponse> {
+  return post<PhoneOtpResponse>('/auth/phone/otp', body);
+}
+
+/** POST /auth/phone/bind - 已登录用户绑定手机号(需鉴权) */
+export function bindPhone(body: PhoneBindRequest): Promise<PhoneBindResponse> {
+  return post<PhoneBindResponse>('/auth/phone/bind', body);
 }
 
 /* ============================================================

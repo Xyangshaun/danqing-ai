@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { LegalPage } from '@/components/ui/LegalPage';
 import { JsonLd } from '@/components/seo/JsonLd';
 import { buildMetadata, breadcrumbJsonLd } from '@/lib/seo';
+import { SITE } from '@/lib/site';
 
 export const metadata: Metadata = buildMetadata({
   title: '隐私政策',
@@ -22,7 +23,7 @@ export default function PrivacyPage() {
       />
       <LegalPage
         title="隐私政策"
-        lastUpdated="2026年7月29日"
+        lastUpdated="2026年8月8日"
         intro='丹青有AI(以下简称"我们")高度重视用户隐私。本政策说明我们在官网与产品中如何收集、使用、存储与保护你的信息。使用我们的服务即视为你同意本政策。'
         sections={[
           {
@@ -100,7 +101,7 @@ export default function PrivacyPage() {
                   <li>撤回授权同意;</li>
                   <li>投诉与举报。</li>
                 </ul>
-                <p>行使上述权利请通过 contact@domain 联系我们。</p>
+                <p>行使上述权利请通过 {SITE.email} 联系我们。</p>
               </>
             ),
           },

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, memo, useCallback } from 'react';
 import {
   Eye, BookOpen, Wand2, Heart, History, TrendingUp,
   Settings, ChevronLeft, ChevronRight, Sparkles, Plus,
-  Brush, PenTool, Box, Layers, Clock, Search, type LucideIcon,
+  Brush, PenTool, Box, Layers, Clock, Search, Home as HomeIcon, type LucideIcon,
   Gauge, Users, Building2, GraduationCap, Scale,
 } from 'lucide-react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
@@ -27,6 +27,13 @@ type NavGroup = {
 };
 
 const navGroups: NavGroup[] = [
+  {
+    id: 'home',
+    title: '工作台',
+    items: [
+      { path: '/', label: '工作台', icon: HomeIcon, shortcut: 'H' },
+    ],
+  },
   {
     id: 'creation',
     title: '创作工具',
@@ -231,10 +238,12 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
   }, [location.pathname]);
 
   return (
+    // h-full:约束 aside 高度为父容器高度,使下方 nav 的 flex-1 overflow-y-auto 生效;
+    // 否则 aside 被内容撑高,超出部分被祖先 overflow-hidden 裁掉,菜单无法滚动
     <aside
       className={`${
         collapsed ? 'w-16' : 'w-60'
-      } flex-shrink-0 bg-rice-100 border-r border-ink-900/8 flex flex-col transition-all duration-200 ease-out relative`}
+      } h-full flex-shrink-0 bg-rice-100 border-r border-ink-900/8 flex flex-col transition-all duration-200 ease-out relative`}
     >
       {/* 顶部：新建诊断快捷按钮 */}
       <div className={`p-3 border-b border-ink-900/8 ${collapsed ? 'px-2' : ''}`}>

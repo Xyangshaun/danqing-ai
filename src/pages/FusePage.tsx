@@ -80,7 +80,25 @@ export default function FusePage() {
   const [userPresetName, setUserPresetName] = useState('');
 
   useEffect(() => {
-    setUserPresets(listFuseUserPresets());
+    const list = listFuseUserPresets();
+    setUserPresets(list);
+    /* URL ?preset=<id> 自动载入用户搭配 */
+    const presetId = searchParams.get('preset');
+    if (presetId) {
+      const preset = list.find((p) => p.id === presetId);
+      if (preset) {
+        const s = getStyleById(preset.styleId);
+        const m = getMethodById(preset.methodId);
+        const i = getIntensityById(preset.intensityId);
+        if (s) setSelectedStyle(s);
+        if (m) setSelectedMethod(m);
+        if (i) setSelectedIntensity(i);
+        setFusionRatio(preset.ratio);
+        setResultVariations(preset.variations);
+        toast.success('搭配已载入', `「${preset.name}」`);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /* 素材数据状态 */
@@ -323,7 +341,14 @@ export default function FusePage() {
 
       const newResults = await Promise.all(tasks);
       setResults(newResults);
-      toast.success('灵感融合完成', `生成 ${newResults.length} 张融合作品`);
+
+      // 检测占位图(AI 服务未开启/不可用时的静默回退),明确告知用户当前状态
+      const allPlaceholder = newResults.every((r) => r.url.startsWith('data:image/svg+xml'));
+      if (allPlaceholder) {
+        toast.warning('当前为占位预览图', 'Prompt 已按所选搭配生成;AI 服务未开启或暂不可用');
+      } else {
+        toast.success('灵感融合完成', `生成 ${newResults.length} 张融合作品`);
+      }
     } catch (error) {
       console.error('灵感融合失败:', error);
       toast.error('灵感融合失败', '请检查网络或重试');

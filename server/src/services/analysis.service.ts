@@ -20,7 +20,7 @@
 // ============================================================
 
 import { existsSync, promises as fs } from 'node:fs';
-import { basename } from 'node:path';
+import { basename, join } from 'node:path';
 import { analysisRepository } from '../repositories/analysis.repository.js';
 import { tenantRepository } from '../repositories/tenant.repository.js';
 import { BusinessError } from '../middlewares/error-handler.js';
@@ -39,8 +39,7 @@ import {
   type BatchDeleteAnalysisItem,
 } from '../types/api-contract.js';
 import { canReadTenantWide, canDeleteTenantWide } from '../config/permissions.js';
-import { analyzeImage } from './analysis-engine.service.js';
-import { runHybridAnalysis } from './ai-analysis.service.js';
+import { runLocalAnalysis, runAIEnhance } from './ai-analysis.service.js';
 import { isAIEnabled } from './ai-vision.service.js';
 import { analysisCacheService } from './analysis-cache.service.js';
 import { notificationService } from './notification.service.js';
@@ -235,6 +234,307 @@ class AnalysisServiceClass {
       completedAt: analysis.completedAt?.toISOString() ?? null,
       aiEnhanced: storedAiEnhanced,
       aiDurationMs: storedAiDurationMs,
+    };
+  }
+
+  /**
+   * 阶段 2:AI 增强分析(方案 A)
+   * 用户主动触发(POST /analyses/:id/ai-enhance),对已存的本地分析结果追加 AI 语义增强。
+   *
+   * 流程:
+   *   1. 查询分析记录(tenantId 强制过滤,跨租户返回 null → 404)
+   *   2. RBAC:非 canReadTenantWide 角色(student/teacher)仅可操作自己的记录
+   *   3. 校验记录可增强:status=success 且 result 非空
+   *   4. 幂等:若 result.aiEnhanced === true,直接返回当前结果(不重复调 AI、不重复计费)
+   *   5. 校验 AI 配置:未启用 → 抛 ANALYSIS_RESULT_FAILED
+   *   6. 解析图片源(外部 URL 直接用;/uploads/xxx 解析回 uploadDir 本地路径,文件缺失则报错)
+   *   7. 调 runAIEnhance(读 storedResult → 提取指标 → 调 AI → 合并)
+   *   8. AI 失败(merged.aiEnhanced === false)→ 抛 ANALYSIS_TIMEOUT / ANALYSIS_RESULT_FAILED(不覆盖已存的本地结果)
+   *   9. AI 成功 → updateResult 覆盖写回 DB(result JSON 含 AI 字段,overallScore/durationMs 更新)
+   *   10. 异步记录 AI 用量日志(从原 runAnalysis 搬移,作品所有者计费)
+   *   11. 返回 AnalysisDetail(含新的 aiEnhanced/aiDurationMs,保留原 jimpDurationMs)
+   *
+   * 权限:复用 analysis:read:own / analysis:read:tenant(路由层)
+   *   - student/teacher 仅可增强自己的记录
+   *   - admin/owner 可增强租户内任意记录
+   *
+   * 幂等:已 aiEnhanced=true 的记录再次调用,直接返回当前结果,不重复计费
+   */
+  async aiEnhanceAnalysis(params: {
+    tenantId: string;
+    analysisId: string;
+    userId: string;
+    role: UserRole;
+  }): Promise<AnalysisDetail> {
+    const { tenantId, analysisId, userId, role } = params;
+
+    // 1. 查询记录(tenantId 过滤)
+    const analysis = await analysisRepository.findById(tenantId, analysisId);
+    if (!analysis) {
+      throw new BusinessError(ErrorCode.ANALYSIS_NOT_FOUND, '分析记录不存在', 404);
+    }
+
+    // 2. RBAC:非"租户全量可见"角色仅可操作自己创建的记录
+    if (!canReadTenantWide(role) && analysis.userId !== userId) {
+      // 出于安全,不暴露 403,统一返回 404
+      throw new BusinessError(ErrorCode.ANALYSIS_NOT_FOUND, '分析记录不存在', 404);
+    }
+
+    // 3. 校验记录可增强:status=success 且 result 非空
+    if (analysis.status !== 'success') {
+      throw new BusinessError(
+        ErrorCode.ANALYSIS_RESULT_FAILED,
+        `仅成功状态的分析可进行 AI 增强(当前状态:${analysis.status})`,
+        409,
+      );
+    }
+    const storedResult = analysis.result as HybridAnalysisResult | null;
+    if (!storedResult) {
+      throw new BusinessError(
+        ErrorCode.ANALYSIS_RESULT_FAILED,
+        '分析结果为空,无法进行 AI 增强',
+        409,
+      );
+    }
+
+    // 4. 幂等:已 AI 增强 → 直接返回当前结果
+    if (storedResult.aiEnhanced === true) {
+      logger.debug(
+        { analysisId, tenantId, userId },
+        '[analysis] aiEnhance: already AI-enhanced, returning current result',
+      );
+      return this.buildAnalysisDetailFromRecord(analysis);
+    }
+
+    // 5. 校验 AI 配置
+    if (!isAIEnabled()) {
+      throw new BusinessError(
+        ErrorCode.ANALYSIS_RESULT_FAILED,
+        'AI 未启用,无法进行 AI 增强',
+        503,
+      );
+    }
+
+    // 6. 解析图片源:外部 URL 直接用;/uploads/xxx 解析回 uploadDir 本地路径
+    const imageSource = this.resolveImageSourceForEnhance(analysis.imageUrl);
+    if (!imageSource) {
+      throw new BusinessError(
+        ErrorCode.ANALYSIS_IMAGE_INVALID,
+        '原始图片文件已清理,无法进行 AI 增强(请重新上传)',
+        410,
+      );
+    }
+
+    // 7. 调用阶段 2:runAIEnhance
+    const enhanceStartMs = Date.now();
+    const jimpDurationMs = analysis.durationMs ?? 0;
+    let merged: HybridAnalysisResult;
+    try {
+      merged = await runAIEnhance({
+        analysisId,
+        imageSource,
+        artType: analysis.workType as ArtType,
+        title: analysis.title ?? undefined,
+        remark: analysis.remark ?? undefined,
+        storedResult,
+        jimpDurationMs,
+      });
+    } catch (err) {
+      // runAIEnhance 内部已捕获 AI 异常并返回 fallback,理论上不会抛
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.error(
+        { err: msg, analysisId, tenantId, userId },
+        '[analysis] aiEnhance: runAIEnhance threw unexpectedly',
+      );
+      throw new BusinessError(
+        ErrorCode.ANALYSIS_RESULT_FAILED,
+        `AI 增强失败:${msg}`,
+        500,
+      );
+    }
+    const aiDurationMs = merged.aiMeta.aiDurationMs;
+
+    // 8. AI 失败 → 抛 BusinessError(不覆盖已存的本地结果)
+    if (!merged.aiEnhanced) {
+      const failureReason = merged.aiMeta.aiFailureReason;
+      const isTimeout = failureReason === 'AI_TIMEOUT';
+      logger.warn(
+        {
+          analysisId,
+          tenantId,
+          userId,
+          aiFailureReason: failureReason,
+          aiDurationMs,
+        },
+        '[analysis] aiEnhance: AI call failed, aborting (local result preserved)',
+      );
+      throw new BusinessError(
+        isTimeout ? ErrorCode.ANALYSIS_TIMEOUT : ErrorCode.ANALYSIS_RESULT_FAILED,
+        `AI 增强失败${failureReason ? `:${failureReason}` : ''}`,
+        isTimeout ? 408 : 500,
+      );
+    }
+
+    // 9. AI 成功 → 覆盖写回 DB(result JSON 含 AI 字段,overallScore/durationMs 更新)
+    try {
+      await analysisRepository.updateResult(tenantId, analysisId, {
+        status: 'success',
+        result: merged as unknown as Analysis['result'],
+        overallScore: merged.overallScore,
+        // durationMs = 阶段 1 Jimp + 阶段 2 AI(保留历史 + 记录 AI 增强耗时)
+        durationMs: jimpDurationMs + aiDurationMs,
+        // completedAt 保留原值(阶段 1 完成时间);兜底 new Date() 防御 null
+        completedAt: analysis.completedAt ?? new Date(),
+        failureReason: null,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.error(
+        { err: msg, analysisId, tenantId },
+        '[analysis] aiEnhance: failed to persist enhanced result',
+      );
+      // 不抛错:结果已计算并返回前端;DB 状态留旧值,前端可重试
+    }
+
+    // 10. 异步记录 AI 用量日志(从原 runAnalysis 搬移)
+    // 用作品所有者 ID 计费(即使 admin 代为增强,也归属作品所有者)
+    this.recordAIUsage(analysis, merged).catch((err) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.warn(
+        { err: msg, analysisId },
+        '[analysis] aiEnhance: record AI usage log failed (non-blocking)',
+      );
+    });
+
+    logger.info(
+      {
+        analysisId,
+        tenantId,
+        userId,
+        operatorRole: role,
+        aiEnhanced: merged.aiEnhanced,
+        jimpDurationMs,
+        aiDurationMs,
+        totalDurationMs: Date.now() - enhanceStartMs,
+      },
+      '[analysis] aiEnhance: completed (synchronous)',
+    );
+
+    // 11. 返回 AnalysisDetail
+    return {
+      id: analysis.id,
+      tenantId: analysis.tenantId,
+      userId: analysis.userId,
+      workType: analysis.workType as ArtType,
+      imageUrl: analysis.imageUrl,
+      title: analysis.title,
+      remark: analysis.remark,
+      status: 'success',
+      result: merged as unknown as AnalysisDetail['result'],
+      failureReason: null,
+      durationMs: jimpDurationMs + aiDurationMs,
+      createdAt: analysis.createdAt.toISOString(),
+      completedAt: analysis.completedAt?.toISOString() ?? new Date().toISOString(),
+      aiEnhanced: merged.aiEnhanced,
+      aiDurationMs,
+      jimpDurationMs,
+    };
+  }
+
+  /**
+   * 解析 AI 增强用的图片源
+   * - 外部 URL(http/https)直接返回
+   * - /uploads/xxx → 拼接 uploadDir + basename,并校验文件存在
+   * - 其他格式(如 data: URL)直接返回
+   *
+   * @returns 解析后的图片源;本地文件不存在时返回 null
+   */
+  private resolveImageSourceForEnhance(imageUrl: string): string | null {
+    // 外部 URL 直接可用
+    if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
+      return imageUrl;
+    }
+    // /uploads/xxx → 解析回本地文件系统路径
+    if (imageUrl.startsWith('/uploads/')) {
+      const filename = basename(imageUrl);
+      const localPath = join(env().uploadDir, filename);
+      if (!existsSync(localPath)) {
+        logger.warn(
+          { imageUrl, localPath, uploadDir: env().uploadDir },
+          '[analysis] aiEnhance: local file not found (cleaned after phase 1?)',
+        );
+        return null;
+      }
+      return localPath;
+    }
+    // 其他格式(data: URL 等)直接返回
+    return imageUrl;
+  }
+
+  /**
+   * 异步记录 AI 用量日志(成功/失败均记录)
+   * 从原 runAnalysis 搬移至 aiEnhanceAnalysis,仅阶段 2 触发 AI 时记录
+   */
+  private async recordAIUsage(
+    analysis: Analysis,
+    merged: HybridAnalysisResult,
+  ): Promise<void> {
+    const providerInfo = resolveEffectiveProvider(env());
+    if (!providerInfo) {
+      return;
+    }
+    const aiMeta = merged.aiMeta;
+    const tokenUsage = aiMeta.aiTokenUsage;
+    await aiUsageRepository.create({
+      tenantId: analysis.tenantId,
+      // 用作品所有者 ID 计费(即使 admin 代为增强,也归属作品所有者)
+      userId: analysis.userId,
+      analysisId: analysis.id,
+      provider: providerInfo.provider,
+      model: providerInfo.model,
+      apiUrl: providerInfo.apiUrl,
+      success: aiMeta.aiSuccess,
+      durationMs: aiMeta.aiDurationMs,
+      promptTokens: tokenUsage?.promptTokens ?? null,
+      completionTokens: tokenUsage?.completionTokens ?? null,
+      totalTokens: tokenUsage?.totalTokens ?? null,
+      costYuan: aiMeta.aiSuccess
+        ? estimateCostYuan(
+            providerInfo.model,
+            tokenUsage?.promptTokens,
+            tokenUsage?.completionTokens,
+          )
+        : null,
+      failureReason: aiMeta.aiFailureReason,
+    });
+  }
+
+  /**
+   * 从 DB 记录构造 AnalysisDetail(幂等返回路径复用)
+   */
+  private buildAnalysisDetailFromRecord(analysis: Analysis): AnalysisDetail {
+    const storedResult = analysis.result as
+      | (AnalysisDetail['result'] & {
+          aiEnhanced?: boolean;
+          aiMeta?: { aiDurationMs?: number };
+        })
+      | null;
+    return {
+      id: analysis.id,
+      tenantId: analysis.tenantId,
+      userId: analysis.userId,
+      workType: analysis.workType as ArtType,
+      imageUrl: analysis.imageUrl,
+      title: analysis.title,
+      remark: analysis.remark,
+      status: analysis.status as AnalysisDetail['status'],
+      result: analysis.result as AnalysisDetail['result'],
+      failureReason: analysis.failureReason,
+      durationMs: analysis.durationMs,
+      createdAt: analysis.createdAt.toISOString(),
+      completedAt: analysis.completedAt?.toISOString() ?? null,
+      aiEnhanced: storedResult?.aiEnhanced,
+      aiDurationMs: storedResult?.aiMeta?.aiDurationMs,
     };
   }
 
@@ -471,71 +771,19 @@ class AnalysisServiceClass {
         body.artType,
         isLocal,
         async () => {
-          if (env().aiEnabled) {
-            // 混合分析:Jimp(~500ms)+ AI(~2s),总耗时 ~2.5s < 3s SLA
-            // AI 未配置/失败时 runHybridAnalysis 内部自动 fallback 到 Jimp+模板建议,保证 professionalSuggestions 始终存在
-            const hybridStartMs = Date.now();
-            const hybridResult = await runHybridAnalysis({
-              imageSource: analysisSource,
-              artType: body.artType,
-              title: body.title,
-              remark: body.remark,
-            });
-            // 从 HybridAnalysisResult.aiMeta 提取 AI 耗时
-            // jimpDurationMs 近似为 (混合分析总耗时 - AI 耗时),包含 Jimp + 合并开销
-            aiDurationMs = hybridResult.aiMeta.aiDurationMs;
-            jimpDurationMs = Math.max(0, (Date.now() - hybridStartMs) - aiDurationMs);
-
-            // 异步记录 AI 用量日志(成功/失败均记录),不阻塞主流程
-            // 仅当 AI 实际被调用时记录(aiDurationMs > 0 表示发起了 AI 请求)
-            if (aiDurationMs > 0) {
-              const providerInfo = resolveEffectiveProvider(env());
-              if (providerInfo) {
-                const aiMeta = hybridResult.aiMeta;
-                const tokenUsage = aiMeta.aiTokenUsage;
-                aiUsageRepository
-                  .create({
-                    tenantId,
-                    userId,
-                    analysisId: analysis.id,
-                    provider: providerInfo.provider,
-                    model: providerInfo.model,
-                    apiUrl: providerInfo.apiUrl,
-                    success: aiMeta.aiSuccess,
-                    durationMs: aiMeta.aiDurationMs,
-                    promptTokens: tokenUsage?.promptTokens ?? null,
-                    completionTokens: tokenUsage?.completionTokens ?? null,
-                    totalTokens: tokenUsage?.totalTokens ?? null,
-                    costYuan: aiMeta.aiSuccess
-                      ? estimateCostYuan(
-                          providerInfo.model,
-                          tokenUsage?.promptTokens,
-                          tokenUsage?.completionTokens,
-                        )
-                      : null,
-                    failureReason: aiMeta.aiFailureReason,
-                  })
-                  .catch((err) => {
-                    const msg = err instanceof Error ? err.message : String(err);
-                    logger.warn(
-                      { err: msg, analysisId: analysis.id },
-                      '[analysis] record AI usage log failed (non-blocking)',
-                    );
-                  });
-              }
-            }
-
-            return {
-              result: hybridResult,
-              aiEnhanced: hybridResult.aiEnhanced,
-            };
-          }
-          // Jimp-only 模式(现有逻辑,~500ms)
+          // 方案 A 阶段 1:始终仅本地 Jimp 分析 + 模板建议(aiEnhanced=false)
+          // AI 增强改由阶段 2(POST /analyses/:id/ai-enhance)用户主动触发,解耦 3s SLA
+          // runLocalAnalysis 内部:Jimp 像素分析 + createFallbackAIVisionResult 模板建议
           const jimpStartMs = Date.now();
-          const jimpResult = await analyzeImage(analysisSource, body.artType);
+          const localResult = await runLocalAnalysis({
+            imageSource: analysisSource,
+            artType: body.artType,
+            title: body.title,
+            remark: body.remark,
+          });
           jimpDurationMs = Date.now() - jimpStartMs;
           aiDurationMs = 0;
-          return { result: jimpResult, aiEnhanced: false };
+          return { result: localResult, aiEnhanced: false };
         },
       );
 
@@ -554,23 +802,9 @@ class AnalysisServiceClass {
           { analysisId: analysis.id, artType: body.artType, aiEnhanced },
           '[analysis] cache HIT, skipped analysis',
         );
-      } else if (isAIEnabled() && aiEnhanced === false) {
-        // AI 启用但未增强(AI 失败 fallback 到 Jimp),记录警告
-        // 注意:cacheResult.result 此时为 HybridAnalysisResult,需安全访问 aiMeta
-        const hybrid = cacheResult.result as HybridAnalysisResult;
-        if (hybrid.aiMeta?.aiFailureReason) {
-          logger.warn(
-            {
-              analysisId: analysis.id,
-              aiFailureReason: hybrid.aiMeta.aiFailureReason,
-              aiDurationMs: hybrid.aiMeta.aiDurationMs,
-            },
-            '[analysis] AI enhancement failed, fallback to Jimp-only',
-          );
-        }
       }
     } catch (err) {
-      // 兜底:runHybridAnalysis/analyzeImage 内部已捕获异常并返回 fallback,
+      // 兜底:runLocalAnalysis/analyzeImage 内部已捕获异常并返回 fallback,
       // 这里仅作终极兜底(理论上不会进入)
       const msg = err instanceof Error ? err.message : String(err);
       logger.error(

@@ -2,6 +2,7 @@ import React from 'react';
 import { GALLERY_ART } from '@/lib/artworks';
 import { Section, SectionHeader } from '@/components/ui/Section';
 import { RevealGroup, RevealItem } from '@/components/ui/RevealGroup';
+import { ResilientImage } from '@/components/ui/ResilientImage';
 
 /**
  * 艺术画廊专区
@@ -27,8 +28,8 @@ export function ArtGallery() {
             <figure className="group relative overflow-hidden rounded-lg bg-paper-200 transition-shadow duration-500 ease-ink hover:shadow-ink-lg">
               {/* 画作 */}
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={artItem.url}
+              <ResilientImage
+                localSrc={artItem.url}
                 alt={`${artItem.title}水墨画作`}
                 loading="lazy"
                 className="aspect-[3/4] w-full object-cover transition-transform duration-700 ease-ink group-hover:scale-[1.05]"

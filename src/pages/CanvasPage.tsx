@@ -232,10 +232,11 @@ export default function CanvasPage() {
 
       {/* 主区:画布 + 图层面板 */}
       <div className="flex-1 flex min-h-0">
-        {/* 画布滚动容器 */}
-        <div className="flex-1 overflow-auto p-6 flex items-start justify-center">
+        {/* 画布滚动容器:mx-auto 实现安全居中——画布超宽时左对齐且可横向滚动到达全部内容,
+            避免 justify-center 导致的左侧溢出被固定侧栏永久遮挡 */}
+        <div className="flex-1 overflow-auto p-6 flex items-start">
           <div
-            className="shadow-card rounded-lg overflow-hidden flex-shrink-0"
+            className="shadow-card rounded-lg overflow-hidden flex-shrink-0 mx-auto"
             style={{
               width: CANVAS_WIDTH * zoom,
               height: CANVAS_HEIGHT * zoom,

@@ -108,6 +108,20 @@ export default function RootLayout({
       <head>
         {/* 组织结构化数据:全站注入 */}
         <JsonLd data={organizationJsonLd()} />
+        {/*
+          主题同步脚本(内联,渲染前执行,避免 FOUC 闪烁):
+          读取 localStorage['danqing-ai-theme'](与业务应用 /app 共享同域 localStorage)
+          - 'ink' → data-theme="dark"
+          - 'rice' → data-theme="light"
+          - 'auto' → 跟随系统 prefers-color-scheme
+          - 未设置 → 默认 light
+          同时监听 storage 事件,用户在 /app 切换主题后官网实时同步
+        */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var t=localStorage.getItem('danqing-ai-theme');var m='light';if(t==='ink'){m='dark'}else if(t==='auto'){m=window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'}document.documentElement.setAttribute('data-theme',m);window.addEventListener('storage',function(e){if(e.key==='danqing-ai-theme'){var v=e.newValue;var nm='light';if(v==='ink'){nm='dark'}else if(v==='auto'){nm=window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'}document.documentElement.setAttribute('data-theme',nm)}})}catch(err){}})();`,
+          }}
+        />
       </head>
       {/* 注意:body 不能加 depth-stage(perspective 会使所有 fixed 子元素相对 body 而非视口定位,
           导致 VideoIntro/Navbar 等全屏覆盖层塌缩到文档流)。卡片景深由 .ink-card 自带 perspective 实现。 */}

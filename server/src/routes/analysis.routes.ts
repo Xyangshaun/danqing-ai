@@ -33,6 +33,7 @@ import {
   uploadAnalysis,
   listAnalyses,
   getAnalysis,
+  aiEnhanceAnalysis,
   deleteAnalysis,
   batchDeleteAnalyses,
 } from '../controllers/analysis.controller.js';
@@ -262,6 +263,17 @@ analysisRouter.post(
 
 // GET /analyses/:id - 查询单条详情,需 analysis:read:own 或 analysis:read:tenant 权限
 analysisRouter.get('/:id', requireAnyPermission('analysis:read:own', 'analysis:read:tenant'), getAnalysis);
+
+// POST /analyses/:id/ai-enhance - 阶段 2 AI 增强分析(方案 A)
+// 用户主动触发,对已存的本地分析结果追加 AI 语义增强。
+// 权限:复用 analysis:read:own / analysis:read:tenant(student/teacher 仅增强自己的;admin/owner 租户内任意)
+// 幂等:已 aiEnhanced=true 的记录再次调用,直接返回当前结果(不重复调 AI、不重复计费)
+// 注:POST 方法与 GET /:id / DELETE /:id 无冲突;注册在 reviewRouter.use(/:id) 之前确保优先匹配
+analysisRouter.post(
+  '/:id/ai-enhance',
+  requireAnyPermission('analysis:read:own', 'analysis:read:tenant'),
+  aiEnhanceAnalysis,
+);
 
 // DELETE /analyses/:id - 删除分析记录,需 analysis:delete:own 或 analysis:delete:tenant 权限
 // student/teacher 拥有 analysis:delete:own(仅删自己),admin/owner 拥有两者(删任意)

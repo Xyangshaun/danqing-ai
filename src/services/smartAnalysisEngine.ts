@@ -527,6 +527,53 @@ export async function smartAnalyze(
 }
 
 /**
+ * AI 深度增强分析(阶段 2)
+ *
+ * 对已存在的分析记录调用后端 AI 视觉模型增强,返回带 aiEnhanced=true 的新结果。
+ * 后端幂等:若记录已 aiEnhanced=true,直接返回当前结果不重复计费。
+ *
+ * 鉴权同 GET /analyses/:id(analysis:read:own/tenant),沿用本文件 smartAnalyze 的
+ * 裸 fetch 模式(同源请求携带 Cookie,与 /analyses/upload 一致)。
+ *
+ * @param analysisId 阶段 1 返回的 AnalysisResult.id
+ * @param artType    当前艺术类型(convertBackendResult fallback 用,后端响应含 artType 时以响应为准)
+ * @throws Error 网络/HTTP/业务错误(message 可直接 toast)
+ */
+export async function aiEnhanceAnalysis(
+  analysisId: string,
+  artType: ArtType
+): Promise<AnalysisResult> {
+  let response: Response;
+  try {
+    response = await fetch(`${getBackendUrl()}/analyses/${analysisId}/ai-enhance`, {
+      method: 'POST',
+    });
+  } catch (networkError) {
+    throw new Error('网络连接失败，请检查网络后重试');
+  }
+
+  /* 先检查 HTTP 状态码,提取后端业务 message */
+  if (!response.ok) {
+    let errorMessage = `服务器返回错误 (HTTP ${response.status})`;
+    try {
+      const errorData = await response.json();
+      if (errorData.message) {
+        errorMessage = errorData.message;
+      }
+    } catch {
+      /* 解析错误响应失败时,使用默认错误消息 */
+    }
+    throw new Error(errorMessage);
+  }
+
+  const data = await response.json();
+  if (data.code === 0 && data.data) {
+    return convertBackendResult(data.data, artType);
+  }
+  throw new Error(data.message || 'AI 深度分析失败，请稍后重试');
+}
+
+/**
  * 获取复杂度标签文本
  */
 export function getComplexityLabel(level: ImageComplexity['level']): string {

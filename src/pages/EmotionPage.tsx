@@ -1,5 +1,5 @@
-import { useState, useMemo, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useMemo, useEffect, useRef } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Heart, Sparkles, Loader2, Download, Share2, Palette, Sliders, Layers,
   RefreshCw, Brush, Moon, Wind, Droplets, Flame, Waves,
@@ -69,6 +69,7 @@ const intensityLevels = [
 export default function EmotionPage() {
   const toast = useToast();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
   /* ---------- 情绪选择状态 ---------- */
   const [selectedEmotion, setSelectedEmotion] = useState('宁静');
@@ -94,8 +95,34 @@ export default function EmotionPage() {
   const [showPresetInput, setShowPresetInput] = useState(false);
   const [presetName, setPresetName] = useState('');
 
+  /* 从首页/跳转链接携带的自动生成标记(一次性):?preset=xxx&auto=1 进入时,载入后立即生成 */
+  const autoGenerateRef = useRef(false);
+  const presetAppliedRef = useRef(false);
+  const handleGenerateRef = useRef<() => void>(() => {});
+
   useEffect(() => {
-    setPresets(listEmotionPresets());
+    const list = listEmotionPresets();
+    setPresets(list);
+    /* URL ?preset=<id> 自动载入预设 */
+    const presetId = searchParams.get('preset');
+    const auto = searchParams.get('auto') === '1';
+    if (presetId) {
+      const preset = list.find((p) => p.id === presetId);
+      if (preset) {
+        const primary = getEmotionById(preset.primaryId);
+        setSelectedEmotion(primary.name);
+        const secondary = preset.secondaryId ? getEmotionById(preset.secondaryId) : null;
+        setSecondaryEmotion(secondary && secondary.id !== primary.id ? secondary.name : null);
+        setRatio(preset.ratio);
+        setIntensity(preset.intensity);
+        setGenParams({ ...preset.params });
+        setCustomPalette(preset.customPalette ? [...preset.customPalette] : null);
+        presetAppliedRef.current = true;
+        if (auto) autoGenerateRef.current = true;
+        toast.success('预设已载入', `「${preset.name}」${auto ? '，即将自动生成' : ''}`);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const currentEmotion = getEmotionByName(selectedEmotion);
@@ -182,6 +209,24 @@ export default function EmotionPage() {
       setGenerating(false);
     }
   };
+  handleGenerateRef.current = handleGenerate;
+
+  /* URL ?auto=1:预设应用后下一帧自动触发生成(确保状态已 commit) */
+  useEffect(() => {
+    if (autoGenerateRef.current && !generating) {
+      let cancelled = false;
+      const t = window.setTimeout(() => {
+        if (!cancelled) {
+          autoGenerateRef.current = false;
+          handleGenerateRef.current?.();
+        }
+      }, 200);
+      return () => {
+        cancelled = true;
+        window.clearTimeout(t);
+      };
+    }
+  }, [generating, selectedEmotion, ratio, intensity, genParams]);
 
   // 将当前情绪色板通过 data-service 保存并跳转到风格库
   const handleApplyToStyles = async () => {

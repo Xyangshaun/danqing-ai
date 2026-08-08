@@ -2,6 +2,7 @@ import React from 'react';
 import { Section, SectionHeader } from '@/components/ui/Section';
 import { RevealOnScroll } from '@/components/ui/RevealOnScroll';
 import { TiltCard } from '@/components/ui/TiltCard';
+import { ResilientImage } from '@/components/ui/ResilientImage';
 import { CTA_LINKS } from '@/lib/site';
 
 const IMG_ROOT = '/images';
@@ -85,7 +86,7 @@ export function CreativeForms() {
           <TiltCard className="group h-full">
             <div className="bento-visual h-full min-h-[320px] rounded-lg">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={PAINTING_IMG} alt="绘画作业 AI 构图色彩笔触分析示意" loading="lazy" />
+              <ResilientImage localSrc={PAINTING_IMG} alt="绘画作业 AI 构图色彩笔触分析示意" loading="lazy" />
               <div className="bento-overlay" />
               {/* 内容层 */}
               <div className="absolute inset-0 flex flex-col justify-end p-6 md:p-8">
@@ -131,7 +132,7 @@ export function CreativeForms() {
             <TiltCard className="group h-full">
               <div className="bento-visual h-full min-h-[200px] rounded-lg">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={form.img} alt={form.imgAlt} loading="lazy" />
+                <ResilientImage localSrc={form.img} alt={form.imgAlt} loading="lazy" />
                 <div className="bento-overlay" />
                 <div className="absolute inset-0 flex flex-col justify-end p-5 md:p-6">
                   <span className="bento-badge self-start">{form.badge}</span>

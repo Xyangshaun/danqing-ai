@@ -1,6 +1,7 @@
 import React from 'react';
 import { Breadcrumb } from './Breadcrumb';
 import { Section } from './Section';
+import { SITE } from '@/lib/site';
 
 type LegalSection = {
   heading: string;
@@ -52,10 +53,10 @@ export function LegalPage({ title, lastUpdated, intro, sections }: LegalPageProp
         <footer className="mt-16 border-t border-ink-100 pt-8 text-sm text-ink-400">
           如对本{title}有任何疑问,请通过{' '}
           <a
-            href="mailto:contact@domain"
+            href={`mailto:${SITE.email}`}
             className="text-cinnabar-600 underline decoration-cinnabar-200 underline-offset-2 hover:text-cinnabar-700"
           >
-            contact@domain
+            {SITE.email}
           </a>{' '}
           与我们联系。
         </footer>

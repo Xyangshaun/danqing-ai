@@ -255,6 +255,54 @@ export const getAnalysis: RequestHandler = async (req, res, next) => {
 };
 
 /**
+ * POST /analyses/:id/ai-enhance
+ * 阶段 2:AI 增强分析(方案 A)
+ * 用户主动触发,对已存的本地分析结果追加 AI 语义增强。
+ *
+ * 权限:requireAnyPermission('analysis:read:own', 'analysis:read:tenant')(路由层)
+ *   - student/teacher 仅可增强自己的记录
+ *   - admin/owner 可增强租户内任意记录
+ *
+ * 幂等:已 aiEnhanced=true 的记录再次调用,直接返回当前结果(不重复调 AI、不重复计费)
+ *
+ * 响应:返回 AnalysisDetail(含 aiEnhanced=true、aiDurationMs、保留原 jimpDurationMs)
+ */
+export const aiEnhanceAnalysis: RequestHandler = async (req, res, next) => {
+  try {
+    if (!req.tenantId || !req.userId || !req.role) {
+      return error(res, ErrorCode.UNAUTHORIZED, '未授权,请先登录', 401);
+    }
+
+    const parsed = analysisIdParamSchema.safeParse(req.params);
+    if (!parsed.success) {
+      const first = parsed.error.issues[0];
+      const msg = `参数错误:${first?.path.join('.') ?? 'unknown'} ${first?.message ?? 'invalid'}`;
+      return error(res, ErrorCode.PARAM_INVALID, msg, 400);
+    }
+
+    const result = await analysisService.aiEnhanceAnalysis({
+      tenantId: req.tenantId,
+      analysisId: parsed.data.id,
+      userId: req.userId,
+      role: req.role,
+    });
+
+    logger.debug(
+      {
+        analysisId: result.id,
+        aiEnhanced: result.aiEnhanced,
+        aiDurationMs: result.aiDurationMs,
+      },
+      '[analysis.controller] aiEnhanceAnalysis response',
+    );
+
+    return success(res, result, 'AI 增强完成');
+  } catch (err) {
+    return next(err);
+  }
+};
+
+/**
  * DELETE /analyses/:id
  * 删除分析记录
  * 权限校验:requireAnyPermission('analysis:delete:own', 'analysis:delete:tenant')

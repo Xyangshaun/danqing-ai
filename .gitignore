@@ -15,12 +15,69 @@ logs/
 
 # 备份与临时文件
 .backups/
+backup/
 *.bak
+*.bak-*
 *.bak.*
+*.backup
+*.backup-*
 dist.bak*/
 dist-new.zip
 dist-*.zip
-.tmp-*.sh
+.tmp-*
+.tmp_*
+.tmp/
+tmp-*
+tmp_*
+tmp_/
+*.tar.gz
+*.dump
+coverage_*
+.env.bak*
+
+# 生成资源(24K+ 缩略图,部署时由脚本生成,仅忽略根目录 public/)
+/public/
+
+# 审计/调试临时脚本与产物
+_audit*
+_clear_cache.sh
+_dup_samples/
+_weaknet_shots/
+_deploy_list.txt
+_deploy_stage/
+_deploy_*.sh
+prototype/
+scripts/_seed*
+scripts/_seeds*
+*.b64
+_login.json
+_admin_login.json
+_tmp/
+_test_*
+_diag*
+_m3_*
+_fix_*
+_restore_*
+_verify_*
+_weaknet_*
+check_*.sh
+diag*.sh
+diag_*.sh
+diag_*.py
+deploy-delta.sh
+verify-*.sh
+verify-*.ps1
+_tmp_*
+website/check-*.sh
+website/check-*.py
+website/extract-*.py
+website/find-*.sh
+website/verify-*.sh
+website/verify-*.ps1
+
+# Prisma 备份
+server/prisma/backup/
+server/.tmp_*
 
 # Remotion 视频模板(已 eslint ignore,不纳入版本控制)
 dq-video/

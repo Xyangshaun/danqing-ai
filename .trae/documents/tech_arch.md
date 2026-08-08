@@ -695,4 +695,112 @@ resolveConfig(tenantId)
 
 ---
 
-> **文档结束**。本文档基于 `implementation-source-of-truth.md` 重写，已消除 MVP LocalStorage/Mock 残留表述，并纳入 M-0 新增的 AI 生成、租户配置深合并、可观测性架构与数据模型增量。如需更新，请同步修改对应源文件。
+## 13. 用户在线状态(Presence)与双后台同步架构(M-4 新增,2026-08-08)
+
+> 需求来源:飞书 OAuth 登录成功后,用户信息需在 **管理后台(admin-dashboard)** 与 **开发者后台** 实时可见(在线状态/登录时间/最后活跃/当前会话)。
+> 对应 PRD:prd.md §9(P-09);契约:api-contract-v1.md §3.12 / §4.13。
+
+### 13.1 现状调研结论(代码实证)
+
+| 调研项 | 结论 | 证据 |
+|--------|------|------|
+| 用户持久化 | 登录成功已落 PostgreSQL(`users.lastLoginAt` + `sessions` 行),**无需额外同步动作** | `server/src/services/auth.service.ts` `upsertUserAndTenant()` / `issueTokensAndSession()` |
+| ORM / 数据库 | Prisma + PostgreSQL 14+,另有 ioredis 单例 | `server/prisma/schema.prisma`、`server/src/config/redis.ts` |
+| 实时基础设施 | **无 WebSocket / SSE**;现有"在线"为 Session 派生计算(`expiresAt>now && revokedAt IS NULL`);`stats/realtime` 的 onlineUsers 用 DAU 近似(代码注释自承"Phase 4 简化") | `server/src/repositories/dev-view.repository.ts`、`server/src/services/admin-stats.service.ts` |
+| 管理后台 | `admin/`(AntD Pro)已有 `pages/user/list.tsx`(含 lastLoginAt 列,无在线状态)与 `pages/dev/accounts.tsx`(isOnline/activeSessions/lastActiveAt) | `admin/src/pages/user/list.tsx`、`admin/src/pages/dev/accounts.tsx` |
+| 开发者后台 | **独立端不存在**;现为 admin 内 `/api/admin/dev/*` + `pages/dev/*` 模块 | Glob 无 dev-dashboard;文档无登记 |
+| 登录写库汇聚点 | 6 条登录路径(飞书回调/扫码/手机 OTP/邀请码/管理员密码/通用账号)全部汇聚于 `issueTokensAndSession()` + `handleCallback()`,**埋点只需 2 处** | `server/src/services/auth.service.ts` |
+
+### 13.2 关键决策仲裁
+
+#### 决策 D1:开发者后台形态 → 本期复用 admin dev 模块,独立端走演进路径
+
+| 方案 | 优点 | 缺点 | 结论 |
+|------|------|------|------|
+| A. 独立新端 `dev-dashboard/` | 职责隔离;可用 ApiKey(scopes)鉴权 | 新增构建/部署/鉴权链路;本期成本高 | 演进路径(M-5+) |
+| **B. 复用 admin `dev/*` 模块(选定)** | 端点/页面/权限已存在,只做增强;符合保守原则 | 开发者需持有 admin/owner 角色 | **本期采用** |
+
+#### 决策 D2:实时状态技术选型 → Redis 心跳 + 查询端点轮询,WS 列为演进
+
+| 方案 | 实时性 | 改造成本 | 风险 | 结论 |
+|------|--------|---------|------|------|
+| **A. Redis presence + 30s 轮询(选定)** | 秒级(5 分钟 TTL 心跳) | 低:复用 ioredis;查询走既有 `/api/admin/*` 轮询模式 | 心跳节流需防 Redis 写放大 | **本期采用** |
+| B. WebSocket 推送 | 毫秒级 | 中:`index.ts` 已 `http.createServer(app)` 可直挂 `ws`;但 PM2 多实例需 sticky / pub-sub | Nginx 反代升级头配置;多进程广播复杂 | M-5 演进 |
+| C. SSE | 秒级 | 中 | 连接数占用;代理缓冲 | 不采用 |
+
+### 13.3 数据流设计(登录 → 双后台可见)
+
+```mermaid
+sequenceDiagram
+    participant U as 用户(Web/App)
+    participant API as Express /api/v1
+    participant Auth as auth.service
+    participant P as presence.service(新增)
+    participant R as Redis
+    participant DB as PostgreSQL
+    participant ADM as 管理后台 admin/
+    participant DEV as 开发者视图 /api/admin/dev/*
+
+    U->>API: 飞书 OAuth 回调 /feishu/callback
+    API->>Auth: handleCallback()
+    Auth->>DB: upsert User(lastLoginAt)+ TenantMember
+    Auth->>DB: sessions 插入(DB)+ Redis session 双写
+    Auth->>P: markOnline(userId, sessionId, client)
+    P->>R: SETEX presence:user:{userId} 300s<br/>ZADD presence:online {ts} {userId}
+    Note over U,API: 之后所有带 JWT 请求经 authMiddleware<br/>被动 touch(60s 节流,防写放大)
+    API->>P: touch(userId)(节流)
+    U->>API: 登出 /auth/logout
+    API->>P: markOffline(userId, sessionId)
+    P->>R: DEL presence:user:{userId}<br/>ZREM presence:online {userId}
+    ADM->>API: GET /api/admin/presence/users?ids=...(30s 轮询)
+    DEV->>API: GET /api/admin/dev/accounts(30s 轮询,增强三态)
+    API->>R: 批量读 presence(MGET/ZRANGE)
+    R-->>API: online/idle/offline 三态
+    API-->>ADM: {code:0,data:{...}}
+```
+
+### 13.4 在线状态三态模型(单一语义,全端统一)
+
+| 状态 | 判定规则 | 语义 |
+|------|---------|------|
+| `online` | Redis `presence:user:{userId}` 存在(近 5 分钟有心跳/请求) | 实时活跃 |
+| `idle` | presence 不存在,但 DB 有有效 Session(`expiresAt>now && revokedAt IS NULL`) | 会话有效但不活跃(挂起/离开) |
+| `offline` | 无 presence 且无有效 Session | 离线 |
+
+> 既有 `dev/accounts` 的 `isOnline`(有效 Session 语义)保留不动,新增 `presenceState` 字段承载三态,**不破坏已冻结契约**,符合向后兼容。
+
+### 13.5 Redis Key 规范(新增,统一登记)
+
+| Key | 类型 | TTL | 写入点 | 读取点 |
+|-----|------|-----|--------|--------|
+| `presence:user:{userId}` | String(JSON:`{lastSeenAt, client, sessionId}`) | 300s(滑动) | markOnline / touch(60s 节流) | 批量 MGET |
+| `presence:online` | ZSET(member=userId, score=lastSeenEpoch) | 由清理任务兜底 | markOnline / touch / markOffline | ZRANGE 在线清单;ZREMRANGEBYSCORE 清理超时 |
+
+### 13.6 数据模型变更点
+
+- **Prisma schema:零变更**。`users.lastLoginAt`、`sessions.*` 已满足持久化需求。
+- 仅新增 Redis key(见 §13.5),无表结构迁移、无回滚风险。
+- 跨端 TS 类型增量:`server/src/types/api-contract.ts` 新增 `PresenceState`、`UserPresenceEntry`、`PresenceBatchResponse`(详见 api-contract-v1.md §3.12),经 sync 脚本同步各端。
+
+### 13.7 权限与安全
+
+| 端点 | 权限码 | 数据范围 | 防越权设计 |
+|------|--------|---------|-----------|
+| `GET /api/admin/presence/users` | `admin:user:read`(复用) | 平台级(管理后台) | 复用 authMiddleware+tenantMiddleware+requirePermission 链路;响应脱敏(不返回 ip/userAgent 明细,仅会话数与时间) |
+| `GET /api/admin/presence/online` | `admin:stats:read`(复用) | 平台级 | 同上 |
+| `GET /api/admin/dev/accounts`(增强) | `admin:user:read`(既有) | 平台级 | 既有鉴权不变,仅响应体追加 `presenceState` |
+| 未来独立开发者后台 | 新增 `dev:presence:read`,走 **ApiKey.scopes**(表已存在) | 平台级只读 | M-5 再议,本期不开放 |
+
+- touch 节流:同一 userId 60s 内仅写一次 Redis(进程内 LRU 标记),防止高 QPS 下 Redis 写放大。
+- presence JSON 不落敏感字段(不存 IP 全址/UA 原文,仅 client 类型)。
+- Redis 故障降级:presence 查询失败时回退 DB Session 派生(即 idle/offline 二态),接口不 5xx。
+
+### 13.8 演进路径(保守迁移)
+
+1. **M-4(本期)**:Redis presence + 轮询,admin 双模块增强,零 schema 变更。
+2. **M-5(可选)**:`index.ts` 的 `http.createServer` 直挂 `ws`,presence 变更经 Redis pub/sub 广播至各 PM2 实例,推送替代轮询;独立 `dev-dashboard/` 端 + ApiKey 鉴权。
+3. 回滚方案:presence 为纯增量,回滚 = 摘 Middleware 埋点 + 下线查询端点,业务数据零影响。
+
+---
+
+> **文档结束**。本文档基于 `implementation-source-of-truth.md` 重写,已消除 MVP LocalStorage/Mock 残留表述,并纳入 M-0 新增的 AI 生成、租户配置深合并、可观测性架构与数据模型增量,以及 M-4 用户在线状态(Presence)架构(§13)。如需更新,请同步修改对应源文件。

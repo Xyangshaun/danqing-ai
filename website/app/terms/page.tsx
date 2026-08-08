@@ -22,7 +22,7 @@ export default function TermsPage() {
       />
       <LegalPage
         title="服务条款"
-        lastUpdated="2026年7月29日"
+        lastUpdated="2026年8月8日"
         intro='欢迎使用丹青有AI(以下简称"本服务")。本条款构成你与我们之间关于使用本服务的法律协议。使用本服务即表示你同意接受本条款的约束。'
         sections={[
           {
