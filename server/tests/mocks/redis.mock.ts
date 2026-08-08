@@ -187,6 +187,49 @@ class RedisMock {
   }
 
   // ============================================================
+  // M4 Presence 支持:mget / zrange / zrem(presence.service.ts)
+  // ============================================================
+
+  /**
+   * MGET key [key ...] —— 批量读取字符串值(不存在为 null)
+   */
+  async mget(...keys: string[]): Promise<(string | null)[]> {
+    const out: (string | null)[] = [];
+    for (const key of keys) {
+      out.push(await this.get(key));
+    }
+    return out;
+  }
+
+  /**
+   * ZRANGE key start stop —— 按 score 升序返回 member(支持负索引,-1 表末尾)
+   */
+  async zrange(key: string, start: number, stop: number): Promise<string[]> {
+    this.refresh(key);
+    const zset = this.sortedSets.get(key);
+    if (!zset) return [];
+    const sorted = [...zset.members].sort((a, b) => a.score - b.score);
+    const len = sorted.length;
+    const from = start < 0 ? Math.max(len + start, 0) : start;
+    const to = stop < 0 ? len + stop : stop;
+    if (from > to || from >= len) return [];
+    return sorted.slice(from, to + 1).map((m) => m.member);
+  }
+
+  /**
+   * ZREM key member [member ...] —— 删除有序集成员,返回删除数
+   */
+  async zrem(key: string, ...members: (string | number)[]): Promise<number> {
+    this.refresh(key);
+    const zset = this.sortedSets.get(key);
+    if (!zset) return 0;
+    const targets = new Set(members.map(String));
+    const before = zset.members.length;
+    zset.members = zset.members.filter((m) => !targets.has(m.member));
+    return before - zset.members.length;
+  }
+
+  // ============================================================
   // Lua 脚本:EVAL / EVALSHA
   // ============================================================
 

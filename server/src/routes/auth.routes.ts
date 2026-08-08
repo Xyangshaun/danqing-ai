@@ -34,7 +34,7 @@ import {
   feishuQrCreate,
   feishuQrStatus,
 } from '../controllers/auth.controller.js';
-import { authMiddleware } from '../middlewares/auth.js';
+import { authMiddleware, optionalAuthMiddleware } from '../middlewares/auth.js';
 import {
   authRateLimiter,
   callbackRateLimiter,
@@ -88,10 +88,11 @@ authRouter.get(
 
 // ---------- Phase 5:手机 OTP / 邀请码 / 院校管理员认证 ----------
 
-// POST /auth/phone/otp - 发送手机验证码(无需鉴权,限流 3/min/IP,防短信轰炸)
+// POST /auth/phone/otp - 发送手机验证码(bind 场景可选鉴权注入 userId,限流 3/min/IP)
 authRouter.post(
   '/phone/otp',
   createRateLimiter(3, 'phone-otp'),
+  optionalAuthMiddleware,
   phoneOtp,
 );
 

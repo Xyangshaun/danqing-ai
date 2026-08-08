@@ -354,7 +354,7 @@ export const phoneOtp: RequestHandler = async (req, res, next) => {
       phone: parseResult.data.phone,
       purpose: parseResult.data.purpose,
       clientIp,
-      tenantId: parseResult.data.tenantId,
+      tenantId: parseResult.data.tenantId ?? req.tenantId,
       // bind 场景需要 userId(已登录用户),由路由层鉴权注入
       userId: req.userId,
     });

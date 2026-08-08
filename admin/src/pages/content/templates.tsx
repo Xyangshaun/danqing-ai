@@ -17,6 +17,8 @@ import {
 } from '@/services/content';
 import { useConfirmAction } from '@/components/ConfirmAction';
 import Access from '@/components/Access';
+import ReadonlyAlert from '@/components/ReadonlyAlert';
+import { useReadonlyAdmin } from '@/utils/readonly';
 import { PERM, ART_TYPE_LABEL, ART_TYPE_OPTIONS } from '@/constants';
 import { formatDateTime } from '@/utils/format';
 
@@ -24,6 +26,8 @@ export default function TemplatesPage() {
   const tableRef = useRef<ActionType>();
   const { message } = App.useApp();
   const { confirm } = useConfirmAction();
+  // 二级只读管理员:隐藏新建/编辑/删除写操作入口
+  const readonly = useReadonlyAdmin();
   const [editOpen, setEditOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [form] = Form.useForm();
@@ -140,22 +144,27 @@ export default function TemplatesPage() {
       width: 140,
       fixed: 'right',
       render: (_, r) => [
-        <Access key="edit" permission={PERM.templateWrite}>
-          <a onClick={() => openEdit(r)}>
-            <EditOutlined /> 编辑
-          </a>
-        </Access>,
-        <Access key="delete" permission={PERM.templateWrite}>
-          <a onClick={() => onDelete(r)} style={{ color: '#c8392e' }}>
-            <DeleteOutlined /> 删除
-          </a>
-        </Access>,
+        !readonly && (
+          <Access key="edit" permission={PERM.templateWrite}>
+            <a onClick={() => openEdit(r)}>
+              <EditOutlined /> 编辑
+            </a>
+          </Access>
+        ),
+        !readonly && (
+          <Access key="delete" permission={PERM.templateWrite}>
+            <a onClick={() => onDelete(r)} style={{ color: '#c8392e' }}>
+              <DeleteOutlined /> 删除
+            </a>
+          </Access>
+        ),
       ],
     },
   ];
 
   return (
     <PageContainer header={{ title: '模板管理', ghost: true }}>
+      <ReadonlyAlert />
       <ProTable<CreativeTemplateInfo>
         actionRef={tableRef}
         rowKey="id"
@@ -177,11 +186,13 @@ export default function TemplatesPage() {
           return { data: res.items, total: res.total, success: true };
         }}
         toolBarRender={() => [
-          <Access key="create" permission={PERM.templateWrite}>
-            <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
-              新建模板
-            </Button>
-          </Access>,
+          !readonly && (
+            <Access key="create" permission={PERM.templateWrite}>
+              <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+                新建模板
+              </Button>
+            </Access>
+          ),
         ]}
       />
 

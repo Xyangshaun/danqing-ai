@@ -230,6 +230,34 @@ export interface UpdateAdminRoleResponse {
   permissions: string[];
 }
 
+// ============ 用户在线状态 Presence(与 server api-contract.ts §3.12 保持一致) ============
+
+/** 在线状态三态(单一真相,全端统一,禁止自定义第四态) */
+export type PresenceState = 'online' | 'idle' | 'offline';
+
+/** 客户端类型(与 JWT client claim 一致) */
+export type PresenceClient = 'web' | 'admin' | 'mobile';
+
+/** 单用户实时状态条目 */
+export interface UserPresenceEntry {
+  userId: string;
+  /** 三态:online=近5min活跃 / idle=会话有效不活跃 / offline=无有效会话 */
+  state: PresenceState;
+  /** 最后活跃时间(ISO 8601;offline 且无历史时为 null) */
+  lastSeenAt: ISODateString | null;
+  /** 当前活跃客户端类型(非 online 时为 null) */
+  client: PresenceClient | null;
+  /** 有效会话数(DB Session 派生) */
+  activeSessions: number;
+}
+
+/** GET /api/admin/presence/users?ids=a,b,c 响应 data */
+export interface PresenceBatchResponse {
+  items: UserPresenceEntry[];
+  /** 服务端判定时刻(用于前端展示"数据截至") */
+  asOf: ISODateString;
+}
+
 // ============ 内容管理 ============
 
 export interface AdminArtworkListItem {
@@ -884,3 +912,17 @@ export interface UpdateTenantArbitrationConfigRequest {
 
 /** PUT /api/admin/tenants/:id/arbitration-config 响应 */
 export type UpdateTenantArbitrationConfigResponse = GetTenantArbitrationConfigResponse;
+
+// ============ 实时在线汇总(Presence,契约 §3.12;基础类型见上方"用户在线状态 Presence") ============
+
+/** GET /api/admin/presence/online 响应 data */
+export interface PresenceOnlineResponse {
+  items: UserPresenceEntry[];
+  summary: {
+    online: number;
+    idle: number;
+    offline: number;
+  };
+  /** 服务端判定时刻(用于前端展示"数据截至") */
+  asOf: ISODateString;
+}

@@ -13,6 +13,7 @@ import { Tag, Button, Drawer, Descriptions, App, Spin } from 'antd';
 import { ExportOutlined, EyeOutlined } from '@ant-design/icons';
 import type { AdminInvoiceListItem, InvoiceStatus } from '@/types/api';
 import { listInvoices, getInvoice } from '@/services/subscription';
+import ReadonlyAlert from '@/components/ReadonlyAlert';
 import {
   INVOICE_STATUS_LABEL,
   INVOICE_STATUS_COLOR,
@@ -158,6 +159,8 @@ export default function InvoicesPage() {
 
   return (
     <PageContainer header={{ title: '发票管理', ghost: true }}>
+      {/* 本页无写操作,仅向二级只读管理员展示提示条 */}
+      <ReadonlyAlert />
       <ProTable<AdminInvoiceListItem>
         actionRef={tableRef}
         rowKey="id"

@@ -190,6 +190,36 @@ export default [
     ],
   },
   {
+    path: '/dev',
+    name: '开发者视图',
+    icon: 'code',
+    access: 'canDevView',
+    routes: [
+      {
+        path: '/dev',
+        redirect: '/dev/accounts',
+      },
+      {
+        path: '/dev/accounts',
+        name: '账号在线',
+        component: './dev/accounts',
+        access: 'canDevView',
+      },
+      {
+        path: '/dev/deployments',
+        name: '版本部署',
+        component: './dev/deployments',
+        access: 'canDevView',
+      },
+      {
+        path: '/dev/features',
+        name: '功能开关',
+        component: './dev/features',
+        access: 'canDevView',
+      },
+    ],
+  },
+  {
     path: '*',
     layout: false,
     component: './404',

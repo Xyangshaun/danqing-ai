@@ -120,6 +120,12 @@ import {
 // M3 可观测性:AI 指标(METRICS_DATA_UNAVAILABLE 9201 / AI_METRICS 契约已冻结)
 import { getMetricsAi, getMetricsSla } from '../controllers/metrics.controller.js';
 
+// 开发者视图模块(平台级诊断只读端点)
+import { listDevAccounts, listDevDeployments } from '../controllers/admin-dev.controller.js';
+
+// 用户在线状态 Presence 查询模块(M4-BE-2,P-09)
+import { listPresenceUsers, listPresenceOnline } from '../controllers/presence.controller.js';
+
 export const adminRouter: Router = Router();
 
 // ---------- 全局中间件(所有 /api/admin/* 路由必须经过鉴权 + 租户校验 + 限流)----------
@@ -423,3 +429,38 @@ adminRouter.post(
   requirePermission('admin:preset:write'),
   overridePreset,
 );
+
+// ============================================================
+// 开发者视图模块(平台级诊断只读端点)
+// ============================================================
+// 权限复用现有权限码(不新增权限,轻量方案):
+//   /dev/accounts    → admin:user:read(与用户列表同款,ADMIN/OWNER)
+//   /dev/deployments → admin:stats:read(与数据看板同款,ADMIN/OWNER)
+//
+// 说明:
+//   - 均为平台级跨租户只读查询(开发者诊断用途),不做写操作
+//   - 与 /api/v1/deployments/*(共享密钥鉴权,供部署脚本上报)相互独立,互不影响
+
+// GET /api/admin/dev/accounts - 账号清单(含在线状态 / 测试账号标记)
+adminRouter.get('/dev/accounts', requirePermission('admin:user:read'), listDevAccounts);
+
+// GET /api/admin/dev/deployments?limit=20 - 部署历史(按 timestamp 倒序,limit 上限 100)
+adminRouter.get('/dev/deployments', requirePermission('admin:stats:read'), listDevDeployments);
+
+// ============================================================
+// 用户在线状态 Presence 查询模块(M4-BE-2,P-09,契约 §3.12 已冻结)
+// ============================================================
+// 权限复用现有权限码(不新增权限):
+//   /presence/users  → admin:user:read(与用户列表同款,ADMIN/OWNER)
+//   /presence/online → admin:stats:read(与数据看板同款,ADMIN/OWNER)
+//
+// 说明:
+//   - 均为平台级只读查询;三态判定语义见 presence.service.ts(单一真相)
+//   - ids 上限 100:超限在进入 service 前由 controller Zod 校验拦截(→ 1001)
+//   - service 内部已做 Redis 故障降级,读路径不因 Redis 异常 5xx
+
+// GET /api/admin/presence/users?ids=a,b,c - 批量查询用户三态(单次上限 100)
+adminRouter.get('/presence/users', requirePermission('admin:user:read'), listPresenceUsers);
+
+// GET /api/admin/presence/online - 在线用户清单(含 online/idle/offline 汇总)
+adminRouter.get('/presence/online', requirePermission('admin:stats:read'), listPresenceOnline);

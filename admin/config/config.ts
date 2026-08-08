@@ -14,6 +14,14 @@ const define: Record<string, string> = {
 
 export default defineConfig({
   /**
+   * @name 部署子路径(生产挂载在 Nginx /admin/ 下)
+   * base: 路由基础路径;publicPath: 静态资源引用前缀
+   * 本地 dev 不受影响(umi dev 自动处理)
+   */
+  base: '/admin/',
+  publicPath: '/admin/',
+
+  /**
    * @name 哈希路由产物命名,避免缓存
    */
   hash: true,

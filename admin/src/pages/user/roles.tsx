@@ -12,6 +12,8 @@ import type { ColumnsType } from 'antd/es/table';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { listRoles, updateRole } from '@/services/user';
 import { usePermission } from '@/hooks/usePermission';
+import ReadonlyAlert from '@/components/ReadonlyAlert';
+import { useReadonlyAdmin } from '@/utils/readonly';
 import { PERM, ROLE_LABEL, ROLE_COLOR } from '@/constants';
 import type { AdminRoleInfo, UserRole } from '@/types/api';
 
@@ -55,6 +57,8 @@ const PERM_GROUPS: { module: string; codes: { code: string; name: string }[] }[]
 export default function RolesPage() {
   const { message } = AntdApp.useApp();
   const { can } = usePermission();
+  // 二级只读管理员:权限编辑开关降级为只读标签
+  const readonly = useReadonlyAdmin();
   const queryClient = useQueryClient();
 
   const rolesQ = useQuery<AdminRoleInfo[]>({
@@ -116,7 +120,7 @@ export default function RolesPage() {
       align: 'center' as const,
       render: (_: unknown, record) => {
         const has = role.permissions.includes(record.code);
-        return can.roleWrite ? (
+        return can.roleWrite && !readonly ? (
           <Switch
             size="small"
             checked={has}
@@ -132,6 +136,7 @@ export default function RolesPage() {
 
   return (
     <PageContainer header={{ title: '角色权限矩阵', ghost: true }}>
+      <ReadonlyAlert />
       <ProCard
         bodyStyle={{ padding: 0 }}
         extra={

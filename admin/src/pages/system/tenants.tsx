@@ -43,6 +43,8 @@ import {
   batchImportStudents,
 } from '@/services/system';
 import Access from '@/components/Access';
+import ReadonlyAlert from '@/components/ReadonlyAlert';
+import { useReadonlyAdmin } from '@/utils/readonly';
 import TenantArbitrationConfig from '@/components/TenantArbitrationConfig';
 import { useConfirmAction } from '@/components/ConfirmAction';
 import {
@@ -65,6 +67,8 @@ export default function TenantsPage() {
   const tableRef = useRef<ActionType>();
   const { message } = App.useApp();
   const { confirm } = useConfirmAction();
+  // 二级只读管理员:隐藏所有写操作入口
+  const readonly = useReadonlyAdmin();
   const [editOpen, setEditOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [form] = Form.useForm();
@@ -308,35 +312,44 @@ export default function TenantsPage() {
       width: 220,
       fixed: 'right',
       render: (_, r) => [
-        <Access key="edit" permission={PERM.tenantWrite}>
-          <a onClick={() => openEdit(r)}>
-            <EditOutlined /> 编辑
-          </a>
-        </Access>,
-        <Access key="members" permission={PERM.invitationWrite}>
-          <a onClick={() => openMemberDrawer(r)}>
-            <TeamOutlined /> 成员
-          </a>
-        </Access>,
-        <Access key="arbitration" permission={PERM.tenantWrite}>
-          <a onClick={() => setArbTenant(r)}>
-            <EditOutlined /> 仲裁配置
-          </a>
-        </Access>,
-        <Access key="toggle" permission={PERM.tenantWrite}>
-          <a
-            onClick={() => onToggleStatus(r)}
-            style={{ color: r.status === 'active' ? '#c8392e' : '#3e7d5a' }}
-          >
-            {r.status === 'active' ? '禁用' : '启用'}
-          </a>
-        </Access>,
+        !readonly && (
+          <Access key="edit" permission={PERM.tenantWrite}>
+            <a onClick={() => openEdit(r)}>
+              <EditOutlined /> 编辑
+            </a>
+          </Access>
+        ),
+        !readonly && (
+          <Access key="members" permission={PERM.invitationWrite}>
+            <a onClick={() => openMemberDrawer(r)}>
+              <TeamOutlined /> 成员
+            </a>
+          </Access>
+        ),
+        !readonly && (
+          <Access key="arbitration" permission={PERM.tenantWrite}>
+            <a onClick={() => setArbTenant(r)}>
+              <EditOutlined /> 仲裁配置
+            </a>
+          </Access>
+        ),
+        !readonly && (
+          <Access key="toggle" permission={PERM.tenantWrite}>
+            <a
+              onClick={() => onToggleStatus(r)}
+              style={{ color: r.status === 'active' ? '#c8392e' : '#3e7d5a' }}
+            >
+              {r.status === 'active' ? '禁用' : '启用'}
+            </a>
+          </Access>
+        ),
       ],
     },
   ];
 
   return (
     <PageContainer header={{ title: '租户管理', ghost: true }}>
+      <ReadonlyAlert />
       <ProTable<AdminTenantListItem>
         actionRef={tableRef}
         rowKey="id"
@@ -359,11 +372,13 @@ export default function TenantsPage() {
           return { data: res.items, total: res.total, success: true };
         }}
         toolBarRender={() => [
-          <Access key="create" permission={PERM.tenantWrite}>
-            <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
-              新建租户
-            </Button>
-          </Access>,
+          !readonly && (
+            <Access key="create" permission={PERM.tenantWrite}>
+              <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+                新建租户
+              </Button>
+            </Access>
+          ),
         ]}
       />
 

@@ -13,6 +13,8 @@ import { PlusOutlined, DeleteOutlined, CopyOutlined } from '@ant-design/icons';
 import type { ApiKeyInfo, ApiKeyStatus, CreateApiKeyResponse } from '@/types/api';
 import { listApiKeys, createApiKey, revokeApiKey } from '@/services/system';
 import Access from '@/components/Access';
+import ReadonlyAlert from '@/components/ReadonlyAlert';
+import { useReadonlyAdmin } from '@/utils/readonly';
 import { useConfirmAction } from '@/components/ConfirmAction';
 import { PERM, API_KEY_STATUS_LABEL } from '@/constants';
 import { formatDateTime, formatRelativeTime } from '@/utils/format';
@@ -31,6 +33,8 @@ export default function ApiKeysPage() {
   const tableRef = useRef<ActionType>();
   const { message } = App.useApp();
   const { confirm } = useConfirmAction();
+  // 二级只读管理员:隐藏新建/吊销写操作入口
+  const readonly = useReadonlyAdmin();
   const [createOpen, setCreateOpen] = useState(false);
   const [form] = Form.useForm();
   const [createdKey, setCreatedKey] = useState<CreateApiKeyResponse | null>(null);
@@ -159,21 +163,24 @@ export default function ApiKeysPage() {
       width: 80,
       fixed: 'right',
       render: (_, r) => [
-        <Access key="revoke" permission={PERM.apiKeyWrite}>
-          <a
-            onClick={() => onRevoke(r)}
-            style={{ color: '#c8392e' }}
-            className={r.status !== 'active' ? 'dq-link-disabled' : ''}
-          >
-            <DeleteOutlined /> 吊销
-          </a>
-        </Access>,
+        !readonly && (
+          <Access key="revoke" permission={PERM.apiKeyWrite}>
+            <a
+              onClick={() => onRevoke(r)}
+              style={{ color: '#c8392e' }}
+              className={r.status !== 'active' ? 'dq-link-disabled' : ''}
+            >
+              <DeleteOutlined /> 吊销
+            </a>
+          </Access>
+        ),
       ],
     },
   ];
 
   return (
     <PageContainer header={{ title: 'API 密钥', ghost: true }}>
+      <ReadonlyAlert />
       <ProTable<ApiKeyInfo>
         actionRef={tableRef}
         rowKey="id"
@@ -194,11 +201,13 @@ export default function ApiKeysPage() {
           return { data: res.items, total: res.total, success: true };
         }}
         toolBarRender={() => [
-          <Access key="create" permission={PERM.apiKeyWrite}>
-            <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
-              新建密钥
-            </Button>
-          </Access>,
+          !readonly && (
+            <Access key="create" permission={PERM.apiKeyWrite}>
+              <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+                新建密钥
+              </Button>
+            </Access>
+          ),
         ]}
       />
 

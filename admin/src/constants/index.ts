@@ -9,6 +9,7 @@ import type {
   AuditAction,
   InvoiceStatus,
   PaymentProvider,
+  PresenceState,
   ReviewAction,
   ReviewStatus,
   SubscriptionStatus,
@@ -58,6 +59,9 @@ export const PERM = {
   // 预设管理(Phase 5)
   presetRead: 'admin:preset:read',
   presetWrite: 'admin:preset:write',
+  // 功能开关(开发者视图,对应 /api/v1/config/features,与后端 permissions.ts 一致)
+  configFeaturesRead: 'config:features:read',
+  configFeaturesWrite: 'config:features:write',
 } as const;
 
 /** 角色 → 中文 */
@@ -258,6 +262,23 @@ export const IDLE_WARNING_BEFORE_MS = 5 * 60 * 1000;
 /** 实时大屏轮询间隔(毫秒) */
 export const REALTIME_POLL_INTERVAL = 5000;
 
+/** 用户在线状态轮询间隔(固定 30s,防后端限流/写放大,勿调快) */
+export const PRESENCE_POLL_INTERVAL = 30_000;
+
+/** 在线状态三态 → 中文(全端统一,禁止自定义) */
+export const PRESENCE_STATE_LABEL: Record<PresenceState, string> = {
+  online: '在线',
+  idle: '挂起',
+  offline: '离线',
+};
+
+/** 在线状态三态 → antd Badge status(online 绿 / idle 黄 / offline 灰) */
+export const PRESENCE_STATE_BADGE: Record<PresenceState, 'success' | 'warning' | 'default'> = {
+  online: 'success',
+  idle: 'warning',
+  offline: 'default',
+};
+
 /** 选项数组(供 ProTable 筛选下拉) */
 export const ROLE_OPTIONS = Object.entries(ROLE_LABEL).map(([value, label]) => ({
   value: value as UserRole,
@@ -268,6 +289,10 @@ export const USER_STATUS_OPTIONS = Object.entries(USER_STATUS_LABEL).map(([value
   value: value as UserStatus,
   label,
 }));
+
+export const PRESENCE_STATE_OPTIONS = Object.entries(PRESENCE_STATE_LABEL).map(
+  ([value, label]) => ({ value: value as PresenceState, label }),
+);
 
 export const TENANT_TYPE_OPTIONS = Object.entries(TENANT_TYPE_LABEL).map(([value, label]) => ({
   value: value as TenantType,

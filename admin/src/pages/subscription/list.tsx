@@ -23,6 +23,8 @@ import {
   refundSubscription,
 } from '@/services/subscription';
 import Access from '@/components/Access';
+import ReadonlyAlert from '@/components/ReadonlyAlert';
+import { useReadonlyAdmin } from '@/utils/readonly';
 import { useConfirmAction } from '@/components/ConfirmAction';
 import {
   PERM,
@@ -39,6 +41,8 @@ export default function SubscriptionListPage() {
   const tableRef = useRef<ActionType>();
   const { message } = App.useApp();
   const { confirm } = useConfirmAction();
+  // 二级只读管理员:隐藏取消/退款写操作入口
+  const readonly = useReadonlyAdmin();
   const [refundOpen, setRefundOpen] = useState<AdminSubscriptionListItem | null>(null);
   const [refundForm] = Form.useForm();
 
@@ -187,30 +191,35 @@ export default function SubscriptionListPage() {
         <a key="detail" onClick={() => history.push(`/subscription/detail/${r.id}`)}>
           <EyeOutlined /> 详情
         </a>,
-        <Access key="cancel" permission={PERM.subscriptionWrite}>
-          <a
-            onClick={() => onCancel(r)}
-            style={{ color: '#c9a961' }}
-            className={r.status !== 'active' || r.cancelAtPeriodEnd ? 'dq-link-disabled' : ''}
-          >
-            <StopOutlined /> 取消
-          </a>
-        </Access>,
-        <Access key="refund" permission={PERM.subscriptionWrite}>
-          <a
-            onClick={() => openRefund(r)}
-            style={{ color: '#c8392e' }}
-            className={r.status !== 'active' && r.status !== 'past_due' ? 'dq-link-disabled' : ''}
-          >
-            <RollbackOutlined /> 退款
-          </a>
-        </Access>,
+        !readonly && (
+          <Access key="cancel" permission={PERM.subscriptionWrite}>
+            <a
+              onClick={() => onCancel(r)}
+              style={{ color: '#c9a961' }}
+              className={r.status !== 'active' || r.cancelAtPeriodEnd ? 'dq-link-disabled' : ''}
+            >
+              <StopOutlined /> 取消
+            </a>
+          </Access>
+        ),
+        !readonly && (
+          <Access key="refund" permission={PERM.subscriptionWrite}>
+            <a
+              onClick={() => openRefund(r)}
+              style={{ color: '#c8392e' }}
+              className={r.status !== 'active' && r.status !== 'past_due' ? 'dq-link-disabled' : ''}
+            >
+              <RollbackOutlined /> 退款
+            </a>
+          </Access>
+        ),
       ],
     },
   ];
 
   return (
     <PageContainer header={{ title: '订阅列表', ghost: true }}>
+      <ReadonlyAlert />
       <ProTable<AdminSubscriptionListItem>
         actionRef={tableRef}
         rowKey="id"

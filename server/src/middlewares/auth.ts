@@ -7,12 +7,13 @@
 
 import type { RequestHandler } from 'express';
 import type { JwtPayload } from 'jsonwebtoken';
-import type { ClientType, UserRole } from '../types/api-contract.js';
+import type { ClientType, UserRole, PresenceClient } from '../types/api-contract.js';
 import { ErrorCode } from '../types/api-contract.js';
 import type { AuthType } from '../types/arbitration.js';
 import { error } from '../utils/response.js';
 import { logger } from '../utils/logger.js';
 import { jwtService } from '../services/jwt.service.js';
+import { presenceService } from '../services/presence.service.js';
 import { redis } from '../config/redis.js';
 import { env } from '../config/env.js';
 
@@ -133,10 +134,66 @@ export const authMiddleware: RequestHandler = async (req, res, next) => {
     // 设备指纹(从 X-Device-Id 头解析,用于设备管理与安全审计)
     req.deviceId = req.header('X-Device-Id');
 
+    // M4-AUTH-1:presence 被动 touch — fire-and-forget,绝不阻塞请求主链路
+    // (touch 内部 60s 进程内节流防写放大;失败仅 log 不抛)
+    // client 取上方已解析的 req.client(JWT aud > X-Client > 默认 web,此处必为 web/admin/mobile);
+    // access_token payload 无 sid claim,故不传 sessionId(touch 内部保留 markOnline 写入的既有值)
+    const presenceClient: PresenceClient =
+      req.client === 'admin' || req.client === 'mobile' ? req.client : 'web';
+    if (req.userId) {
+      presenceService.touch(req.userId, presenceClient).catch(() => {});
+    }
+
     next();
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     logger.error({ err: msg }, '[auth] unexpected error');
     return error(res, ErrorCode.INTERNAL_ERROR, '服务器内部错误', 500);
+  }
+};
+
+/**
+ * 可选认证中间件:token 存在时解析注入 req,不存在或不合法时静默跳过(不报 401)
+ * 用于 /auth/phone/otp 等多场景路由:bind 需要 userId,register/login/reset 不需要
+ */
+export const optionalAuthMiddleware: RequestHandler = async (req, _res, next) => {
+  try {
+    const authHeader = req.header('Authorization');
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return next();
+    }
+    const token = authHeader.slice('Bearer '.length).trim();
+    if (!token) return next();
+
+    try {
+      const payload = jwtService.verifyAccessToken(token);
+      if (payload.jti) {
+        const blacklisted = await redis().exists(`blacklist:access:${payload.jti}`);
+        if (blacklisted === 1) return next();
+      }
+      req.userId = payload.sub;
+      req.tenantId = (payload as JwtPayload & { tenant_id?: string }).tenant_id;
+      req.role = (payload as JwtPayload & { role?: UserRole }).role;
+      req.feishuOpenId = (payload as JwtPayload & { feishu_open_id?: string }).feishu_open_id;
+      const rawAuthType = (payload as JwtPayload & { auth_type?: string }).auth_type;
+      req.authType = (rawAuthType === 'feishu' || rawAuthType === 'phone' || rawAuthType === 'invitation' || rawAuthType === 'password')
+        ? rawAuthType
+        : 'feishu';
+      req.jti = payload.jti;
+      const aud = payload.aud;
+      const xClient = req.header('X-Client');
+      if (aud === 'danqing-ai-web' || xClient === 'web') req.client = 'web';
+      else if (aud === 'danqing-ai-admin' || xClient === 'admin') req.client = 'admin';
+      else if (aud === 'danqing-ai-mobile' || xClient === 'mobile') req.client = 'mobile';
+      else req.client = 'web';
+      req.deviceId = req.header('X-Device-Id');
+    } catch {
+      // token 无效/过期:静默跳过,不注入 userId
+    }
+    next();
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.error({ err: msg }, '[auth] optionalAuth unexpected error');
+    next();
   }
 };

@@ -14,6 +14,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { AdminPlanInfo, TenantPlan } from '@/types/api';
 import { listPlans, createPlan, updatePlan } from '@/services/subscription';
 import Access from '@/components/Access';
+import ReadonlyAlert from '@/components/ReadonlyAlert';
+import { useReadonlyAdmin } from '@/utils/readonly';
 import { PERM, PLAN_LABEL, PLAN_OPTIONS, PLAN_COLOR } from '@/constants';
 import { formatCurrency } from '@/utils/format';
 
@@ -26,6 +28,8 @@ const PLAN_ICON: Record<TenantPlan, string> = {
 export default function PlansPage() {
   const queryClient = useQueryClient();
   const { message } = App.useApp();
+  // 二级只读管理员:隐藏新建/编辑写操作入口
+  const readonly = useReadonlyAdmin();
   const [editOpen, setEditOpen] = useState(false);
   const [editPlan, setEditPlan] = useState<AdminPlanInfo | null>(null);
   const [form] = Form.useForm();
@@ -98,6 +102,7 @@ export default function PlansPage() {
 
   return (
     <PageContainer header={{ title: '套餐管理', ghost: true }}>
+      <ReadonlyAlert />
       <Spin spinning={plansQ.isLoading}>
         {(plansQ.data ?? []).length === 0 && !plansQ.isLoading ? (
           <Empty description="暂无套餐配置" />
@@ -161,16 +166,18 @@ export default function PlansPage() {
                     )}
                   </div>
 
-                  <Access permission={PERM.planWrite}>
-                    <Button
-                      block
-                      icon={<EditOutlined />}
-                      onClick={() => openEdit(plan)}
-                      style={{ marginTop: 8 }}
-                    >
-                      编辑套餐
-                    </Button>
-                  </Access>
+                  {!readonly && (
+                    <Access permission={PERM.planWrite}>
+                      <Button
+                        block
+                        icon={<EditOutlined />}
+                        onClick={() => openEdit(plan)}
+                        style={{ marginTop: 8 }}
+                      >
+                        编辑套餐
+                      </Button>
+                    </Access>
+                  )}
                 </Card>
               </Col>
             ))}
@@ -178,13 +185,15 @@ export default function PlansPage() {
         )}
       </Spin>
 
-      <Access permission={PERM.planWrite}>
-        <div style={{ marginTop: 16 }}>
-          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
-            新建套餐
-          </Button>
-        </div>
-      </Access>
+      {!readonly && (
+        <Access permission={PERM.planWrite}>
+          <div style={{ marginTop: 16 }}>
+            <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+              新建套餐
+            </Button>
+          </div>
+        </Access>
+      )}
 
       <Modal
         title={editPlan ? '编辑套餐' : '新建套餐'}

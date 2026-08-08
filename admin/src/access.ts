@@ -48,6 +48,9 @@ const access = (initialState?: InitialStateWithAuth) => {
     canSystemHealth: has(perms, PERM.systemHealth),
     // 邀请码 / 批量导入(Phase 5)
     canInvitationWrite: has(perms, PERM.invitationWrite),
+    // 开发者视图(与数据看板同款权限码 admin:stats:read;
+    // 其中功能开关页写操作由后端 config:features:write 校验,403 兜底提示)
+    canDevView: has(perms, PERM.statsRead),
   };
 };
 

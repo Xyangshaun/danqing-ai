@@ -1,13 +1,14 @@
 // ============================================================
 // 用户管理 - 用户列表
 // - 搜索(姓名/邮箱/手机)+ 筛选(角色/状态/租户)+ 分页 + 排序
+// - 在线状态列(M4-ADM-1):三态 Badge,30s 轮询,当前页前端筛选
 // - 批量操作(角色变更/删除,上限 100)
 // - 导出 CSV(走后端 /api/admin/users/export,已脱敏)
 // - 编辑角色、锁定/解锁
 // - 敏感数据脱敏显示(手机/邮箱)
 // ============================================================
 
-import { useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { history } from '@umijs/max';
 import type { ActionType, ProColumns } from '@ant-design/pro-components';
 import { ProTable, PageContainer } from '@ant-design/pro-components';
@@ -17,27 +18,62 @@ import {
   UnlockOutlined,
   EditOutlined,
   EyeOutlined,
+  QuestionCircleOutlined,
 } from '@ant-design/icons';
-import { Modal, Form, Select, Input, Tag as AntdTag, App as AntdApp, Avatar, Button, Space } from 'antd';
-import type { AdminUserListItem, UserRole, UserStatus } from '@/types/api';
+import { Modal, Form, Select, Input, Tag as AntdTag, App as AntdApp, Avatar, Badge, Button, Space, Tooltip } from 'antd';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
+import type { AdminUserListItem, PresenceState, UserPresenceEntry, UserRole, UserStatus } from '@/types/api';
 import { listUsers, updateUser, lockUser, batchUsers, exportUsersCsv } from '@/services/user';
+import { getUsersPresence } from '@/services/presence';
 import Access from '@/components/Access';
+import ReadonlyAlert from '@/components/ReadonlyAlert';
+import { useReadonlyAdmin } from '@/utils/readonly';
 import { useConfirmAction } from '@/components/ConfirmAction';
 import MaskedText from '@/components/MaskedText';
-import { PERM, ROLE_LABEL, ROLE_COLOR, ROLE_OPTIONS, USER_STATUS_LABEL, USER_STATUS_COLOR, USER_STATUS_OPTIONS, BATCH_LIMIT } from '@/constants';
-import { formatDateTime } from '@/utils/format';
+import { PERM, ROLE_LABEL, ROLE_COLOR, ROLE_OPTIONS, USER_STATUS_LABEL, USER_STATUS_COLOR, USER_STATUS_OPTIONS, BATCH_LIMIT, PRESENCE_POLL_INTERVAL, PRESENCE_STATE_BADGE, PRESENCE_STATE_LABEL, PRESENCE_STATE_OPTIONS } from '@/constants';
+import { formatDateTime, formatRelativeTime } from '@/utils/format';
 import { downloadBlob, timestampedFilename } from '@/utils/download';
 
 export default function UserListPage() {
   const { message } = AntdApp.useApp();
   const tableRef = useRef<ActionType>();
   const { confirm } = useConfirmAction();
+  // 二级只读管理员:隐藏所有写操作入口
+  const readonly = useReadonlyAdmin();
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
   const [editOpen, setEditOpen] = useState(false);
   const [editUser, setEditUser] = useState<AdminUserListItem | null>(null);
   const [editForm] = Form.useForm();
   const [batchOpen, setBatchOpen] = useState(false);
   const [batchForm] = Form.useForm();
+  // 当前页 userId 集合(presence 实时状态查询入参;单页 pageSize ≤ 100,满足接口上限)
+  const [pageIds, setPageIds] = useState<string[]>([]);
+  // 在线状态筛选(前端侧过滤当前页;presence 为独立接口,不做服务端筛选)
+  const [presenceFilter, setPresenceFilter] = useState<PresenceState | undefined>(undefined);
+
+  // 当前页用户实时状态:30s 轮询,placeholderData 保留上一次数据防闪屏
+  const pageIdsKey = pageIds.join(',');
+  const presenceQ = useQuery({
+    queryKey: ['presence', 'users', pageIdsKey],
+    queryFn: () => getUsersPresence(pageIds),
+    enabled: pageIds.length > 0,
+    refetchInterval: PRESENCE_POLL_INTERVAL,
+    placeholderData: keepPreviousData,
+  });
+
+  // userId → 实时状态条目(列渲染与筛选共用)
+  const presenceMap = useMemo(() => {
+    const map = new Map<string, UserPresenceEntry>();
+    presenceQ.data?.items.forEach((entry) => map.set(entry.userId, entry));
+    return map;
+  }, [presenceQ.data]);
+
+  // 在线状态筛选:仅作用于当前页 presence 数据
+  const postData = useCallback(
+    (rows: AdminUserListItem[]): AdminUserListItem[] =>
+      presenceFilter ? rows.filter((r) => presenceMap.get(r.id)?.state === presenceFilter) : rows,
+    [presenceFilter, presenceMap],
+  );
 
   const onEdit = (user: AdminUserListItem) => {
     setEditUser(user);
@@ -185,6 +221,30 @@ export default function UserListPage() {
       render: (_, r) => (r.lastLoginAt ? formatDateTime(r.lastLoginAt) : '-'),
     },
     {
+      // M4-ADM-1:实时在线状态(三态,30s 轮询;数据来自 /api/admin/presence/users)
+      title: '在线状态',
+      dataIndex: 'presence',
+      width: 110,
+      hideInSearch: true,
+      render: (_, r) => {
+        const entry = presenceMap.get(r.id);
+        // presence 数据尚未返回时占位,不虚构状态
+        if (!entry) return <span style={{ color: '#bfb8a8' }}>-</span>;
+        return (
+          <Tooltip
+            title={
+              entry.lastSeenAt ? `最近活跃:${formatRelativeTime(entry.lastSeenAt)}` : '暂无活跃记录'
+            }
+          >
+            <Badge
+              status={PRESENCE_STATE_BADGE[entry.state]}
+              text={PRESENCE_STATE_LABEL[entry.state]}
+            />
+          </Tooltip>
+        );
+      },
+    },
+    {
       title: '排序',
       dataIndex: 'sortBy',
       valueType: 'select',
@@ -206,26 +266,31 @@ export default function UserListPage() {
         <a key="detail" onClick={() => history.push(`/user/detail/${r.id}`)}>
           <EyeOutlined /> 详情
         </a>,
-        <Access key="edit" permission={PERM.userWrite}>
-          <a onClick={() => onEdit(r)}>
-            <EditOutlined /> 编辑
-          </a>
-        </Access>,
-        <Access key="lock" permission={PERM.userWrite}>
-          <a
-            onClick={() => onLock(r, r.status !== 'locked')}
-            style={{ color: r.status === 'locked' ? '#3e7d5a' : '#c8392e' }}
-          >
-            {r.status === 'locked' ? <UnlockOutlined /> : <LockOutlined />}
-            {r.status === 'locked' ? '解锁' : '锁定'}
-          </a>
-        </Access>,
+        !readonly && (
+          <Access key="edit" permission={PERM.userWrite}>
+            <a onClick={() => onEdit(r)}>
+              <EditOutlined /> 编辑
+            </a>
+          </Access>
+        ),
+        !readonly && (
+          <Access key="lock" permission={PERM.userWrite}>
+            <a
+              onClick={() => onLock(r, r.status !== 'locked')}
+              style={{ color: r.status === 'locked' ? '#3e7d5a' : '#c8392e' }}
+            >
+              {r.status === 'locked' ? <UnlockOutlined /> : <LockOutlined />}
+              {r.status === 'locked' ? '解锁' : '锁定'}
+            </a>
+          </Access>
+        ),
       ],
     },
   ];
 
   return (
     <PageContainer header={{ title: '用户列表', ghost: true }}>
+      <ReadonlyAlert />
       <ProTable<AdminUserListItem>
         actionRef={tableRef}
         rowKey="id"
@@ -253,12 +318,15 @@ export default function UserListPage() {
             role: rest.role as UserRole | undefined,
             status: rest.status as UserStatus | undefined,
           });
+          // 列表加载完成后取当前页全部 userId,驱动 presence 实时状态查询(≤100)
+          setPageIds(res.items.map((item) => item.id));
           return {
             data: res.items,
             total: res.total,
             success: true,
           };
         }}
+        postData={postData}
         rowSelection={{
           selectedRowKeys: selectedKeys,
           onChange: (keys) => setSelectedKeys(keys as string[]),
@@ -267,17 +335,32 @@ export default function UserListPage() {
         tableAlertOptionRender={() => (
           <Space size={12}>
             <span>已选 {selectedKeys.length} 项(上限 {BATCH_LIMIT})</span>
-            <Access permission={PERM.userWrite}>
-              <Button size="small" onClick={() => setBatchOpen(true)}>
-                批量操作
-              </Button>
-            </Access>
+            {!readonly && (
+              <Access permission={PERM.userWrite}>
+                <Button size="small" onClick={() => setBatchOpen(true)}>
+                  批量操作
+                </Button>
+              </Access>
+            )}
             <Button size="small" onClick={() => setSelectedKeys([])}>
               取消选择
             </Button>
           </Space>
         )}
         toolBarRender={() => [
+          <Space key="presence-filter" size={4}>
+            <Select<PresenceState>
+              allowClear
+              placeholder="在线状态"
+              style={{ width: 120 }}
+              options={PRESENCE_STATE_OPTIONS}
+              value={presenceFilter}
+              onChange={(value) => setPresenceFilter(value)}
+            />
+            <Tooltip title="在线状态来自实时接口(30s 自动刷新),筛选仅作用于当前页数据">
+              <QuestionCircleOutlined style={{ color: '#a8a39a' }} />
+            </Tooltip>
+          </Space>,
           <Access key="export" permission={PERM.userExport}>
             <Button icon={<ExportOutlined />} onClick={onExport}>
               导出 CSV

@@ -144,12 +144,16 @@ instance.interceptors.response.use(
     return Promise.reject(new BizError(body.code, body.message, body.traceId));
   },
   async (error) => {
+    // 静默标记:请求携带 X-Silent: 1 时跳过全局错误 toast(用于后台轮询等可降级请求,
+    // 如 presence 实时状态;由调用方自行 catch 兜底,避免轮询失败反复弹错打断用户)
+    const silent = error.config?.headers?.get?.('X-Silent') === '1';
+
     if (!axios.isCancel(error) && error.response) {
       const { status, data } = error.response;
       const bizCode = data?.code;
       const bizMsg = data?.message;
 
-      // 401:尝试刷新 token,失败则跳登录
+      // 401:尝试刷新 token,失败则跳登录(即便 silent 也需跳登录,因整站会话失效)
       if (status === 401 || bizCode === 2001) {
         const ok = await triggerRefresh();
         if (ok) {
@@ -170,25 +174,25 @@ instance.interceptors.response.use(
 
       // 403:无权限(对应 ErrorCode.FORBIDDEN = 2004)
       if (status === 403 || bizCode === 2004) {
-        antdMessage.error(bizMsg ?? '无权限执行此操作');
+        if (!silent) antdMessage.error(bizMsg ?? '无权限执行此操作');
         return Promise.reject(new BizError(2004, bizMsg ?? '无权限', data?.traceId));
       }
 
       // 429:限流(对应 ErrorCode.RATE_LIMITED = 9005)
       if (status === 429 || bizCode === 9005) {
-        antdMessage.warning(bizMsg ?? '请求过于频繁,请稍后再试');
+        if (!silent) antdMessage.warning(bizMsg ?? '请求过于频繁,请稍后再试');
         return Promise.reject(new BizError(9005, bizMsg ?? '限流', data?.traceId));
       }
 
       // 其他业务错误
       if (bizCode !== undefined) {
-        antdMessage.error(bizMsg ?? '请求失败');
+        if (!silent) antdMessage.error(bizMsg ?? '请求失败');
         return Promise.reject(new BizError(bizCode, bizMsg ?? '请求失败', data?.traceId));
       }
       // HTTP 错误无业务体
-      antdMessage.error(`网络错误(${status})`);
+      if (!silent) antdMessage.error(`网络错误(${status})`);
     } else if (error.request) {
-      antdMessage.error('网络连接失败,请检查网络');
+      if (!silent) antdMessage.error('网络连接失败,请检查网络');
     }
     return Promise.reject(error);
   },

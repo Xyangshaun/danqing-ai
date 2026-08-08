@@ -99,6 +99,11 @@ export type {
   GetTenantArbitrationConfigResponse,
   UpdateTenantArbitrationConfigRequest,
   UpdateTenantArbitrationConfigResponse,
+  // 用户在线状态 Presence(M4-ADM-1)
+  PresenceState,
+  PresenceClient,
+  UserPresenceEntry,
+  PresenceBatchResponse,
 } from '@/types/api';
 
 /** GET /api/admin/users/export 查询参数(无分页) */

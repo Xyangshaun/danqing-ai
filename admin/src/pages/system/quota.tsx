@@ -39,6 +39,8 @@ import { listTenants, updateTenant } from '@/services/system';
 import { getTenantStats } from '@/services/stats';
 import { listPlans } from '@/services/subscription';
 import Access from '@/components/Access';
+import ReadonlyAlert from '@/components/ReadonlyAlert';
+import { useReadonlyAdmin } from '@/utils/readonly';
 import {
   PERM,
   PLAN_LABEL,
@@ -53,6 +55,8 @@ import {
 export default function QuotaPage() {
   const tableRef = useRef<ActionType>();
   const { message } = App.useApp();
+  // 二级只读管理员:隐藏"调整配额"写操作入口
+  const readonly = useReadonlyAdmin();
 
   // ============ 配额详情 抽屉 ============
   const [statsDrawerOpen, setStatsDrawerOpen] = useState(false);
@@ -206,11 +210,13 @@ export default function QuotaPage() {
         <a key="stats" onClick={() => openStatsDrawer(r)}>
           <BarChartOutlined /> 配额详情
         </a>,
-        <Access key="adjust" permission={PERM.tenantWrite}>
-          <a onClick={() => openAdjust(r)}>
-            <EditOutlined /> 调整配额
-          </a>
-        </Access>,
+        !readonly && (
+          <Access key="adjust" permission={PERM.tenantWrite}>
+            <a onClick={() => openAdjust(r)}>
+              <EditOutlined /> 调整配额
+            </a>
+          </Access>
+        ),
       ],
     },
   ];
@@ -224,6 +230,7 @@ export default function QuotaPage() {
 
   return (
     <PageContainer header={{ title: '配额管理', ghost: true }}>
+      <ReadonlyAlert />
       <Alert
         type="info"
         showIcon

@@ -14,6 +14,8 @@ import type { AdminArtworkListItem, ArtType, AnalysisStatus, ReviewStatus } from
 import { listArtworks, reviewArtwork, deleteArtwork } from '@/services/content';
 import { useConfirmAction } from '@/components/ConfirmAction';
 import Access from '@/components/Access';
+import ReadonlyAlert from '@/components/ReadonlyAlert';
+import { useReadonlyAdmin } from '@/utils/readonly';
 import { PERM, ART_TYPE_LABEL, ANALYSIS_STATUS_LABEL, ANALYSIS_STATUS_COLOR, REVIEW_STATUS_LABEL, REVIEW_STATUS_COLOR, REVIEW_ACTION_LABEL, ART_TYPE_OPTIONS, ANALYSIS_STATUS_OPTIONS, REVIEW_STATUS_OPTIONS, BATCH_LIMIT } from '@/constants';
 import { formatDateTime } from '@/utils/format';
 
@@ -21,6 +23,8 @@ export default function ArtworksPage() {
   const tableRef = useRef<ActionType>();
   const { message } = App.useApp();
   const { confirm } = useConfirmAction();
+  // 二级只读管理员:隐藏审核/删除写操作入口
+  const readonly = useReadonlyAdmin();
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
   const [reviewOpen, setReviewOpen] = useState<{ id: string; action: 'approve' | 'reject' | 'flag' } | null>(null);
   const [reviewNote, setReviewNote] = useState('');
@@ -131,32 +135,41 @@ export default function ArtworksPage() {
       width: 220,
       fixed: 'right',
       render: (_, r) => [
-        <Access key="approve" permission={PERM.artworkWrite}>
-          <a onClick={() => onReview(r.id, 'approve')} style={{ color: '#3e7d5a' }}>
-            <CheckOutlined /> 通过
-          </a>
-        </Access>,
-        <Access key="reject" permission={PERM.artworkWrite}>
-          <a onClick={() => onReview(r.id, 'reject')} style={{ color: '#c8392e' }}>
-            <CloseOutlined /> 拒绝
-          </a>
-        </Access>,
-        <Access key="flag" permission={PERM.artworkWrite}>
-          <a onClick={() => onReview(r.id, 'flag')} style={{ color: '#c9a961' }}>
-            <FlagOutlined /> 标记
-          </a>
-        </Access>,
-        <Access key="delete" permission={PERM.artworkWrite}>
-          <a onClick={() => onDelete(r)} style={{ color: '#c8392e' }}>
-            <DeleteOutlined /> 删除
-          </a>
-        </Access>,
+        !readonly && (
+          <Access key="approve" permission={PERM.artworkWrite}>
+            <a onClick={() => onReview(r.id, 'approve')} style={{ color: '#3e7d5a' }}>
+              <CheckOutlined /> 通过
+            </a>
+          </Access>
+        ),
+        !readonly && (
+          <Access key="reject" permission={PERM.artworkWrite}>
+            <a onClick={() => onReview(r.id, 'reject')} style={{ color: '#c8392e' }}>
+              <CloseOutlined /> 拒绝
+            </a>
+          </Access>
+        ),
+        !readonly && (
+          <Access key="flag" permission={PERM.artworkWrite}>
+            <a onClick={() => onReview(r.id, 'flag')} style={{ color: '#c9a961' }}>
+              <FlagOutlined /> 标记
+            </a>
+          </Access>
+        ),
+        !readonly && (
+          <Access key="delete" permission={PERM.artworkWrite}>
+            <a onClick={() => onDelete(r)} style={{ color: '#c8392e' }}>
+              <DeleteOutlined /> 删除
+            </a>
+          </Access>
+        ),
       ],
     },
   ];
 
   return (
     <PageContainer header={{ title: '作品库', ghost: true }}>
+      <ReadonlyAlert />
       <ProTable<AdminArtworkListItem>
         actionRef={tableRef}
         rowKey="id"
@@ -187,42 +200,44 @@ export default function ArtworksPage() {
         tableAlertOptionRender={() => (
           <Space size={12}>
             <span>已选 {selectedKeys.length} 项</span>
-            <Access permission={PERM.artworkWrite}>
-              <Button
-                size="small"
-                danger
-                disabled={selectedKeys.length === 0 || selectedKeys.length > BATCH_LIMIT}
-                onClick={() => {
-                  confirm(
-                    {
-                      title: '批量删除作品',
-                      content: `将删除 ${selectedKeys.length} 个作品,不可恢复。`,
-                      okText: '删除',
-                      danger: true,
-                      requireText: '删除',
-                    },
-                    async () => {
-                      // 逐条删除(后端无批量删除接口)
-                      let ok = 0;
-                      for (const id of selectedKeys) {
-                        try {
-                          await deleteArtwork(id);
-                          ok++;
-                        } catch {
-                          /* 继续下一条 */
+            {!readonly && (
+              <Access permission={PERM.artworkWrite}>
+                <Button
+                  size="small"
+                  danger
+                  disabled={selectedKeys.length === 0 || selectedKeys.length > BATCH_LIMIT}
+                  onClick={() => {
+                    confirm(
+                      {
+                        title: '批量删除作品',
+                        content: `将删除 ${selectedKeys.length} 个作品,不可恢复。`,
+                        okText: '删除',
+                        danger: true,
+                        requireText: '删除',
+                      },
+                      async () => {
+                        // 逐条删除(后端无批量删除接口)
+                        let ok = 0;
+                        for (const id of selectedKeys) {
+                          try {
+                            await deleteArtwork(id);
+                            ok++;
+                          } catch {
+                            /* 继续下一条 */
+                          }
                         }
-                      }
-                      message.success(`已删除 ${ok}/${selectedKeys.length}`);
-                      setSelectedKeys([]);
-                      tableRef.current?.reload();
-                      return { ok };
-                    },
-                  );
-                }}
-              >
-                批量删除
-              </Button>
-            </Access>
+                        message.success(`已删除 ${ok}/${selectedKeys.length}`);
+                        setSelectedKeys([]);
+                        tableRef.current?.reload();
+                        return { ok };
+                      },
+                    );
+                  }}
+                >
+                  批量删除
+                </Button>
+              </Access>
+            )}
           </Space>
         )}
       />

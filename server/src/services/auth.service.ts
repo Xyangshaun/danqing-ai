@@ -15,6 +15,7 @@ import { userRepository } from '../repositories/user.repository.js';
 import { phoneVerificationRepository, MAX_OTP_ATTEMPTS, OTP_TTL_SEC, OTP_RESEND_COOLDOWN_SEC, type PhoneOtpPurpose } from '../repositories/phone-verification.repository.js';
 import { invitationRepository } from '../repositories/invitation.repository.js';
 import { getSmsGateway } from './sms-gateway.service.js';
+import { presenceService } from './presence.service.js';
 import { generateState, isValidStateFormat, generateUuid, safeEqual } from '../utils/crypto.js';
 import { hashPassword, verifyPassword, validatePasswordComplexity } from '../utils/password.js';
 import { BusinessError } from '../middlewares/error-handler.js';
@@ -131,7 +132,7 @@ class AuthServiceClass {
     });
 
     // ===== 步骤 9f:落 Session(DB + Redis 双写) =====
-    await sessionService.createSession({
+    const session = await sessionService.createSession({
       userId: user.id,
       tenantId: tenant.id,
       refreshToken: refreshResult.token,
@@ -140,6 +141,12 @@ class AuthServiceClass {
       expiresAt: refreshResult.expiresAt,
       refreshJti: refreshResult.jti,
     });
+
+    // M4-AUTH-1:登录成功埋点 — 标记用户在线(内部 catch 不抛,不影响登录主流程)
+    // 防御性判空:session 缺失时跳过埋点,绝不允许 presence 影响登录
+    if (session?.id) {
+      await presenceService.markOnline(user.id, session.id, params.client);
+    }
 
     logger.info({ userId: user.id, tenantId: tenant.id, isFirstLogin }, '[auth] login success');
 
@@ -310,6 +317,12 @@ class AuthServiceClass {
     // 3. 当前 access_token 加入黑名单(可选,加速失效)
     if (params.accessJti && params.accessExpSec) {
       await sessionService.revokeAccessTokenJti(params.accessJti, params.accessExpSec);
+    }
+
+    // 4. M4-AUTH-1:登出埋点 — 标记用户离线(内部 catch 不抛,不影响登出主流程)
+    //    用户主动登出视为离线;若还有其他设备有效会话,下次请求经认证中间件 touch 时会重新上线
+    if (params.userId) {
+      await presenceService.markOffline(params.userId);
     }
 
     logger.info({ userId: params.userId, revokedSessions }, '[auth] logout');
@@ -1203,7 +1216,7 @@ class AuthServiceClass {
     });
 
     // 落 Session
-    await sessionService.createSession({
+    const session = await sessionService.createSession({
       userId: user.id,
       tenantId: tenant.id,
       refreshToken: refreshResult.token,
@@ -1212,6 +1225,12 @@ class AuthServiceClass {
       expiresAt: refreshResult.expiresAt,
       refreshJti: refreshResult.jti,
     });
+
+    // M4-AUTH-1:登录成功埋点 — 标记用户在线(内部 catch 不抛,不影响登录主流程)
+    // 防御性判空:session 缺失时跳过埋点,绝不允许 presence 影响登录
+    if (session?.id) {
+      await presenceService.markOnline(user.id, session.id, params.client);
+    }
 
     logger.info({ userId: user.id, tenantId: tenant.id, authType: user.authType }, '[auth] phase5 login success');
 
