@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { UserCheck, Loader2, ShieldCheck, Clock, X } from 'lucide-react';
+import { UserCheck, Loader2, ShieldCheck, Clock, X, Sparkles } from 'lucide-react';
 import { listDisputes, requestDispute } from '../services/teacher-api';
 import { ApiError } from '../services/api';
 import type { DisputeCaseDetail } from '../types/teacher';
@@ -15,16 +15,23 @@ const SERVER_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 const MIN_REASON = 10;
 const MAX_REASON = 500;
 
+/** 评审类型:AI 评审 / 老师评审 */
+type ReviewType = 'ai' | 'teacher';
+
 interface RequestReviewSectionProps {
   /** 分析任务 ID(服务端 UUID;本地结果自动隐藏) */
   analysisId: string;
 }
 
 /**
- * 学生端"申请人工复核"区块
+ * 学生端"申请复核"区块
+ *
+ * 支持两种评审模式:
+ *   - AI 评审:学生请求 AI 重新评审(创建 DisputeCase,标记 reviewType=ai)
+ *   - 老师评审:学生请求教师人工复核(创建 DisputeCase,标记 reviewType=teacher)
  *
  * 状态机(按该分析最新一条 DisputeCase):
- *   - 无案件 / 已归档(closed)      → 「申请人工复核」按钮
+ *   - 无案件 / 已归档(closed)      → 「申请复核」按钮
  *   - 进行中(open / reviewing)     → 状态横幅(禁用重复申请)
  *   - 已裁定(resolved)             → 展示最终裁定分 + 允许再次申请
  *
@@ -38,6 +45,7 @@ export default function RequestReviewSection({ analysisId }: RequestReviewSectio
   const [dispute, setDispute] = useState<DisputeCaseDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
+  const [reviewType, setReviewType] = useState<ReviewType>('teacher');
   const [reason, setReason] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -75,10 +83,14 @@ export default function RequestReviewSection({ analysisId }: RequestReviewSectio
     if (!reasonValid || submitting) return;
     setSubmitting(true);
     try {
-      await requestDispute(analysisId, { reason: reason.trim() });
-      toast.success('复核申请已提交', '教师将在争议中心查看并评审您的作品');
+      await requestDispute(analysisId, { reason: reason.trim(), reviewType });
+      const typeLabel = reviewType === 'ai' ? 'AI 评审' : '人工复核';
+      toast.success(`${typeLabel}申请已提交`, reviewType === 'ai'
+        ? '系统将安排 AI 重新评审您的作品'
+        : '教师将在争议中心查看并评审您的作品');
       setModalOpen(false);
       setReason('');
+      setReviewType('teacher');
       await load();
     } catch (err) {
       if (err instanceof ApiError && err.httpStatus === 409) {
@@ -95,6 +107,9 @@ export default function RequestReviewSection({ analysisId }: RequestReviewSectio
     }
   };
 
+  /* 当前进行中的评审类型(从 dispute 记录读取) */
+  const activeReviewType = dispute?.triggerReason?.reviewType ?? 'teacher';
+
   return (
     <>
       <div className="bg-rice-50 rounded-2xl p-6 shadow-card">
@@ -103,8 +118,8 @@ export default function RequestReviewSection({ analysisId }: RequestReviewSectio
             <UserCheck className="w-5 h-5 text-stone" />
           </div>
           <div>
-            <h3 className="font-serif text-lg font-bold text-ink-900">人工复核</h3>
-            <p className="text-xs text-ink-500">对 AI 评分有异议?可申请教师人工复核</p>
+            <h3 className="font-serif text-lg font-bold text-ink-900">作品评审</h3>
+            <p className="text-xs text-ink-500">对 AI 评分有异议?可申请 AI 复评或教师人工复核</p>
           </div>
         </div>
 
@@ -113,7 +128,9 @@ export default function RequestReviewSection({ analysisId }: RequestReviewSectio
           <div className="flex items-center gap-2 bg-gold/5 border border-gold/20 rounded-xl px-4 py-3">
             <Clock className="w-4 h-4 text-gold flex-shrink-0" />
             <p className="text-sm text-ink-700">
-              {dispute.status === 'open' ? '复核申请已提交,等待教师评审' : '教师评审中,请耐心等待'}
+              {dispute.status === 'open'
+                ? `${activeReviewType === 'ai' ? 'AI 评审' : '复核'}申请已提交,等待处理`
+                : '评审中,请耐心等待'}
             </p>
           </div>
         )}
@@ -123,7 +140,7 @@ export default function RequestReviewSection({ analysisId }: RequestReviewSectio
           <div className="bg-jade/5 border border-jade/20 rounded-xl px-4 py-3 mb-3">
             <div className="flex items-center gap-2 mb-1">
               <ShieldCheck className="w-4 h-4 text-jade flex-shrink-0" />
-              <p className="text-sm font-medium text-ink-900">教师复核已完成</p>
+              <p className="text-sm font-medium text-ink-900">复核已完成</p>
             </div>
             {dispute.finalScore && (
               <p className="text-sm text-ink-600">
@@ -144,13 +161,13 @@ export default function RequestReviewSection({ analysisId }: RequestReviewSectio
           >
             <UserCheck className="w-4 h-4" />
             <span className="font-medium text-sm">
-              {isResolved ? '再次申请复核' : '申请人工复核'}
+              {isResolved ? '再次申请复核' : '申请复核'}
             </span>
           </button>
         )}
       </div>
 
-      {/* 申请理由弹窗 */}
+      {/* 评审类型选择 + 申请理由弹窗 */}
       {modalOpen && (
         <div
           className="fixed inset-0 z-50 bg-ink-900/50 backdrop-blur-sm flex items-center justify-center p-4"
@@ -161,7 +178,7 @@ export default function RequestReviewSection({ analysisId }: RequestReviewSectio
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-4">
-              <h3 className="font-serif text-lg font-bold text-ink-900">申请人工复核</h3>
+              <h3 className="font-serif text-lg font-bold text-ink-900">申请复核</h3>
               <button
                 onClick={() => !submitting && setModalOpen(false)}
                 aria-label="关闭"
@@ -170,8 +187,41 @@ export default function RequestReviewSection({ analysisId }: RequestReviewSectio
                 <X className="w-5 h-5" />
               </button>
             </div>
+
+            {/* 评审类型选择 */}
+            <p className="text-xs font-medium text-ink-600 mb-2">选择评审方式</p>
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              <button
+                type="button"
+                onClick={() => setReviewType('teacher')}
+                className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all duration-200 ${
+                  reviewType === 'teacher'
+                    ? 'border-stone bg-stone/8 text-stone'
+                    : 'border-ink-900/10 bg-white text-ink-500 hover:border-stone/40'
+                }`}
+              >
+                <UserCheck className={`w-6 h-6 ${reviewType === 'teacher' ? 'text-stone' : 'text-ink-400'}`} />
+                <span className="text-sm font-medium">老师评审</span>
+                <span className="text-2xs text-ink-400 text-center">教师人工复核评分</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setReviewType('ai')}
+                className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all duration-200 ${
+                  reviewType === 'ai'
+                    ? 'border-cinnabar bg-cinnabar/8 text-cinnabar'
+                    : 'border-ink-900/10 bg-white text-ink-500 hover:border-cinnabar/40'
+                }`}
+              >
+                <Sparkles className={`w-6 h-6 ${reviewType === 'ai' ? 'text-cinnabar' : 'text-ink-400'}`} />
+                <span className="text-sm font-medium">AI 评审</span>
+                <span className="text-2xs text-ink-400 text-center">AI 智能复评诊断</span>
+              </button>
+            </div>
+
             <p className="text-xs text-ink-500 mb-3">
-              请说明您对本次 AI 评分的异议,教师将结合您的理由进行人工评审({MIN_REASON}-{MAX_REASON} 字)
+              请说明您对本次评分的异议{reviewType === 'teacher' ? ',教师将结合您的理由进行人工评审' : ',AI 将基于您的反馈重新诊断'}
+              ({MIN_REASON}-{MAX_REASON} 字)
             </p>
             <textarea
               value={reason}

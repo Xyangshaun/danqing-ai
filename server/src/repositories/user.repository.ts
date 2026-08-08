@@ -153,6 +153,24 @@ export class UserRepository {
   }
 
   /**
+   * 列出租户内指定角色的用户(用于通知教师等场景)
+   * 通过 TenantMember 关联表查询,确保多租户隔离
+   * @param tenantId 租户 ID
+   * @param roles 角色列表(如 ['teacher', 'admin', 'owner'])
+   * @returns 用户列表(仅 id/role,最小化数据传输)
+   */
+  async listByTenantAndRoles(
+    tenantId: string,
+    roles: User['role'][],
+  ): Promise<Array<{ id: string; role: string }>> {
+    const memberships = await prisma().tenantMember.findMany({
+      where: { tenantId, role: { in: roles } },
+      select: { userId: true, role: true },
+    });
+    return memberships.map((m) => ({ id: m.userId, role: m.role }));
+  }
+
+  /**
    * 查询用户在所有租户中的成员关系(用于 /auth/me 接口返回 memberships)
    */
   async findMemberships(userId: string): Promise<Array<TenantMember & { tenant: { id: string; name: string; type: string } }>> {

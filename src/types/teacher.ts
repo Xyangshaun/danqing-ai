@@ -190,6 +190,8 @@ export interface DisputeTriggerReason {
   requesterId?: string;
   /** 申请理由(仅 manual_review) */
   requestReason?: string;
+  /** 评审类型(ai=AI评审 / teacher=老师评审,仅 manual_review) */
+  reviewType?: 'ai' | 'teacher';
 }
 
 /** 仲裁配置(系统级默认,可被租户级覆盖) */
@@ -265,6 +267,8 @@ export type ListDisputesResponse = PaginatedData<DisputeCaseDetail>;
 export interface RequestDisputeRequest {
   /** 申请理由(10-500 字) */
   reason: string;
+  /** 评审类型(ai=AI评审 / teacher=老师评审),默认 teacher */
+  reviewType?: 'ai' | 'teacher';
 }
 
 /** POST /analyses/:id/disputes/request 响应 */

@@ -7,7 +7,7 @@
 // ============================================================
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Scale, RefreshCw, AlertTriangle, Gavel, CheckCircle2 } from 'lucide-react';
+import { Scale, RefreshCw, AlertTriangle, Gavel, CheckCircle2, UserCheck } from 'lucide-react';
 import {
   listDisputes,
   resolveDispute,
@@ -46,6 +46,16 @@ const RULE_LABEL: Record<ResolveDisputeRequest['rule'], string> = {
   unanimous: '一致裁定',
 };
 const REVIEWER_LABEL: Record<string, string> = { professor: '教授', lecturer: '讲师', ai: 'AI' };
+
+/** 判断是否为学生申请人工复核案件 */
+function isManualReview(d: { triggerReason: { requestType?: string } }): boolean {
+  return d.triggerReason.requestType === 'manual_review';
+}
+
+/** 截取申请理由摘要(列表用,最多 40 字) */
+function truncateReason(reason: string, max = 40): string {
+  return reason.length > max ? reason.slice(0, max) + '…' : reason;
+}
 
 export default function TeacherDisputesPage() {
   const toast = useToast();
@@ -115,7 +125,7 @@ export default function TeacherDisputesPage() {
             <Scale className="w-5 h-5 text-cinnabar" />
             争议仲裁
           </h1>
-          <p className="text-xs text-ink-400 mt-1">评委分歧触发的争议案件,共 {total} 件</p>
+          <p className="text-xs text-ink-400 mt-1">争议仲裁与学生复核申请,共 {total} 件</p>
         </div>
         <button
           onClick={() => void load()}
@@ -158,7 +168,7 @@ export default function TeacherDisputesPage() {
       </div>
 
       {/* 争议列表 */}
-      <AdminSection title="争议案件" desc="点击案件查看评审分歧详情并裁定">
+      <AdminSection title="争议案件" desc="点击案件查看详情并裁定,含学生申请复核与评委分歧触发">
         {loading && items.length === 0 ? (
           <SectionSkeleton lines={5} />
         ) : items.length === 0 ? (
@@ -179,14 +189,29 @@ export default function TeacherDisputesPage() {
                 >
                   {LEVEL_LABEL[d.triggerLevel]}
                 </span>
+                {isManualReview(d) && (
+                  <span className={`inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-2xs flex-shrink-0 ${
+                    d.triggerReason.reviewType === 'ai' ? 'bg-cinnabar/10 text-cinnabar' : 'bg-stone/10 text-stone'
+                  }`}>
+                    <UserCheck className="w-3 h-3" />
+                    学生申请 · {d.triggerReason.reviewType === 'ai' ? 'AI评审' : '老师评审'}
+                  </span>
+                )}
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm text-ink-800">
-                    总分极差 <span className="font-mono font-semibold">{d.triggerReason.totalRange}</span>
-                    {' · '}跨档 {d.triggerReason.gradeCrossCount} 处
-                    {' · '}{d.reviews.length} 份评审
-                  </p>
+                  {isManualReview(d) ? (
+                    <p className="text-sm text-ink-800 truncate">
+                      <span className="text-ink-500">申请理由:</span>
+                      {truncateReason(d.triggerReason.requestReason ?? '(未填写)')}
+                    </p>
+                  ) : (
+                    <p className="text-sm text-ink-800">
+                      总分极差 <span className="font-mono font-semibold">{d.triggerReason.totalRange}</span>
+                      {' · '}跨档 {d.triggerReason.gradeCrossCount} 处
+                      {' · '}{d.reviews.length} 份评审
+                    </p>
+                  )}
                   <p className="text-2xs text-ink-400 mt-0.5">
-                    案件 {d.id.slice(0, 8)}… · 触发于 {new Date(d.createdAt).toLocaleString('zh-CN')}
+                    案件 {d.id.slice(0, 8)}… · {isManualReview(d) ? '申请于' : '触发于'} {new Date(d.createdAt).toLocaleString('zh-CN')}
                   </p>
                 </div>
                 <span
@@ -247,28 +272,41 @@ export default function TeacherDisputesPage() {
             </div>
 
             {/* 触发原因 */}
-            <div className="rounded-lg bg-gold/10 border border-gold/30 p-3.5 mb-4">
-              <p className="text-xs font-medium text-gold-dark flex items-center gap-1.5 mb-1.5">
-                <AlertTriangle className="w-3.5 h-3.5" />
-                触发原因
+            <div className={`rounded-lg border p-3.5 mb-4 ${isManualReview(detail) ? 'bg-stone/5 border-stone/30' : 'bg-gold/10 border-gold/30'}`}>
+              <p className={`text-xs font-medium flex items-center gap-1.5 mb-1.5 ${isManualReview(detail) ? 'text-stone' : 'text-gold-dark'}`}>
+                {isManualReview(detail) ? <UserCheck className="w-3.5 h-3.5" /> : <AlertTriangle className="w-3.5 h-3.5" />}
+                {isManualReview(detail)
+                  ? `学生申请复核 · ${detail.triggerReason.reviewType === 'ai' ? 'AI评审' : '老师评审'}`
+                  : '触发原因'}
               </p>
-              <p className="text-xs text-ink-600">
-                总分极差 {detail.triggerReason.totalRange} 分 · 跨档 {detail.triggerReason.gradeCrossCount} 处
-              </p>
-              {Object.keys(detail.triggerReason.dimDiffs).length > 0 && (
-                <div className="flex flex-wrap gap-1.5 mt-2">
-                  {Object.entries(detail.triggerReason.dimDiffs).map(([dim, diff]) => (
-                    <span key={dim} className="px-1.5 py-0.5 rounded bg-rice-50 text-2xs text-ink-500">
-                      {dim} 差 {diff}
-                    </span>
-                  ))}
-                </div>
-              )}
-              {detail.triggerReason.vetoDetail && (
-                <p className="text-2xs text-cinnabar mt-1.5">
-                  否决:最低 {detail.triggerReason.vetoDetail.lowGrade} / 最高{' '}
-                  {detail.triggerReason.vetoDetail.highGrade}
-                </p>
+              {isManualReview(detail) ? (
+                <>
+                  <p className="text-xs text-ink-400 mb-1.5">学生申请理由</p>
+                  <p className="text-sm text-ink-700 leading-relaxed whitespace-pre-wrap">
+                    {detail.triggerReason.requestReason ?? '(未填写理由)'}
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="text-xs text-ink-600">
+                    总分极差 {detail.triggerReason.totalRange} 分 · 跨档 {detail.triggerReason.gradeCrossCount} 处
+                  </p>
+                  {Object.keys(detail.triggerReason.dimDiffs).length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mt-2">
+                      {Object.entries(detail.triggerReason.dimDiffs).map(([dim, diff]) => (
+                        <span key={dim} className="px-1.5 py-0.5 rounded bg-rice-50 text-2xs text-ink-500">
+                          {dim} 差 {diff}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {detail.triggerReason.vetoDetail && (
+                    <p className="text-2xs text-cinnabar mt-1.5">
+                      否决:最低 {detail.triggerReason.vetoDetail.lowGrade} / 最高{' '}
+                      {detail.triggerReason.vetoDetail.highGrade}
+                    </p>
+                  )}
+                </>
               )}
             </div>
 

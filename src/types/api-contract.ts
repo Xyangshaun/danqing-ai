@@ -198,6 +198,42 @@ export type GetProfileResponse = UserProfile;
 /** PATCH /users/profile 响应(返回更新后的完整资料) */
 export type UpdateProfileResponse = UserProfile;
 
+/* ============================================================
+ * 手机号 OTP 绑定(对应后端 POST /auth/phone/otp + /auth/phone/bind)
+ * ============================================================ */
+
+/** OTP 用途 */
+export type PhoneOtpPurpose = 'register' | 'login' | 'bind' | 'reset';
+
+/** POST /auth/phone/otp 请求体 */
+export interface PhoneOtpRequest {
+  phone: string;
+  purpose: PhoneOtpPurpose;
+  /** bind 场景必传 */
+  tenantId?: string;
+}
+
+/** POST /auth/phone/otp 响应 */
+export interface PhoneOtpResponse {
+  sent: boolean;
+  /** 重发冷却秒数 */
+  resendAfter: number;
+  /** 验证码过期时间(ISO 8601) */
+  expiresAt: string;
+}
+
+/** POST /auth/phone/bind 请求体 */
+export interface PhoneBindRequest {
+  phone: string;
+  code: string;
+}
+
+/** POST /auth/phone/bind 响应 */
+export interface PhoneBindResponse {
+  bound: boolean;
+  user: UserProfile;
+}
+
 /**
  * PATCH /users/role 请求
  * 用于首次登录后的新手引导(onboarding)选择职业身份。

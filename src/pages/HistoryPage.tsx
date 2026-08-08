@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, memo } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { History, Calendar, Eye, ArrowRight, X, Brush, PenTool, Box, Layers, Palette, Sparkles, Type, Gem, Settings, Move, RefreshCw, ImageOff } from 'lucide-react';
+import { History, Calendar, Eye, ArrowRight, X, Brush, PenTool, Box, Layers, Palette, Sparkles, Type, Gem, Settings, Move, RefreshCw, ImageOff, HelpCircle } from 'lucide-react';
 import { getAnalysisHistory, getAnalysisDetail, batchDeleteAnalyses } from '../services/data-service';
 import { useToast } from '../components/ToastProvider';
 import type { HistoryRecord, AnalysisResult, PaintingAnalysis, DesignAnalysis, ProductAnalysis, SculptureAnalysis, ArtType } from '../types';
@@ -10,6 +10,7 @@ import EmptyState from '../components/EmptyState';
 import { useVirtualList } from '../hooks/useVirtualList';
 import { useLazyImage } from '../hooks/useLazyImage';
 import SmartImage from '../components/SmartImage';
+import RequestReviewSection from '../components/RequestReviewSection';
 
 type ArtTypeFilter = 'all' | ArtType;
 type ScoreFilter = 'all' | 'excellent' | 'good' | 'pending';
@@ -293,6 +294,9 @@ function DetailModal({ result, onClose, onRediagnose }: { result: AnalysisResult
             <p className="text-sm font-medium text-gold mb-1">原创性建议</p>
             <p className="text-sm text-ink-600">{result.originality.suggestion}</p>
           </div>
+
+          {/* 评审/复核入口:对结果有疑问时可申请 AI 复评或教师人工复核 */}
+          <RequestReviewSection analysisId={result.id} />
         </div>
 
         <div className="sticky bottom-0 bg-rice-100 border-t border-ink-200 px-6 py-3 flex items-center justify-end gap-3">
@@ -484,15 +488,25 @@ const HistoryCard = memo(function HistoryCard({
             </div>
           </div>
 
-          <button
-            onClick={() => onViewDetail(record)}
-            aria-label="查看详情"
-            className="flex items-center gap-2 px-4 py-2 bg-ink-900/5 text-ink-700 rounded-lg hover:bg-ink-900 hover:text-rice-100 transition-all duration-300"
-          >
-            <Eye className="w-4 h-4" />
-            <span className="text-sm font-medium">查看详情</span>
-            <ArrowRight className="w-4 h-4" />
-          </button>
+          <div className="flex flex-col gap-2">
+            <button
+              onClick={() => onViewDetail(record)}
+              aria-label="查看详情"
+              className="flex items-center gap-2 px-4 py-2 bg-ink-900/5 text-ink-700 rounded-lg hover:bg-ink-900 hover:text-rice-100 transition-all duration-300"
+            >
+              <Eye className="w-4 h-4" />
+              <span className="text-sm font-medium">查看详情</span>
+              <ArrowRight className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => onViewDetail(record)}
+              aria-label="对结果有疑问"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-stone hover:text-cinnabar transition-colors"
+            >
+              <HelpCircle className="w-3.5 h-3.5" />
+              <span>对结果有疑问?</span>
+            </button>
+          </div>
         </div>
       </div>
     </div>

@@ -57,6 +57,7 @@ const reviewIdParamSchema = z.object({
 /** 申请人工复核请求体校验 */
 const requestDisputeSchema = z.object({
   reason: z.string().min(10, '申请理由至少 10 个字').max(500, '申请理由不能超过 500 字'),
+  reviewType: z.enum(['ai', 'teacher']).optional(),
 });
 
 // ============================================================
@@ -164,6 +165,7 @@ export const requestDispute: RequestHandler = async (req, res, next) => {
       req.userId,
       role,
       parseResult.data.reason,
+      parseResult.data.reviewType ?? 'teacher',
     );
     return success(res, result, '复核申请已提交,请等待教师评审');
   } catch (err) {

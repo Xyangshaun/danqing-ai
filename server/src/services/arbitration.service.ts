@@ -19,7 +19,9 @@
 import { disputeRepository } from '../repositories/dispute.repository.js';
 import { reviewRepository } from '../repositories/review.repository.js';
 import { analysisRepository } from '../repositories/analysis.repository.js';
+import { userRepository } from '../repositories/user.repository.js';
 import { tenantArbitrationService } from './tenant-arbitration.service.js';
+import { notificationService } from './notification.service.js';
 import { BusinessError } from '../middlewares/error-handler.js';
 import {
   ErrorCode,
@@ -192,6 +194,7 @@ class ArbitrationServiceClass {
     requesterId: string,
     role: UserRole,
     reason: string,
+    reviewType: 'ai' | 'teacher' = 'teacher',
   ): Promise<RequestDisputeResponse> {
     // 1. 校验分析归属租户(多租户隔离)
     const analysis = await analysisRepository.findById(tenantId, analysisId);
@@ -232,6 +235,7 @@ class ArbitrationServiceClass {
       requestType: 'manual_review',
       requesterId,
       requestReason: reason,
+      reviewType,
     };
     const dispute = await disputeRepository.create({
       analysisId,
@@ -252,9 +256,46 @@ class ArbitrationServiceClass {
     }
 
     logger.info(
-      { disputeId: dispute.id, analysisId, requesterId, role, attachedReviews: records.length },
+      { disputeId: dispute.id, analysisId, requesterId, role, reviewType, attachedReviews: records.length },
       '[arbitration] manual review requested',
     );
+
+    // 7. 异步通知租户内教师/管理员:有学生申请复核(不阻塞返回,失败仅日志)
+    //    教师端 Header 每 30 秒轮询 unread-count,打开面板拉取列表即可看到
+    const reviewTypeLabel = reviewType === 'ai' ? 'AI' : '人工';
+    const notifyTitle = reviewType === 'ai' ? '学生申请 AI 评审' : '学生申请人工复核';
+    userRepository
+      .listByTenantAndRoles(tenantId, ['teacher', 'admin', 'owner'])
+      .then((teachers) => {
+        const tasks = teachers.map((t) =>
+          notificationService.createNotification({
+            tenantId,
+            userId: t.id,
+            type: 'REVIEW',
+            title: notifyTitle,
+            content: `作品《${analysis.title ?? '未命名作品'}》有新的${reviewTypeLabel}复核申请,请前往争议中心处理`,
+            level: 'INFO',
+            linkUrl: '/teacher/disputes',
+            metadata: {
+              disputeId: dispute.id,
+              analysisId,
+              requesterId,
+              reviewType,
+            },
+          }),
+        );
+        return Promise.allSettled(tasks);
+      })
+      .then((results) => {
+        const failed = results.filter((r) => r.status === 'rejected').length;
+        if (failed > 0) {
+          logger.warn({ disputeId: dispute.id, failed, total: results.length }, '[arbitration] some teacher notifications failed');
+        }
+      })
+      .catch((err) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        logger.warn({ err: msg, disputeId: dispute.id }, '[arbitration] teacher notification batch failed (non-blocking)');
+      });
 
     return {
       disputeCaseId: dispute.id,

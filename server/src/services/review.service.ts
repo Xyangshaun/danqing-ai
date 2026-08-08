@@ -173,8 +173,9 @@ class ReviewServiceClass {
     requesterId: string,
     role: UserRole,
     reason: string,
+    reviewType: 'ai' | 'teacher' = 'teacher',
   ): Promise<RequestDisputeResponse> {
-    return arbitrationService.requestDispute(analysisId, tenantId, requesterId, role, reason);
+    return arbitrationService.requestDispute(analysisId, tenantId, requesterId, role, reason, reviewType);
   }
 
   // ============================================================

@@ -150,6 +150,8 @@ export interface DisputeTriggerReason {
   requesterId?: string;
   /** 申请理由(仅 manual_review) */
   requestReason?: string;
+  /** 评审类型(ai=AI评审 / teacher=老师评审,仅 manual_review) */
+  reviewType?: 'ai' | 'teacher';
 }
 
 /** 争议最终裁定结果(finalScore 字段结构) */
