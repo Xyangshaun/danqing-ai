@@ -17,7 +17,8 @@ export type ArtworkCategory =
   | 'product'
   | 'sculpture'
   | 'calligraphy'
-  | 'architecture';
+  | 'architecture'
+  | 'heritage';
 
 export type PlaceholderSize =
   | 'square'
@@ -43,6 +44,7 @@ const PALETTES: Record<ArtworkCategory, string[]> = {
   sculpture: ['#e5e5e5', '#404040', '#8b5a2b', '#1a1a1a', '#a8862a'],
   calligraphy: ['#fdfcf9', '#0f0f0f', '#c41e3a', '#2d2d2d'],
   architecture: ['#f5f2eb', '#404040', '#2e5fa1', '#d4af37', '#1a1a1a'],
+  heritage: ['#f5ede0', '#3d2b1f', '#c41e3a', '#d4af37', '#8b5a2b', '#2e5fa1'],
 };
 
 function sizeToDimensions(size: PlaceholderSize): [number, number] {
@@ -213,6 +215,45 @@ function architecturePattern(rand: () => number, w: number, h: number, colors: s
   return shapes;
 }
 
+/** 生成非遗类传统纹样(回纹边框+团花+云纹+印章) */
+function heritagePattern(rand: () => number, w: number, h: number, colors: string[]): string {
+  const [bg, ink, cinnabar, gold, ochre] = colors;
+  let shapes = `<rect width="${w}" height="${h}" fill="${bg}"/>`;
+  // 回纹边框
+  const bw = 8;
+  shapes += `<rect x="${bw}" y="${bw}" width="${w - 2 * bw}" height="${h - 2 * bw}" fill="none" stroke="${gold}" stroke-width="1.5" opacity="0.5"/>`;
+  shapes += `<rect x="${bw + 4}" y="${bw + 4}" width="${w - 2 * (bw + 4)}" height="${h - 2 * (bw + 4)}" fill="none" stroke="${ink}" stroke-width="0.8" opacity="0.3"/>`;
+  // 团花(中心装饰)
+  const fcx = w / 2;
+  const fcy = h * 0.42;
+  const fr = Math.min(w, h) * (0.12 + rand() * 0.06);
+  const petals = 6 + Math.floor(rand() * 3);
+  for (let i = 0; i < petals; i++) {
+    const angle = (i / petals) * Math.PI * 2;
+    const px = fcx + Math.cos(angle) * fr;
+    const py = fcy + Math.sin(angle) * fr;
+    shapes += `<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="${(fr * 0.4).toFixed(1)}" fill="${i % 2 === 0 ? cinnabar : gold}" opacity="${(0.5 + rand() * 0.3).toFixed(2)}"/>`;
+  }
+  shapes += `<circle cx="${fcx.toFixed(1)}" cy="${fcy.toFixed(1)}" r="${(fr * 0.3).toFixed(1)}" fill="${ink}" opacity="0.7"/>`;
+  // 云纹(两侧装饰)
+  for (let i = 0; i < 3; i++) {
+    const cy = h * (0.2 + i * 0.2);
+    const cx = i % 2 === 0 ? w * 0.15 : w * 0.85;
+    let d = `M ${cx.toFixed(1)} ${cy.toFixed(1)}`;
+    for (let k = 0; k < 3; k++) {
+      const r = 8 + rand() * 12;
+      d += ` a ${r.toFixed(1)} ${r.toFixed(1)} 0 1 ${k % 2} ${(r * 1.5).toFixed(1)} 0`;
+    }
+    shapes += `<path d="${d}" stroke="${ochre}" stroke-width="1.5" fill="none" opacity="${(0.3 + rand() * 0.3).toFixed(2)}"/>`;
+  }
+  // 印章(右下角红色方块)
+  const sx = w - 50;
+  const sy = h - 62;
+  shapes += `<rect x="${sx}" y="${sy}" width="22" height="22" fill="${cinnabar}" opacity="0.85" rx="2"/>`;
+  shapes += `<text x="${sx + 11}" y="${sy + 16}" font-family="serif" font-size="12" fill="#fdfcf9" text-anchor="middle" opacity="0.8">印</text>`;
+  return shapes;
+}
+
 const PATTERN_GENERATORS: Record<ArtworkCategory, (rand: () => number, w: number, h: number, colors: string[]) => string> = {
   painting: paintingPattern,
   design: designPattern,
@@ -220,6 +261,7 @@ const PATTERN_GENERATORS: Record<ArtworkCategory, (rand: () => number, w: number
   sculpture: sculpturePattern,
   calligraphy: calligraphyPattern,
   architecture: architecturePattern,
+  heritage: heritagePattern,
 };
 
 /**

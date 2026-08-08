@@ -279,13 +279,20 @@ export default function MaterialsPage() {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [selectedArtwork, setSelectedArtwork] = useState<ArtworkItem | null>(null);
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
-  const [showAllMainTags, setShowAllMainTags] = useState(false);
-  const [showAllTags, setShowAllTags] = useState(false);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [groupBy, setGroupBy] = useState<'none' | 'style' | 'era' | 'region'>('none');
-  // 艺术家筛选(多选):默认折叠,显示前 12 个(按作品数排序)
   const [selectedArtists, setSelectedArtists] = useState<Set<string>>(new Set());
-  const [showAllArtists, setShowAllArtists] = useState(false);
+  // 各筛选分组统一折叠/展开:默认只显示前N个代表标签,点击展开显示全部
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
+  const toggleSection = useCallback((key: string) => {
+    setExpandedSections(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }, []);
+  // 搜索框标签提示下拉
+  const [showSuggestions, setShowSuggestions] = useState(false);
 
   /* ---------- 素材数据状态 ---------- */
   const [artworks, setArtworks] = useState<ArtworkItem[]>([]);
@@ -464,16 +471,6 @@ export default function MaterialsPage() {
       .map(([tag, count]) => ({ tag, count }));
   }, [tagCounts]);
 
-  // 主次标签分组:count >= 100 为主要标签(分类级别),< 100 为次要标签(长尾)
-  const MAIN_TAG_THRESHOLD = 100;
-  const mainTags = useMemo(() => sortedTags.filter((t) => t.count >= MAIN_TAG_THRESHOLD), [sortedTags]);
-  const minorTags = useMemo(() => sortedTags.filter((t) => t.count < MAIN_TAG_THRESHOLD), [sortedTags]);
-
-  // 主标签默认显示前 15 个,展开后显示全部;次标签默认隐藏
-  const MAIN_TAG_PREVIEW = 15;
-  const displayedMainTags = showAllMainTags ? mainTags : mainTags.slice(0, MAIN_TAG_PREVIEW);
-  const displayedMinorTags = showAllTags ? minorTags : [];
-
   // 统计每个艺术家的作品数量,用于筛选区按作品数排序展示
   const artistCounts = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -490,8 +487,32 @@ export default function MaterialsPage() {
       .map(([artist, count]) => ({ artist, count }));
   }, [artistCounts]);
 
-  // 显示的艺术家(折叠时只显示前12个)
-  const displayedArtists = showAllArtists ? sortedArtists : sortedArtists.slice(0, 12);
+  // 各分组折叠时显示的代表标签数量
+  const SECTION_PREVIEW = 6;
+
+  // 搜索框标签提示:从所有维度(标签/艺术家/风格/时代)中匹配输入,按作品数排序
+  const tagSuggestions = useMemo(() => {
+    if (!rawSearchQuery || rawSearchQuery.length < 1) return [];
+    const q = rawSearchQuery.toLowerCase();
+    const all: { label: string; count: number; type: string; action: () => void }[] = [];
+    // 作品标签
+    sortedTags.forEach(({ tag, count }) => {
+      if (tag.toLowerCase().includes(q)) all.push({ label: tag, count, type: '标签', action: () => toggleSet(tag, setSelectedTags) });
+    });
+    // 艺术家
+    sortedArtists.forEach(({ artist, count }) => {
+      if (artist.toLowerCase().includes(q)) all.push({ label: artist, count, type: '艺术家', action: () => toggleSet(artist, setSelectedArtists) });
+    });
+    // 风格
+    filterOptions.styles.forEach(s => {
+      if (s.toLowerCase().includes(q)) all.push({ label: s, count: filterCounts.style[s] ?? 0, type: '风格', action: () => toggleSet(s, setSelectedStyles) });
+    });
+    // 时代
+    filterOptions.eras.forEach(e => {
+      if (e.toLowerCase().includes(q)) all.push({ label: e, count: filterCounts.era[e] ?? 0, type: '时代', action: () => toggleSet(e, setSelectedEras) });
+    });
+    return all.sort((a, b) => b.count - a.count).slice(0, 10);
+  }, [rawSearchQuery, sortedTags, sortedArtists, filterOptions, filterCounts]);
 
   // 过滤作品
   const filteredArtworks = useMemo(() => {
@@ -911,14 +932,35 @@ export default function MaterialsPage() {
             <input
               type="text"
               value={rawSearchQuery}
-              onChange={(e) => setRawSearchQuery(e.target.value)}
+              onChange={(e) => { setRawSearchQuery(e.target.value); setShowSuggestions(true); }}
+              onFocus={() => setShowSuggestions(true)}
+              onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
               placeholder="搜索作品名称、画家、标签（支持中英文）..."
               className="w-full pl-12 pr-4 py-3 border border-ink-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-cinnabar/30 focus:border-cinnabar"
             />
             {rawSearchQuery && (
-              <button onClick={() => setRawSearchQuery('')} aria-label="清除搜索" className="absolute right-4 top-1/2 -translate-y-1/2 p-1 hover:bg-ink-100 rounded-full">
+              <button onClick={() => { setRawSearchQuery(''); setShowSuggestions(false); }} aria-label="清除搜索" className="absolute right-4 top-1/2 -translate-y-1/2 p-1 hover:bg-ink-100 rounded-full">
                 <X className="w-4 h-4 text-ink-400" />
               </button>
+            )}
+            {/* 标签提示下拉 */}
+            {showSuggestions && tagSuggestions.length > 0 && (
+              <div className="absolute z-30 left-0 right-0 mt-1 bg-white rounded-xl shadow-card-hover border border-ink-100 max-h-80 overflow-y-auto">
+                <p className="px-4 py-2 text-xs text-ink-400 border-b border-ink-50">相关标签 · 点击快速筛选</p>
+                {tagSuggestions.map((s) => (
+                  <button
+                    key={s.type + s.label}
+                    onMouseDown={(e) => { e.preventDefault(); s.action(); setRawSearchQuery(''); setShowSuggestions(false); }}
+                    className="w-full flex items-center justify-between px-4 py-2 hover:bg-rice-50 transition-colors text-left"
+                  >
+                    <span className="flex items-center gap-2">
+                      <span className="text-sm text-ink-800">{s.label}</span>
+                      <span className="text-2xs px-1.5 py-0.5 bg-ink-50 text-ink-400 rounded-full">{s.type}</span>
+                    </span>
+                    <span className="text-xs text-ink-400">{s.count} 件</span>
+                  </button>
+                ))}
+              </div>
             )}
           </div>
         </div>
@@ -955,19 +997,19 @@ export default function MaterialsPage() {
               <Tag className="w-4 h-4 text-ink-500" />
               <span className="text-sm font-medium text-ink-700">艺术家</span>
               <span className="text-xs text-ink-400">（可多选）</span>
-              {sortedArtists.length > 12 && (
+              {sortedArtists.length > SECTION_PREVIEW && (
                 <button
-                  onClick={() => setShowAllArtists(!showAllArtists)}
-                  aria-label={showAllArtists ? '收起艺术家' : '展开全部艺术家'}
+                  onClick={() => toggleSection('artists')}
+                  aria-label={expandedSections.has('artists') ? '收起艺术家' : '展开全部艺术家'}
                   className="ml-auto text-xs text-cinnabar hover:underline flex items-center gap-1"
                 >
-                  {showAllArtists ? '收起' : `展开全部 (${sortedArtists.length})`}
-                  <ChevronDown className={`w-3 h-3 transition-transform ${showAllArtists ? 'rotate-180' : ''}`} />
+                  {expandedSections.has('artists') ? '收起' : `展开全部 (${sortedArtists.length})`}
+                  <ChevronDown className={`w-3 h-3 transition-transform ${expandedSections.has('artists') ? 'rotate-180' : ''}`} />
                 </button>
               )}
             </div>
             <div className="flex flex-wrap gap-2">
-              {displayedArtists.map(({ artist, count }) => (
+              {(expandedSections.has('artists') ? sortedArtists : sortedArtists.slice(0, SECTION_PREVIEW)).map(({ artist, count }) => (
                 <TagButton
                   key={artist}
                   label={artist}
@@ -1009,9 +1051,19 @@ export default function MaterialsPage() {
               <Tag className="w-4 h-4 text-ink-500" />
               <span className="text-sm font-medium text-ink-700">风格流派</span>
               <span className="text-xs text-ink-400">（可多选）</span>
+              {filterOptions.styles.length > SECTION_PREVIEW && (
+                <button
+                  onClick={() => toggleSection('styles')}
+                  aria-label={expandedSections.has('styles') ? '收起风格' : '展开全部风格'}
+                  className="ml-auto text-xs text-cinnabar hover:underline flex items-center gap-1"
+                >
+                  {expandedSections.has('styles') ? '收起' : `展开全部 (${filterOptions.styles.length})`}
+                  <ChevronDown className={`w-3 h-3 transition-transform ${expandedSections.has('styles') ? 'rotate-180' : ''}`} />
+                </button>
+              )}
             </div>
             <div className="flex flex-wrap gap-2">
-              {filterOptions.styles.map((style) => {
+              {(expandedSections.has('styles') ? filterOptions.styles : filterOptions.styles.slice(0, SECTION_PREVIEW)).map((style) => {
                 const count = filterCounts.style[style] ?? 0;
                 if (count === 0) return null;
                 return (
@@ -1033,9 +1085,19 @@ export default function MaterialsPage() {
               <Tag className="w-4 h-4 text-ink-500" />
               <span className="text-sm font-medium text-ink-700">时代</span>
               <span className="text-xs text-ink-400">（可多选）</span>
+              {filterOptions.eras.length > SECTION_PREVIEW && (
+                <button
+                  onClick={() => toggleSection('eras')}
+                  aria-label={expandedSections.has('eras') ? '收起时代' : '展开全部时代'}
+                  className="ml-auto text-xs text-cinnabar hover:underline flex items-center gap-1"
+                >
+                  {expandedSections.has('eras') ? '收起' : `展开全部 (${filterOptions.eras.length})`}
+                  <ChevronDown className={`w-3 h-3 transition-transform ${expandedSections.has('eras') ? 'rotate-180' : ''}`} />
+                </button>
+              )}
             </div>
             <div className="flex flex-wrap gap-2">
-              {filterOptions.eras.map((era) => {
+              {(expandedSections.has('eras') ? filterOptions.eras : filterOptions.eras.slice(0, SECTION_PREVIEW)).map((era) => {
                 const count = filterCounts.era[era] ?? 0;
                 if (count === 0) return null;
                 return (
@@ -1051,27 +1113,25 @@ export default function MaterialsPage() {
             </div>
           </div>
 
-          {/* 作品标签云 - 主次分组:主标签(count≥100)常驻,次标签可展开 */}
+          {/* 作品标签云 - 统一折叠,默认显示前6个,展开显示全部 */}
           <div>
             <div className="flex items-center gap-2 mb-2">
               <Tag className="w-4 h-4 text-ink-500" />
               <span className="text-sm font-medium text-ink-700">作品标签</span>
               <span className="text-xs text-ink-400">（可多选）</span>
-              {mainTags.length > MAIN_TAG_PREVIEW && (
+              {sortedTags.length > SECTION_PREVIEW && (
                 <button
-                  onClick={() => setShowAllMainTags(!showAllMainTags)}
-                  aria-label={showAllMainTags ? '收起主标签' : '展开全部主标签'}
+                  onClick={() => toggleSection('tags')}
+                  aria-label={expandedSections.has('tags') ? '收起标签' : '展开全部标签'}
                   className="ml-auto text-xs text-cinnabar hover:underline flex items-center gap-1"
                 >
-                  {showAllMainTags ? '收起主标签' : `展开主标签 (${mainTags.length})`}
-                  <ChevronDown className={`w-3 h-3 transition-transform ${showAllMainTags ? 'rotate-180' : ''}`} />
+                  {expandedSections.has('tags') ? '收起' : `展开全部 (${sortedTags.length})`}
+                  <ChevronDown className={`w-3 h-3 transition-transform ${expandedSections.has('tags') ? 'rotate-180' : ''}`} />
                 </button>
               )}
             </div>
-
-            {/* 主标签 */}
             <div className="flex flex-wrap gap-2">
-              {displayedMainTags.map(({ tag, count }) => (
+              {(expandedSections.has('tags') ? sortedTags : sortedTags.slice(0, SECTION_PREVIEW)).map(({ tag, count }) => (
                 <TagButton
                   key={tag}
                   label={tag}
@@ -1081,33 +1141,6 @@ export default function MaterialsPage() {
                 />
               ))}
             </div>
-
-            {/* 次标签(长尾) - 默认折叠 */}
-            {minorTags.length > 0 && (
-              <div className="mt-3 pt-3 border-t border-ink-100">
-                <button
-                  onClick={() => setShowAllTags(!showAllTags)}
-                  aria-label={showAllTags ? '收起小标签' : '展开小标签'}
-                  className="text-xs text-ink-500 hover:text-cinnabar flex items-center gap-1 mb-2"
-                >
-                  {showAllTags ? '收起小标签' : `展开小标签 (${minorTags.length})`}
-                  <ChevronDown className={`w-3 h-3 transition-transform ${showAllTags ? 'rotate-180' : ''}`} />
-                </button>
-                {showAllTags && (
-                  <div className="flex flex-wrap gap-2">
-                    {displayedMinorTags.map(({ tag, count }) => (
-                      <TagButton
-                        key={tag}
-                        label={tag}
-                        count={count}
-                        active={selectedTags.has(tag)}
-                        onClick={() => toggleSet(tag, setSelectedTags)}
-                      />
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
           </div>
         </div>
 

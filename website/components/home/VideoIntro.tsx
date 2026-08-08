@@ -56,35 +56,35 @@ type Meta = Record<string, { w: number; h: number; ratio: number }>;
 const INTRO_PAINTINGS: IntroPainting[] = [
   // ================ 东岸(中国/东亚 + 卷首卷尾):左侧与上方 ================
   // 1. 水墨山水 · 卷首(左岸顶部)
-  { src: '/images/gallery-hero.jpg',     alt: '水墨山水',           x: '10%', y: '15%', size: 230, rotate: -8,  shape: 'scroll-horizontal', bank: 'east' },
-  // 2. 花鸟 · 小品点缀
-  { src: '/images/gallery-flower.jpg',   alt: '花鸟',               x: '27%', y: '5%',  size: 160, rotate: 6,   shape: 'fan',              bank: 'east' },
-  // 3. 荷塘 · 左岸中
-  { src: '/images/gallery-lotus.jpg',    alt: '荷塘',               x: '5%',  y: '40%', size: 200, rotate: -4,  shape: 'round-fan',        bank: 'east' },
-  // 4. 雕塑 · 内圈(印章方)
-  { src: '/images/gallery-sculpture.jpg',alt: '雕塑 · 形神兼备',    x: '23%', y: '58%', size: 180, rotate: 5,   shape: 'seal',             bank: 'east' },
-  // 5. 山峦 · 左岸下
-  { src: '/images/gallery-mountain.jpg', alt: '山峦',               x: '10%', y: '83%', size: 220, rotate: -3,  shape: 'scroll-horizontal',bank: 'east' },
-  // 6. 神奈川冲浪里 · 葛饰北斋 · 长卷条
-  { src: '/images/gallery-greavewave.jpg',alt: '神奈川冲浪里 · 葛饰北斋', x: '34%', y: '23%', size: 210, rotate: 4, shape: 'scroll-thin',  bank: 'east' },
+  { src: '/images/gallery-hero.jpg',     alt: '水墨山水',           x: '12%', y: '14%', size: 220, rotate: -8,  shape: 'scroll-horizontal', bank: 'east' },
+  // 2. 花鸟 · 小品点缀(顶部,缩小避状态条)
+  { src: '/images/gallery-flower.jpg',   alt: '花鸟',               x: '24%', y: '7%',  size: 150, rotate: 6,   shape: 'fan',              bank: 'east' },
+  // 3. 荷塘 · 左岸中(缩小避中央题跋)
+  { src: '/images/gallery-lotus.jpg',    alt: '荷塘',               x: '4%',  y: '38%', size: 180, rotate: -4,  shape: 'round-fan',        bank: 'east' },
+  // 4. 雕塑 · 内圈(印章方,缩小下移)
+  { src: '/images/gallery-sculpture.jpg',alt: '雕塑 · 形神兼备',    x: '20%', y: '60%', size: 150, rotate: 5,   shape: 'seal',             bank: 'east' },
+  // 5. 山峦 · 左岸下(缩小避底部信息层)
+  { src: '/images/gallery-mountain.jpg', alt: '山峦',               x: '10%', y: '82%', size: 200, rotate: -3,  shape: 'scroll-horizontal',bank: 'east' },
+  // 6. 神奈川冲浪里 · 葛饰北斋 · 底部左侧(远离中央品牌区)
+  { src: '/images/gallery-greavewave.jpg',alt: '神奈川冲浪里 · 葛饰北斋', x: '32%', y: '90%', size: 200, rotate: 4, shape: 'scroll-thin',  bank: 'east' },
 
   // ================ 顶部桥(中性,横跨东西):长卷水波 ================
-  // 7. 日出·印象 · 顶部桥(莫奈属印象派,放在中线桥上)
-  { src: '/images/gallery-sunrise.jpg',  alt: '日出·印象 · 莫奈',  x: '50%', y: '3%',  size: 200, rotate: 0,   shape: 'arch',             bank: 'bridge' },
+  // 7. 日出·印象 · 顶部桥(缩小,留出顶部状态条空间)
+  { src: '/images/gallery-sunrise.jpg',  alt: '日出·印象 · 莫奈',  x: '50%', y: '6%',  size: 150, rotate: 0,   shape: 'arch',             bank: 'bridge' },
 
   // ================ 西岸(西方经典):右侧与下方 ================
-  // 8. 星夜 · 梵高 · 西岸顶部(主锚)
-  { src: '/images/gallery-starrynight.jpg',alt: '星夜 · 梵高',       x: '65%', y: '13%', size: 280, rotate: 6,   shape: 'scroll-horizontal',bank: 'west' },
+  // 8. 星夜 · 梵高 · 西岸顶部(主锚,适度缩小)
+  { src: '/images/gallery-starrynight.jpg',alt: '星夜 · 梵高',       x: '66%', y: '13%', size: 260, rotate: 6,   shape: 'scroll-horizontal',bank: 'west' },
   // 9. 蒙娜丽莎 · 达·芬奇(竖幅肖像)
-  { src: '/images/gallery-monalisa.jpg',alt: '蒙娜丽莎 · 达·芬奇',  x: '88%', y: '16%', size: 200, rotate: -5,  shape: 'arched-portrait',  bank: 'west' },
+  { src: '/images/gallery-monalisa.jpg',alt: '蒙娜丽莎 · 达·芬奇',  x: '88%', y: '15%', size: 180, rotate: -5,  shape: 'arched-portrait',  bank: 'west' },
   // 10. 贺拉斯兄弟之誓 · 大卫(横卷)
-  { src: '/images/gallery-horatii.jpg', alt: '贺拉斯兄弟之誓 · 大卫',x: '92%', y: '47%', size: 200, rotate: 4,  shape: 'scroll-horizontal',bank: 'west' },
-  // 11. 思想者 · 罗丹(印章方)
-  { src: '/images/gallery-thinker.jpg', alt: '思想者 · 罗丹',       x: '95%', y: '66%', size: 180, rotate: -6,  shape: 'seal',             bank: 'west' },
-  // 12. 睡莲 · 莫奈(近方)
-  { src: '/images/gallery-waterlilies.jpg',alt: '睡莲 · 莫奈',      x: '76%', y: '73%', size: 240, rotate: 5,   shape: 'round-fan',        bank: 'west' },
-  // 13. 倒牛奶的女仆 · 维米尔
-  { src: '/images/gallery-pearl.jpg',   alt: '倒牛奶的女仆 · 维米尔',x: '88%', y: '87%', size: 180, rotate: -3,  shape: 'arch',             bank: 'west' },
+  { src: '/images/gallery-horatii.jpg', alt: '贺拉斯兄弟之誓 · 大卫',x: '93%', y: '40%', size: 200, rotate: 4,  shape: 'scroll-horizontal',bank: 'west' },
+  // 11. 思想者 · 罗丹(印章方,缩小)
+  { src: '/images/gallery-thinker.jpg', alt: '思想者 · 罗丹',       x: '95%', y: '64%', size: 160, rotate: -6,  shape: 'seal',             bank: 'west' },
+  // 12. 睡莲 · 莫奈(右下,缩小避底部信息)
+  { src: '/images/gallery-waterlilies.jpg',alt: '睡莲 · 莫奈',      x: '76%', y: '85%', size: 220, rotate: 5,   shape: 'round-fan',        bank: 'west' },
+  // 13. 倒牛奶的女仆 · 维米尔(右下角小画)
+  { src: '/images/gallery-pearl.jpg',   alt: '倒牛奶的女仆 · 维米尔',x: '88%', y: '90%', size: 170, rotate: -3,  shape: 'arch',             bank: 'west' },
 ];
 
 /**
@@ -368,12 +368,15 @@ function IntroPaintings({ active }: { active: boolean }) {
         );
         const next = current + (target - current) * LERP;
 
-        const scale = 0.98 + next * 0.08;
-        const blur = Math.max(0, BASE_BLUR - next * BASE_BLUR);
-
-        p.el.style.setProperty('--p-opacity', next.toFixed(4));
-        p.el.style.setProperty('--p-scale', scale.toFixed(4));
-        p.el.style.setProperty('--p-blur', `${blur.toFixed(1)}px`);
+        // 性能优化:仅当值发生明显变化时才写入 style。
+        // blur 是昂贵的合成属性,鼠标静止/已收敛时不再每帧改写,避免持续触发布层重合成导致的卡顿。
+        if (Math.abs(next - current) > 0.0005) {
+          const scale = 0.98 + next * 0.08;
+          const blur = Math.max(0, BASE_BLUR - next * BASE_BLUR);
+          p.el.style.setProperty('--p-opacity', next.toFixed(4));
+          p.el.style.setProperty('--p-scale', scale.toFixed(4));
+          p.el.style.setProperty('--p-blur', `${blur.toFixed(1)}px`);
+        }
       }
 
       // =============== 帧渲染耗时统计 ===============
@@ -574,7 +577,9 @@ export function VideoIntro({ onComplete }: { onComplete: () => void }) {
           box-shadow:
             0 12px 32px -12px rgba(31, 28, 24, 0.22),
             0 0 0 1px rgba(26, 26, 26, 0.04);
-          will-change: opacity, transform, filter;
+          /* 性能:不用 will-change: filter(blur 为最贵合成属性,常驻会拖累 GPU);
+             仅保留 transform/opacity 的层提升 */
+          will-change: opacity, transform;
           /* border-radius / mask-image 由 inline style 根据 shape 动态设置 */
         }
 

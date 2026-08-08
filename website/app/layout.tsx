@@ -5,6 +5,7 @@ import { Footer } from '@/components/layout/Footer';
 import { InkLoader } from '@/components/ui/InkLoader';
 import { InkCursor } from '@/components/ui/InkCursor';
 import { PaperBackground } from '@/components/background/PaperBackground';
+import { BackToTop } from '@/components/ui/BackToTop';
 import { JsonLd } from '@/components/seo/JsonLd';
 import { SITE } from '@/lib/site';
 import { organizationJsonLd } from '@/lib/seo';
@@ -143,6 +144,7 @@ export default function RootLayout({
           {children}
         </main>
         <Footer />
+        <BackToTop />
       </body>
     </html>
   );

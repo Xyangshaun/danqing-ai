@@ -881,3 +881,40 @@ Ant Design Pro 后台,16 页面骨架:
 - 回滚命令: 30 秒内可恢复 v3
 - 6 条关键记忆已写入 project_memory.md(部署命令链 / 视频 hash 替换 / Next.js 哈希重命名 / PEM 收权 / 远程命令链)
 
+---
+
+## 十三、2026-08-08 追加 · 控制台快捷入口自定义添加预设 + M4 presence 实时在线状态
+
+> 完整规格:[specs/shortcut-presets/spec.md](../specs/shortcut-presets/spec.md) / [tasks.md](../specs/shortcut-presets/tasks.md) / [checklist.md](../specs/shortcut-presets/checklist.md)
+
+### A. 控制台快捷入口自定义添加预设(前端新功能)
+
+**需求背景**:用户希望在控制台首页"快捷入口"面板中把自己保存的预设(情绪画布/灵感嫁接)固定为快捷入口,一键直达。查证发现原"快捷入口"面板始终为固定内容(创作类型+待办),从未支持自定义添加。
+
+**实现**(纯前端,localStorage,无后端改动):
+- 新增 `src/services/shortcutStore.ts`:快捷入口存储(key `danqing-shortcuts`,上限 8),接口 list/add/remove/isShortcutAdded/resolve/prune;快捷入口为**引用**(存 kind+presetId),渲染用最新预设信息覆盖 name/accent
+- 修改 `src/pages/HomePage.tsx`:快捷入口面板顶部新增"我的快捷入口区"(横向 pill,n/8 计数)+ 右上角"+"弹层(`ShortcutPickerModal`,情绪/灵感双 Tab 复选框)+ 挂载失效清理(`pruneInvalidShortcuts`)
+- 新增 `src/services/shortcutStore.test.ts`:10 个单测
+
+**验证**:
+- `npx tsc --noEmit` 0 错误;`npm run build` 成功(2330 modules);vitest 10/10 通过
+- 浏览器端(QA,Playwright + `?demo=1` + localStorage 注入):43 项断言 42 PASS / 1 环境性 FAIL(点击跳转在 demo 模式下被鉴权拦截,经 href 校验确认跳转逻辑正确,非产品缺陷)
+
+**关键决策**(用户确认):面板"+"按钮入口 / 仅预设范围 / localStorage 存储 / 上限 8 / 引用式关联。
+
+### B. M4 presence 实时在线状态(飞书登录同步到后台)
+
+**需求**:用户飞书登录后,信息同步到管理员与开发者后台,查看实时状态。
+
+**实现**:
+- 后端:新增 `server/src/services/presence.service.ts`(三态判定:online/idle/offline)+ `presence.controller.ts` + 2 路由(`/api/admin/presence/users`、`/api/admin/presence/online`)+ auth 埋点(登录 markOnline/登出 markOffline/中间件被动 touch 60s 节流)
+- 管理后台:用户列表三态列 + 30s 轮询;dev/accounts 三态列 + 实时汇总 + 兼容回退
+- 无 DB 迁移、无 .env 变更、无 Redis 结构变更(仅新增自动过期 key)
+
+**验证**:presence 全套 32/32 测试通过(10 service + 17 controller + 5 场景);Redis 写放大 60s 节流达标。`permission.test.ts` 70/70 全通过,此前报告的"student 权限 17 vs 18"失败已随 `a0a092f`(dispute:request)提交消除,与 M4 无关。
+
+### C. 部署回滚方案(已写入 runbook)
+
+`deploy-runbook-danqing.md` §5.4-E 新增"通用后端部署回滚(仅 server 端)"。关键点:`deploy-ssh.sh` 只自动备份前端 dist,不备份后端 `server/dist`,故后端回滚点须部署前手动建立(`server/dist.bak.m4.<TS>`)。M4 无 DB/.env/Redis 变更,回滚只需换 dist + `pm2 restart`。
+
+

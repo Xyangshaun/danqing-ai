@@ -1227,3 +1227,82 @@ ssh -i danqing.pem ubuntu@43.128.25.202 \
   "sudo rm -rf /var/www/danqing-ai/website && sudo mv /var/www/danqing-ai/website-backup-20260808-6 /var/www/danqing-ai/website"
 ```
 
+## 21. Server 后端部署 (2026-08-08) — M4 presence 实时在线状态 + 快捷入口配套 (仅 server 端)
+
+> 纯 server dist 替换 + pm2 restart,无 DB 迁移,不动 .env/Nginx/node_modules。本次**仅部署 server 后端**;app/website/admin 前端不部署。
+> 关键背景:部署时发现生产已运行 M4 presence 代码(prod dist `.tsbuildinfo` 时间戳 18:23),本次为用本地最新 server 全部改动完整覆盖同步,非首次上线。
+
+### 21.1 变更范围
+
+| 项 | 内容 |
+|----|------|
+| 变更人 | TRAE 部署助手 |
+| 变更内容 | M4 presence(飞书登录实时状态) + server 全部未提交改动(image-search/seed 等)一并打包 |
+| 部署包 | `server-dist-m4-20260808_185019.tar.gz` (503KB,`tar -czf ... -C server dist`,含 `dist/` 前缀) |
+| 备份点 | `/var/www/danqing-ai/server/dist.bak.m4.20260808_185121` |
+| PM2 | danqing-api,restart 134(本次 +1) |
+| 部署日志 | 未落库(本次手动部署) |
+
+**变更摘要**:
+1. **M4 presence**:`presence.service.ts`(三态 online/idle/offline)+ `presence.controller.ts` + 2 路由(`/api/admin/presence/users`、`/api/admin/presence/online`)+ auth 埋点(登录 markOnline/登出 markOffline/中间件被动 touch 60s 节流)。无 DB/.env/Redis 结构变更(仅新增自动过期 Redis key)。
+2. 携带 server 历史未提交改动:image-search.service / auth 相关 / prisma seed 等。
+
+### 21.2 部署前验证
+
+- [x] `npm run typecheck`(`tsc --noEmit`)0 错误
+- [x] `npm run build`(`tsc`)成功
+- [x] 本地 dist 含 `presence.service.js` / `presence.controller.js`(打包前核对)
+
+### 21.3 部署命令链(已执行)
+
+```bash
+# 本地:验证 + 构建 + 打包
+npm run typecheck && npm run build
+tar -czf server-dist-m4-20260808_185019.tar.gz -C server dist
+
+# 上传
+scp -i danqing.pem server-dist-m4-20260808_185019.tar.gz ubuntu@43.128.25.202:/tmp/
+
+# 服务器:建回滚点 + 替换(rm + 全新解压,避免新旧残留)
+cd /var/www/danqing-ai/server
+TS=$(date +%Y%m%d_%H%M%S) && cp -a dist dist.bak.m4.$TS     # 备份点
+rm -rf dist && tar -xzf /tmp/server-dist-m4-20260808_185019.tar.gz && rm -f /tmp/server-dist-m4-*.tar.gz
+
+# 重启 + 验证
+pm2 restart danqing-api
+```
+
+### 21.4 验证结果 (PASS)
+
+| 检查项 | 结果 |
+|--------|------|
+| `/health` | `200` |
+| PM2 | `online`,restart 134,uptime 正常 |
+| presence/online | `401`(路由已挂载,未认证被拦 — 正确) |
+| presence/users | `401`(路由已挂载 — 正确) |
+| 启动日志 | env/prisma/redis 正常,generation worker started,alert scheduler started,routes mounted,无 error |
+| 新 dist | presence 文件存在,admin.routes.js 引用 presence 8 处 |
+| 备份点 | `server/dist.bak.m4.20260808_185121` 存在 |
+
+### 21.5 部署后日志检查结论 (PASS)
+
+| 检查项 | 结果 |
+|--------|------|
+| 本次 restart(18:53)后 | **0 个新异常** |
+| 部署后日志 | 仅 `[startup] routes mounted` + 正常 `redis-metrics` 心跳(`status:ready, errors:0, reconnects:0`) |
+| PM2 error.log | 0 字节(无错误) |
+| `logs/error.log` 历史错误 | 08-08 02:22-02:23 的 `FEISHU_APP_ID/SECRET missing`(部署前,可能为早上 .env 未加载的启动尝试;**非本次引入**,当前 .env 加载正常) |
+| out.log 历史 `[warn] business error` | 均早于部署(18:19-18:42):2003 refresh_token 无效 / 9109 邮箱或密码错误 / 1005 重复复核申请 — 均为正常业务告警,非代码异常 |
+
+### 21.6 回滚
+
+```bash
+ssh -i danqing.pem ubuntu@43.128.25.202 \
+  "cd /var/www/danqing-ai/server && rm -rf dist && mv dist.bak.m4.20260808_185121 dist && pm2 restart danqing-api"
+```
+
+### 21.7 遗留 / 备注
+
+- **历史 FEISHU env 错误**:08-08 02:22 `logs/error.log` 出现 `FEISHU_APP_ID/SECRET missing`,疑似早上某次 .env 未加载的启动尝试。当前 .env 加载正常、飞书登录链路工作正常,无当前风险,但建议核查该时间段是否有人临时改动过 .env。
+- 生产 git 工作区 website/ 源文件 deleted、package-lock.json modified 为既有状态,tarball 部署不受影响(同 §17.6)。
+

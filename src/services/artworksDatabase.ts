@@ -243,6 +243,8 @@ function resolveProtocolUrl(url: string, item: ArtworkItem): string {
       size: 'landscape_4_3',
     });
   }
+  // /uploads/ 由 nginx 在根路径提供(COS 挂载),不加 /app/ 前缀
+  if (url.startsWith('/uploads/')) return url;
   return withAppBase(url);
 }
 
