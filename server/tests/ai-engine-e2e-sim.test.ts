@@ -272,15 +272,15 @@ describe('ai-engine-e2e-sim (云端 AI 引擎调用链路模拟)', () => {
   //    验证:axios.post 命中 GLM 端点 + 结果被增强(aiEnhanced=true)
   // ============================================================
   describe('2. 云端 AI 引擎调用(AI 启用 + 成功)', () => {
-    it('AI 启用时:axios.post 被调用 + 结果 aiEnhanced=true + aiDurationMs>0', async () => {
-      // 1. 翻转 env 启用 AI(临时)
+    it('AI 启用时:阶段2 ai-enhance 触发 axios.post + aiEnhanced=true + aiDurationMs>0', async () => {
+      // 1. 翻转 env 启用 AI(临时,供阶段2 isAIEnabled() 校验通过)
       enableAI();
 
-      // 2. 配置 axios mock:返回有效 GLM-4V 响应
+      // 2. 配置 axios mock:返回有效 GLM-4V 响应(将在阶段2被命中)
       vi.mocked(axios.post).mockResolvedValueOnce(buildGlmResponse(buildValidAiContent()) as never);
 
-      // 3. 发起请求
-      const res = await request(getTestApp())
+      // 3. 阶段1:上传 → 仅 Jimp 分析(方案A 下阶段1不调 AI),拿到 analysisId
+      const res1 = await request(getTestApp())
         .post('/api/v1/analyses')
         .set(buildAuthHeaders(accessToken))
         .set('X-Client-Context', JSON.stringify({ device_id: TEST_DEVICE_ID, client: 'web' }))
@@ -293,23 +293,38 @@ describe('ai-engine-e2e-sim (云端 AI 引擎调用链路模拟)', () => {
         })
         .expect(200);
 
-      const body = assertApiResponse(res);
-      const data = body.data as {
+      const body1 = assertApiResponse(res1);
+      const data1 = body1.data as { id: string; status: string };
+      const analysisId = data1.id;
+
+      // 阶段1不应调用云端 AI(axios.post 未被触发)
+      expect(data1.status).toBe('success');
+      expect(analysisId).toBeTruthy();
+      expect(axios.post).not.toHaveBeenCalled();
+
+      // 4. 阶段2:POST /:id/ai-enhance → 触发云端 AI 引擎
+      const res2 = await request(getTestApp())
+        .post(`/api/v1/analyses/${analysisId}/ai-enhance`)
+        .set(buildAuthHeaders(accessToken))
+        .set('X-Client-Context', JSON.stringify({ device_id: TEST_DEVICE_ID, client: 'web' }))
+        .set('User-Agent', TEST_USER_AGENT)
+        .set('X-Forwarded-For', TEST_CLIENT_IP)
+        .expect(200);
+
+      const body2 = assertApiResponse(res2);
+      // 阶段2响应 data 即 AnalysisDetail(直接含 aiEnhanced/aiDurationMs/result)
+      const data2 = body2.data as {
         id: string;
-        status: string;
+        aiEnhanced?: boolean;
+        aiDurationMs?: number;
+        jimpDurationMs?: number;
         result?: {
-          aiEnhanced?: boolean;
-          aiDurationMs?: number;
-          jimpDurationMs?: number;
-          result?: { overallScore?: number };
+          overallScore?: number;
+          aiMeta?: { aiSuccess?: boolean; aiModel?: string; aiFailureReason?: string };
         };
       };
 
-      // 4. 链路通畅 + AI 引擎被调用
-      expect(data.status).toBe('success');
-      expect(data.id).toBeTruthy();
-
-      // 核心断言:云端 AI 引擎(axios.post)被调用了一次
+      // 5. 核心断言:阶段2触发了云端 AI 引擎(axios.post 调用1次)
       expect(axios.post).toHaveBeenCalledTimes(1);
 
       // 调用目标应为 GLM API 端点(env.aiApiUrl)
@@ -321,17 +336,16 @@ describe('ai-engine-e2e-sim (云端 AI 引擎调用链路模拟)', () => {
       const opts = callArgs[2] as { headers?: { Authorization?: string } };
       expect(opts.headers?.Authorization).toMatch(/^Bearer test-glm-api-key-for-e2e-sim/);
 
-      // 5. 结果被 AI 增强
-      // 结构:data.result 为 AnalysisDetail(含 aiEnhanced/aiDurationMs),
-      //       data.result.result 为 AnalysisResult(含 overallScore)
-      expect(data.result).toBeDefined();
-      expect(data.result!.aiEnhanced).toBe(true);
-      expect(data.result!.aiDurationMs).toBeGreaterThan(0);
-      expect(data.result!.result).toBeDefined();
-      expect(data.result!.result!.overallScore).toBeGreaterThanOrEqual(0);
+      // 6. 阶段2结果被 AI 增强
+      expect(data2.id).toBe(analysisId);
+      expect(data2.aiEnhanced).toBe(true);
+      expect(data2.aiDurationMs).toBeGreaterThan(0);
+      expect(data2.result).toBeDefined();
+      expect(data2.result!.overallScore).toBeGreaterThanOrEqual(0);
+      expect(data2.result!.aiMeta?.aiSuccess).toBe(true);
 
-      // 6. DB 记录落库
-      const dbRecord = prismaMock.analysisStore.get(data.id);
+      // 7. DB 记录已更新为 AI 增强结果
+      const dbRecord = prismaMock.analysisStore.get(analysisId);
       expect(dbRecord).toBeDefined();
       expect(dbRecord!.status).toBe('success');
     });
@@ -342,15 +356,15 @@ describe('ai-engine-e2e-sim (云端 AI 引擎调用链路模拟)', () => {
   //    验证:AI 失败时自动降级到 Jimp+模板,仍返回 success
   // ============================================================
   describe('3. AI 引擎失败降级(AI 启用 + 超时 → Jimp fallback)', () => {
-    it('AI 超时:axios 抛 ECONNABORTED → 降级 Jimp,仍返回 success + aiEnhanced=false', async () => {
+    it('AI 超时:阶段2 ai-enhance 抛 6002/408,本地阶段1结果保留(aiEnhanced=false)', async () => {
       // 1. 启用 AI
       enableAI();
 
-      // 2. 配置 axios mock:模拟云端引擎超时(触发降级)
+      // 2. 配置 axios mock:模拟云端引擎超时(将在阶段2触发)
       vi.mocked(axios.post).mockRejectedValueOnce(buildAxiosTimeoutError() as never);
 
-      // 3. 发起请求
-      const res = await request(getTestApp())
+      // 3. 阶段1:上传 → 仅 Jimp 分析,拿到 analysisId
+      const res1 = await request(getTestApp())
         .post('/api/v1/analyses')
         .set(buildAuthHeaders(accessToken))
         .set('X-Client-Context', JSON.stringify({ device_id: TEST_DEVICE_ID, client: 'web' }))
@@ -363,35 +377,36 @@ describe('ai-engine-e2e-sim (云端 AI 引擎调用链路模拟)', () => {
         })
         .expect(200);
 
-      const body = assertApiResponse(res);
-      const data = body.data as {
-        id: string;
-        status: string;
-        result?: {
-          aiEnhanced?: boolean;
-          aiDurationMs?: number;
-          result?: { overallScore?: number };
-        };
-      };
+      const body1 = assertApiResponse(res1);
+      const data1 = body1.data as { id: string; status: string };
+      const analysisId = data1.id;
 
-      // 4. 降级生效:状态仍为 success(不因 AI 失败而 5xx)
-      expect(data.status).toBe('success');
-      expect(data.id).toBeTruthy();
+      // 阶段1不应调用 AI
+      expect(data1.status).toBe('success');
+      expect(analysisId).toBeTruthy();
+      expect(axios.post).not.toHaveBeenCalled();
 
-      // 5. AI 确实被调用了(尝试调用云端引擎但超时)
+      // 4. 阶段2:POST /:id/ai-enhance → AI 超时 → 抛 6002/HTTP 408(本地结果保留,不覆盖)
+      const res2 = await request(getTestApp())
+        .post(`/api/v1/analyses/${analysisId}/ai-enhance`)
+        .set(buildAuthHeaders(accessToken))
+        .set('X-Client-Context', JSON.stringify({ device_id: TEST_DEVICE_ID, client: 'web' }))
+        .set('User-Agent', TEST_USER_AGENT)
+        .set('X-Forwarded-For', TEST_CLIENT_IP)
+        .expect(408);
+
+      // 5. 错误响应:code=ANALYSIS_TIMEOUT(6002),HTTP 408
+      assertApiError(res2, ErrorCode.ANALYSIS_TIMEOUT, 408);
+
+      // 6. AI 确实被调用了(尝试调用云端引擎但超时)
       expect(axios.post).toHaveBeenCalledTimes(1);
 
-      // 6. 降级标志:aiEnhanced=false(AI 失败后回退到 Jimp-only)
-      // 结构:data.result 为 AnalysisDetail,data.result.result 为 AnalysisResult
-      expect(data.result).toBeDefined();
-      expect(data.result!.aiEnhanced).toBe(false);
-      expect(data.result!.result).toBeDefined();
-      expect(data.result!.result!.overallScore).toBeGreaterThanOrEqual(0);
-
-      // 7. DB 记录落库(降级后仍记 success)
-      const dbRecord = prismaMock.analysisStore.get(data.id);
+      // 7. 本地结果保留:DB 中阶段1记录未被覆盖(result.aiEnhanced 仍为 false)
+      const dbRecord = prismaMock.analysisStore.get(analysisId);
       expect(dbRecord).toBeDefined();
       expect(dbRecord!.status).toBe('success');
+      const stored = dbRecord!.result as { aiEnhanced?: boolean } | null;
+      expect(stored?.aiEnhanced).toBe(false);
     });
   });
 
