@@ -293,6 +293,60 @@ sudo nginx -t && sudo systemctl reload nginx
 echo "Rollback completed. Run health check to verify."
 ```
 
+#### E. 通用后端部署回滚（M4，仅 server 端，可复用）
+
+> 适用：仅部署 **server 后端**（如 M4 presence 功能）、不改前端/数据库/环境变量时的回滚。
+> 关键点：`deploy-ssh.sh` **只自动备份前端 `dist`，不备份后端 `server/dist`**，因此后端回滚点必须**部署前手动建立**。
+
+**前置：部署前建立后端回滚点（必须）**
+
+```bash
+cd /var/www/danqing-ai
+TS=$(date +%Y%m%d_%H%M%S)
+sudo cp -r server/dist "server/dist.bak.m4.$TS"
+ls -ld server/dist.bak.m4.*   # 确认备份存在
+```
+
+**部署后异常：立即回滚**
+
+```bash
+cd /var/www/danqing-ai
+
+# 1. 找到最近备份
+ls -ld server/dist.bak.m4.*
+
+# 2. 保留失败现场并替换为备份
+sudo mv server/dist server/dist.failed-$(date +%H%M%S)
+sudo cp -r server/dist.bak.m4.<TS> server/dist
+
+# 3. 重启服务
+sudo pm2 restart danqing-api
+
+# 4. 验证
+sleep 3
+pm2 list
+curl -s -o /dev/null -w "%{http_code}\n" https://www.danqing.site/api/health
+sudo pm2 logs danqing-api --lines 50
+```
+
+**回滚验证清单**
+- `pm2 list` → danqing-api `online`，restart count 不持续增长
+- `/api/health` → `200`
+- 飞书 OAuth 登录一次确认正常
+- 新 presence 端点已消失（成功回滚标志）：`/api/admin/presence/online` 应返回 `404`
+
+**最坏情况（无回滚点）——从 git 重建**
+
+```bash
+cd /var/www/danqing-ai
+git stash                                  # 备份未提交改动
+git checkout HEAD -- server/
+cd server && npx prisma generate && npx tsc -p tsconfig.json && cd ..
+sudo pm2 restart danqing-api
+```
+
+> 注：M4 presence 无 DB 迁移、无 .env 变更、无 Redis 结构变更（仅新增自动过期的 Redis key），故回滚只需换 `server/dist` + 重启 PM2，无需动数据库/环境变量。
+
 ## 6. 安全配置
 
 ### 6.1 SSH 加固
