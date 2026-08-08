@@ -249,7 +249,11 @@ class AnalysisServiceClass {
    *   5. 校验 AI 配置:未启用 → 抛 ANALYSIS_RESULT_FAILED
    *   6. 解析图片源(外部 URL 直接用;/uploads/xxx 解析回 uploadDir 本地路径,文件缺失则报错)
    *   7. 调 runAIEnhance(读 storedResult → 提取指标 → 调 AI → 合并)
-   *   8. AI 失败(merged.aiEnhanced === false)→ 抛 ANALYSIS_TIMEOUT / ANALYSIS_RESULT_FAILED(不覆盖已存的本地结果)
+   *   8. AI 失败(merged.aiEnhanced === false)→ 按 failureReason 映射状态码与文案抛 BusinessError(不覆盖已存的本地结果)
+   *      - AI_TIMEOUT → 408/ANALYSIS_TIMEOUT
+   *      - AI_PARSE_ERROR/AI_SCHEMA_ERROR/AI_HTTP_ERROR/AI_NETWORK_ERROR → 502/ANALYSIS_RESULT_FAILED
+   *      - AI_KEY_MISSING/AI_DISABLED → 503/ANALYSIS_RESULT_FAILED
+   *      - 其他 → 500/ANALYSIS_RESULT_FAILED
    *   9. AI 成功 → updateResult 覆盖写回 DB(result JSON 含 AI 字段,overallScore/durationMs 更新)
    *   10. 异步记录 AI 用量日志(从原 runAnalysis 搬移,作品所有者计费)
    *   11. 返回 AnalysisDetail(含新的 aiEnhanced/aiDurationMs,保留原 jimpDurationMs)
@@ -354,10 +358,16 @@ class AnalysisServiceClass {
     }
     const aiDurationMs = merged.aiMeta.aiDurationMs;
 
-    // 8. AI 失败 → 抛 BusinessError(不覆盖已存的本地结果)
+    // 8. AI 失败 → 抛 BusinessError(不覆盖已存的本地结果;按 failureReason 映射状态码与文案)
+    //    本地阶段 1 结果已在 DB 保留,前端收到错误后不覆盖展示,用户可依据文案重试。
+    //    状态码语义:
+    //      AI_TIMEOUT → 408(请求超时,可重试)
+    //      AI_PARSE_ERROR / AI_SCHEMA_ERROR → 502(上游 AI 返回内容异常,可重试)
+    //      AI_HTTP_ERROR / AI_NETWORK_ERROR → 502(上游 AI 网络/HTTP 异常,可重试)
+    //      AI_KEY_MISSING / AI_DISABLED → 503(AI 未配置,非用户可重试)
+    //      其他/未知 → 500(兜底)
     if (!merged.aiEnhanced) {
       const failureReason = merged.aiMeta.aiFailureReason;
-      const isTimeout = failureReason === 'AI_TIMEOUT';
       logger.warn(
         {
           analysisId,
@@ -368,11 +378,35 @@ class AnalysisServiceClass {
         },
         '[analysis] aiEnhance: AI call failed, aborting (local result preserved)',
       );
-      throw new BusinessError(
-        isTimeout ? ErrorCode.ANALYSIS_TIMEOUT : ErrorCode.ANALYSIS_RESULT_FAILED,
-        `AI 增强失败${failureReason ? `:${failureReason}` : ''}`,
-        isTimeout ? 408 : 500,
-      );
+      let code = ErrorCode.ANALYSIS_RESULT_FAILED;
+      let status = 500;
+      let message = 'AI 增强失败,请稍后重试';
+      switch (failureReason) {
+        case 'AI_TIMEOUT':
+          code = ErrorCode.ANALYSIS_TIMEOUT;
+          status = 408;
+          message = 'AI 增强超时,请稍后重试';
+          break;
+        case 'AI_PARSE_ERROR':
+        case 'AI_SCHEMA_ERROR':
+          status = 502;
+          message = 'AI 模型返回内容异常,请稍后重试';
+          break;
+        case 'AI_HTTP_ERROR':
+          status = 502;
+          message = 'AI 服务响应异常,请稍后重试';
+          break;
+        case 'AI_NETWORK_ERROR':
+          status = 502;
+          message = 'AI 服务网络异常,请稍后重试';
+          break;
+        case 'AI_KEY_MISSING':
+        case 'AI_DISABLED':
+          status = 503;
+          message = 'AI 服务未配置,请联系管理员';
+          break;
+      }
+      throw new BusinessError(code, message, status);
     }
 
     // 9. AI 成功 → 覆盖写回 DB(result JSON 含 AI 字段,overallScore/durationMs 更新)
@@ -947,17 +981,6 @@ class AnalysisServiceClass {
       },
       overallScore: 70,
     };
-  }
-
-  /**
-   * 安全清理临时文件(不抛错)
-   */
-  private async safeCleanup(filePath: string): Promise<void> {
-    try {
-      await fs.unlink(filePath);
-    } catch {
-      // 文件可能已被清理或不存在,忽略错误
-    }
   }
 
   /**

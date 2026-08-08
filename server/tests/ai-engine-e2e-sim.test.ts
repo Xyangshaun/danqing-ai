@@ -408,6 +408,64 @@ describe('ai-engine-e2e-sim (云端 AI 引擎调用链路模拟)', () => {
       const stored = dbRecord!.result as { aiEnhanced?: boolean } | null;
       expect(stored?.aiEnhanced).toBe(false);
     });
+
+    it('AI 返回内容无法解析(AI_PARSE_ERROR):阶段2 → 502/ANALYSIS_RESULT_FAILED,本地结果保留', async () => {
+      // 1. 启用 AI
+      enableAI();
+
+      // 2. mock:GLM 返回 200 但 content 为纯文本(无 JSON 大括号)→ 触发 AI_PARSE_ERROR
+      vi.mocked(axios.post).mockResolvedValueOnce(
+        buildGlmResponse('抱歉,我无法分析这幅画作的内容。') as never,
+      );
+
+      // 3. 阶段1:上传 → 仅 Jimp,拿 analysisId
+      const res1 = await request(getTestApp())
+        .post('/api/v1/analyses')
+        .set(buildAuthHeaders(accessToken))
+        .set('X-Client-Context', JSON.stringify({ device_id: TEST_DEVICE_ID, client: 'web' }))
+        .set('User-Agent', TEST_USER_AGENT)
+        .set('X-Forwarded-For', TEST_CLIENT_IP)
+        .send({
+          artType: 'painting',
+          imageUrl: 'https://example.com/ai-e2e-sim-parse-fail.jpg',
+          title: 'AI解析失败作品',
+        })
+        .expect(200);
+
+      const body1 = assertApiResponse(res1);
+      const data1 = body1.data as { id: string; status: string };
+      const analysisId = data1.id;
+      expect(data1.status).toBe('success');
+      expect(analysisId).toBeTruthy();
+      expect(axios.post).not.toHaveBeenCalled();
+
+      // 4. 阶段2:AI 返回内容无法解析 → 502 + ANALYSIS_RESULT_FAILED(6003)
+      const res2 = await request(getTestApp())
+        .post(`/api/v1/analyses/${analysisId}/ai-enhance`)
+        .set(buildAuthHeaders(accessToken))
+        .set('X-Client-Context', JSON.stringify({ device_id: TEST_DEVICE_ID, client: 'web' }))
+        .set('User-Agent', TEST_USER_AGENT)
+        .set('X-Forwarded-For', TEST_CLIENT_IP)
+        .expect(502);
+
+      assertApiError(res2, ErrorCode.ANALYSIS_RESULT_FAILED, 502);
+
+      // 5. 错误文案应为用户友好的中文(非英文枚举值 AI_PARSE_ERROR)
+      const errBody = res2.body as { message?: string };
+      expect(errBody.message).toBeTruthy();
+      expect(errBody.message).not.toContain('AI_PARSE_ERROR');
+      expect(errBody.message).toMatch(/异常|失败/);
+
+      // 6. AI 确实被调用了(尝试调用云端引擎但返回内容无法解析)
+      expect(axios.post).toHaveBeenCalledTimes(1);
+
+      // 7. 本地结果保留:DB 中阶段1记录未被覆盖(aiEnhanced 仍为 false)
+      const dbRecord = prismaMock.analysisStore.get(analysisId);
+      expect(dbRecord).toBeDefined();
+      expect(dbRecord!.status).toBe('success');
+      const stored = dbRecord!.result as { aiEnhanced?: boolean } | null;
+      expect(stored?.aiEnhanced).toBe(false);
+    });
   });
 
   // ============================================================
